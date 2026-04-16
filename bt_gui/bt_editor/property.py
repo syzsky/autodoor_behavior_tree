@@ -421,7 +421,7 @@ class RegionField(FieldWidget):
                 end_x_abs = event.x_root
                 end_y_abs = event.y_root
                 
-                if abs(end_x_abs - start_x_abs[0]) < 10 or abs(end_y_abs - start_y_abs[0]) < 10:
+                if abs(end_x_abs - start_x_abs[0]) < 3 or abs(end_y_abs - start_y_abs[0]) < 3:
                     messagebox.showwarning("警告", "选择的区域太小，请重新选择")
                     select_window.destroy()
                     self.app.deiconify()
@@ -802,7 +802,7 @@ class ScreenshotField(FieldWidget):
                 
                 select_window.destroy()
                 
-                if abs(end_x_abs - start_x_abs[0]) < 10 or abs(end_y_abs - start_y_abs[0]) < 10:
+                if abs(end_x_abs - start_x_abs[0]) < 3 or abs(end_y_abs - start_y_abs[0]) < 3:
                     self.app.deiconify()
                     messagebox.showwarning("警告", "选择的区域太小，请重新选择")
                     return
