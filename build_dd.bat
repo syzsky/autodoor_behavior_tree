@@ -46,6 +46,6 @@ if errorlevel 1 (
 echo.
 echo ========================================
 echo Build completed successfully!
-echo Output: dist\autodoor-bt-*-game\
+echo Output: dist\autodoor-bt-*-dd\
 echo ========================================
 pause

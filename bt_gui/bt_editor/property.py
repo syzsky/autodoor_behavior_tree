@@ -14,14 +14,16 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "region", "label": "检测区域", "type": "region"},
         {"key": "keywords", "label": "关键词", "type": "text"},
         {"key": "language", "label": "语言", "type": "select", "options": ["eng", "chi_sim", "chi_tra"], "default": "chi_sim"},
-        {"key": "preprocess_mode", "label": "图像预处理", "type": "select", "options": ["默认", "游戏"], "default": "默认"},
+        {"key": "preprocess_mode", "label": "图像预处理", "type": "select", "options": ["默认", "复杂色彩"], "default": "默认"},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "ImageConditionNode": [
         {"key": "region", "label": "检测区域", "type": "region"},
         {"key": "template_path", "label": "模板路径", "type": "screenshot", "width": 120, "filetypes": [("图像文件", "*.png *.jpg *.jpeg *.bmp"), ("所有文件", "*.*")]},
         {"key": "threshold", "label": "匹配阈值(%)", "type": "number", "min": 0, "max": 100, "default": 80},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "ColorConditionNode": [
         {"key": "region", "label": "检测区域", "type": "region"},
@@ -29,6 +31,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "tolerance", "label": "容差", "type": "number", "min": 0, "max": 100, "default": 10},
         {"key": "min_pixels", "label": "最小像素数", "type": "number", "min": 1, "default": 1},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "NumberConditionNode": [
         {"key": "region", "label": "检测区域", "type": "region"},
@@ -40,6 +43,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "min_confidence", "label": "置信度阈值(%)", "type": "number", "min": 0, "max": 100, "default": 50},
         {"key": "value_key", "label": "值变量名", "type": "text", "default": "last_number_value"},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "VariableConditionNode": [
         {"key": "variable_name", "label": "变量名", "type": "text"},
@@ -50,16 +54,19 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "key", "label": "按键", "type": "key"},
         {"key": "action", "label": "动作", "type": "select", "options": ["press", "down", "up"], "default": "press"},
         {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 0},
+        {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseClickNode": [
         {"key": "button", "label": "按钮", "type": "select", "options": ["left", "right", "middle"], "default": "left"},
         {"key": "action", "label": "动作", "type": "select", "options": ["press", "down", "up"], "default": "press"},
         {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 100},
+        {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
         {"key": "position", "label": "位置", "type": "position"},
         {"key": "use_blackboard", "label": "点击最近检测点", "type": "bool", "default": False},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
         {"key": "click_count", "label": "点击次数(-1无限)", "type": "number", "min": -1, "max": 10, "default": 1},
         {"key": "click_interval", "label": "点击间隔(ms)", "type": "number", "default": 100},
+        {"key": "click_interval_random", "label": "间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseMoveNode": [
         {"key": "position", "label": "位置(拖拽时为起点)", "type": "position"},
@@ -73,6 +80,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "use_blackboard_end", "label": "终点使用黑板位置", "type": "bool", "default": False},
         {"key": "position_key_end", "label": "终点位置变量名", "type": "text", "default": ""},
         {"key": "drag_duration", "label": "拖拽时长(ms)", "type": "number", "default": 0},
+        {"key": "drag_duration_random", "label": "拖拽时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseScrollNode": [
         {"key": "distance", "label": "滚动距离", "type": "number", "default": 5},
@@ -81,6 +89,7 @@ NODE_CONFIG_SCHEMAS = {
     ],
     "DelayNode": [
         {"key": "duration_ms", "label": "延时时长(ms)", "type": "number", "default": 1000},
+        {"key": "duration_ms_random", "label": "延时随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
     "SetVariableNode": [
         {"key": "variable_name", "label": "变量名", "type": "text"},
@@ -106,11 +115,13 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "success_policy", "label": "成功策略", "type": "select", "options": ["require_all", "require_one"], "default": "require_all"},
     ],
     "SequenceNode": [
-        {"key": "child_interval", "label": "子节点间隔(ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "childinterval", "label": "子节点间隔(ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "childinterval_random", "label": "子节点间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
         {"key": "continue_on_failure", "label": "失败后继续执行", "type": "bool", "default": False},
     ],
     "SelectorNode": [
-        {"key": "child_interval", "label": "子节点间隔(ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "childinterval", "label": "子节点间隔(ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "childinterval_random", "label": "子节点间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
 }
 
@@ -124,6 +135,7 @@ CONDITION_DECORATOR_FIELDS = [
 ACTION_DECORATOR_FIELDS = [
     {"key": "repeat_count", "label": "重复次数(0不重复,-1无限)", "type": "number", "min": -1, "default": 0},
     {"key": "repeat_interval_ms", "label": "重复间隔(ms)", "type": "number", "min": 0, "default": 100},
+    {"key": "repeat_interval_ms_random", "label": "重复间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     {"key": "timeout_ms", "label": "超时时间(ms,0不限)", "type": "number", "min": 0, "default": 0},
 ]
 
@@ -131,6 +143,7 @@ COMPOSITE_DECORATOR_FIELDS = [
     {"key": "retry_count", "label": "失败重试次数(-1无限)", "type": "number", "min": -1, "default": 0},
     {"key": "repeat_count", "label": "重复次数(0不重复,-1无限)", "type": "number", "min": -1, "default": 0},
     {"key": "repeat_interval_ms", "label": "重复间隔(ms)", "type": "number", "min": 0, "default": 100},
+    {"key": "repeat_interval_ms_random", "label": "重复间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     {"key": "timeout_ms", "label": "超时时间(ms,0不限)", "type": "number", "min": 0, "default": 0},
 ]
 
@@ -371,6 +384,8 @@ class RegionField(FieldWidget):
     
     def _start_selection(self):
         import time
+        from bt_utils.magnifier import MagnifierWindow
+        
         try:
             import screeninfo
             
@@ -400,7 +415,19 @@ class RegionField(FieldWidget):
             start_y_rel = [0]
             rect = [None]
             
+            magnifier = MagnifierWindow(zoom_factor=4, size=150)
+            magnifier_shown = [False]
+            
+            def on_mouse_move(event):
+                if not magnifier_shown[0]:
+                    magnifier.show(event.x_root, event.y_root)
+                    magnifier_shown[0] = True
+                else:
+                    magnifier.update(event.x_root, event.y_root)
+            
             def on_mouse_down(event):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 start_x_abs[0] = event.x_root
                 start_y_abs[0] = event.y_root
                 start_x_rel[0] = event.x_root - min_x
@@ -408,16 +435,23 @@ class RegionField(FieldWidget):
                 rect[0] = None
             
             def on_mouse_drag(event):
+                if not magnifier_shown[0]:
+                    magnifier.show(event.x_root, event.y_root)
+                    magnifier_shown[0] = True
+                else:
+                    magnifier.update(event.x_root, event.y_root)
                 current_x_rel = event.x_root - min_x
                 current_y_rel = event.y_root - min_y
                 if rect[0]:
                     canvas.delete(rect[0])
                 rect[0] = canvas.create_rectangle(
                     start_x_rel[0], start_y_rel[0], current_x_rel, current_y_rel,
-                    outline="#FFFFFF", width=2, fill=""
+                    outline="#000000", width=2, fill=""
                 )
             
             def on_mouse_up(event):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 end_x_abs = event.x_root
                 end_y_abs = event.y_root
                 
@@ -441,9 +475,12 @@ class RegionField(FieldWidget):
                 self.app.deiconify()
             
             def on_escape(e):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 select_window.destroy()
                 self.app.deiconify()
             
+            canvas.bind("<Motion>", on_mouse_move)
             canvas.bind("<Button-1>", on_mouse_down)
             canvas.bind("<B1-Motion>", on_mouse_drag)
             canvas.bind("<ButtonRelease-1>", on_mouse_up)
@@ -750,6 +787,8 @@ class ScreenshotField(FieldWidget):
     
     def _start_screenshot_selection(self):
         import time
+        from bt_utils.magnifier import MagnifierWindow
+        
         try:
             import screeninfo
             
@@ -779,7 +818,19 @@ class ScreenshotField(FieldWidget):
             start_y_rel = [0]
             rect = [None]
             
+            magnifier = MagnifierWindow(zoom_factor=4, size=150)
+            magnifier_shown = [False]
+            
+            def on_mouse_move(event):
+                if not magnifier_shown[0]:
+                    magnifier.show(event.x_root, event.y_root)
+                    magnifier_shown[0] = True
+                else:
+                    magnifier.update(event.x_root, event.y_root)
+            
             def on_mouse_down(event):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 start_x_abs[0] = event.x_root
                 start_y_abs[0] = event.y_root
                 start_x_rel[0] = event.x_root - min_x
@@ -787,16 +838,23 @@ class ScreenshotField(FieldWidget):
                 rect[0] = None
             
             def on_mouse_drag(event):
+                if not magnifier_shown[0]:
+                    magnifier.show(event.x_root, event.y_root)
+                    magnifier_shown[0] = True
+                else:
+                    magnifier.update(event.x_root, event.y_root)
                 current_x_rel = event.x_root - min_x
                 current_y_rel = event.y_root - min_y
                 if rect[0]:
                     canvas.delete(rect[0])
                 rect[0] = canvas.create_rectangle(
                     start_x_rel[0], start_y_rel[0], current_x_rel, current_y_rel,
-                    outline="#FFFFFF", width=2, fill=""
+                    outline="#000000", width=2, fill=""
                 )
             
             def on_mouse_up(event):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 end_x_abs = event.x_root
                 end_y_abs = event.y_root
                 
@@ -818,9 +876,12 @@ class ScreenshotField(FieldWidget):
                     self.app._screenshot_callback(region)
             
             def on_escape(e):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 select_window.destroy()
                 self.app.deiconify()
             
+            canvas.bind("<Motion>", on_mouse_move)
             canvas.bind("<Button-1>", on_mouse_down)
             canvas.bind("<B1-Motion>", on_mouse_drag)
             canvas.bind("<ButtonRelease-1>", on_mouse_up)
@@ -1086,6 +1147,8 @@ class PositionField(FieldWidget):
     
     def _pick_position(self):
         import time
+        from bt_utils.magnifier import MagnifierWindow
+        
         try:
             import screeninfo
             
@@ -1115,7 +1178,19 @@ class PositionField(FieldWidget):
             )
             label.place(relx=0.5, rely=0.5, anchor="center")
             
+            magnifier = MagnifierWindow(zoom_factor=4, size=150)
+            magnifier_shown = [False]
+            
+            def on_mouse_move(event):
+                if not magnifier_shown[0]:
+                    magnifier.show(event.x_root, event.y_root)
+                    magnifier_shown[0] = True
+                else:
+                    magnifier.update(event.x_root, event.y_root)
+            
             def on_click(event):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 x, y = event.x_root, event.y_root
                 self.var.set(f"{x}, {y}")
                 self.on_change(self.key, [x, y])
@@ -1123,9 +1198,12 @@ class PositionField(FieldWidget):
                 self.app.deiconify()
             
             def on_escape(e):
+                magnifier.hide()
+                magnifier_shown[0] = False
                 select_window.destroy()
                 self.app.deiconify()
             
+            select_window.bind("<Motion>", on_mouse_move)
             select_window.bind("<Button-1>", on_click)
             select_window.bind("<Escape>", on_escape)
             select_window.focus_set()
@@ -1151,6 +1229,148 @@ class PositionField(FieldWidget):
             return None
         except (ValueError, AttributeError):
             return None
+
+
+class OffsetField(FieldWidget):
+    def __init__(self, master, label: str, key: str, on_change: Callable, app, **kwargs):
+        self.app = app
+        super().__init__(master, label, key, on_change, **kwargs)
+        self._create_widget()
+    
+    def _create_widget(self):
+        input_frame = ctk.CTkFrame(self, fg_color="transparent")
+        input_frame.pack(fill="x")
+        
+        self.var = tk.StringVar(value="0, 0")
+        
+        self.entry = ctk.CTkEntry(
+            input_frame,
+            textvariable=self.var,
+            font=Theme.get_font('sm'),
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            border_color=self._dark_colors['border'],
+            text_color=self._dark_colors['text_primary'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius']
+        )
+        self.entry.pack(side="left", fill="x", expand=True, padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        self.entry.bind("<FocusOut>", lambda e: self._parse_and_change())
+        
+        self.btn = ctk.CTkButton(
+            input_frame,
+            text="测量",
+            font=Theme.get_font('sm'),
+            width=60,
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['primary'],
+            hover_color=self._dark_colors['primary_hover'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            command=self._measure_offset
+        )
+        self.btn.pack(side="right")
+    
+    def _parse_and_change(self):
+        try:
+            parts = self.var.get().replace(" ", "").split(",")
+            if len(parts) >= 2:
+                value = [int(parts[0]), int(parts[1])]
+                self.on_change(self.key, value)
+        except (ValueError, AttributeError):
+            pass
+    
+    def _measure_offset(self):
+        import time
+        from bt_utils.magnifier import MagnifierWindow
+        
+        try:
+            import screeninfo
+            
+            self.app.iconify()
+            time.sleep(0.2)
+            
+            monitors = screeninfo.get_monitors()
+            min_x = min(monitor.x for monitor in monitors)
+            min_y = min(monitor.y for monitor in monitors)
+            max_x = max(monitor.x + monitor.width for monitor in monitors)
+            max_y = max(monitor.y + monitor.height for monitor in monitors)
+            
+            select_window = tk.Toplevel(self.app)
+            select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
+            select_window.overrideredirect(True)
+            select_window.attributes("-alpha", 0.2)
+            select_window.attributes("-topmost", True)
+            select_window.configure(cursor="crosshair", bg=self._dark_colors['primary'])
+            
+            label = tk.Label(
+                select_window,
+                text="第一步：点击参考点（检测目标位置）",
+                font=("Microsoft YaHei", 24),
+                bg=self._dark_colors['primary'],
+                fg="#FFFFFF"
+            )
+            label.place(relx=0.5, rely=0.5, anchor="center")
+            
+            magnifier = MagnifierWindow(zoom_factor=4, size=150)
+            magnifier_shown = [False]
+            reference_point = [None]
+            
+            def on_mouse_move(event):
+                if not magnifier_shown[0]:
+                    magnifier.show(event.x_root, event.y_root)
+                    magnifier_shown[0] = True
+                else:
+                    magnifier.update(event.x_root, event.y_root)
+            
+            def on_click(event):
+                if reference_point[0] is None:
+                    reference_point[0] = (event.x_root, event.y_root)
+                    label.config(text="第二步：点击目标点（实际操作位置）")
+                else:
+                    magnifier.hide()
+                    magnifier_shown[0] = False
+                    target_point = (event.x_root, event.y_root)
+                    offset_x = target_point[0] - reference_point[0][0]
+                    offset_y = target_point[1] - reference_point[0][1]
+                    self.var.set(f"{offset_x}, {offset_y}")
+                    self.on_change(self.key, [offset_x, offset_y])
+                    select_window.destroy()
+                    self.app.deiconify()
+            
+            def on_escape(e):
+                magnifier.hide()
+                magnifier_shown[0] = False
+                select_window.destroy()
+                self.app.deiconify()
+            
+            select_window.bind("<Motion>", on_mouse_move)
+            select_window.bind("<Button-1>", on_click)
+            select_window.bind("<Escape>", on_escape)
+            select_window.focus_set()
+            
+        except ImportError:
+            self.app.deiconify()
+            messagebox.showerror("错误", "screeninfo库未安装，无法支持偏移测量。\n请运行 'pip install screeninfo' 安装该库。")
+        except Exception as e:
+            self.app.deiconify()
+            messagebox.showerror("错误", f"偏移测量失败: {str(e)}")
+    
+    def set_value(self, value: Any):
+        if value is not None:
+            if isinstance(value, (list, tuple)) and len(value) >= 2:
+                self.var.set(f"{value[0]}, {value[1]}")
+            else:
+                self.var.set("0, 0")
+        else:
+            self.var.set("0, 0")
+    
+    def get_value(self) -> Any:
+        try:
+            parts = self.var.get().replace(" ", "").split(",")
+            if len(parts) >= 2:
+                return [int(parts[0]), int(parts[1])]
+            return [0, 0]
+        except (ValueError, AttributeError):
+            return [0, 0]
 
 
 class ColorField(FieldWidget):
@@ -1570,6 +1790,8 @@ class PropertyPanel(ctk.CTkFrame):
             field_widget = PositionField(self.content_frame, label, key, self._on_field_change, self.app)
         elif field_type == "color":
             field_widget = ColorField(self.content_frame, label, key, self._on_field_change, self.app)
+        elif field_type == "offset":
+            field_widget = OffsetField(self.content_frame, label, key, self._on_field_change, self.app)
         
         if field_widget:
             field_widget.set_value(value)

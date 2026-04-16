@@ -64,7 +64,7 @@ class ImageConditionNode(ConditionNode):
             if found and position:
                 if self.region:
                     position = (position[0] + self.region[0], position[1] + self.region[1])
-                context.blackboard.set(self.position_key, position)
+                self._save_position(context, position)
                 LogManager.instance().log_success(
                     node_type="图像检测节点",
                     node_name=self.name
@@ -90,6 +90,7 @@ class ImageConditionNode(ConditionNode):
         data["config"]["template_path"] = self.template_path
         data["config"]["region"] = list(self.region) if self.region else None
         data["config"]["threshold"] = self.threshold
+        data["config"]["offset"] = list(self.offset)
         return data
 
     @classmethod

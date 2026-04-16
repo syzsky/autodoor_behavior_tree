@@ -3,6 +3,7 @@ from bt_core.config import NodeConfig
 from typing import Dict, Any, Tuple, Optional
 import time
 from bt_utils.log_manager import LogManager
+from bt_utils.helpers import get_random_duration, get_random_interval
 
 
 def _get_default_position_key() -> str:
@@ -26,6 +27,8 @@ class MouseClickNode(ActionNode):
         self.position_key = self.config.get("position_key", _get_default_position_key())
         self.click_count = self.config.get_int("click_count", 1)
         self.click_interval = self.config.get_int("click_interval", 100)
+        self.duration_random = self.config.get_int("duration_random", 0)
+        self.click_interval_random = self.config.get_int("click_interval_random", 0)
         self._current_click = 0
         self._last_click_time: Optional[float] = None
         self._abort_flag = False
@@ -70,10 +73,11 @@ class MouseClickNode(ActionNode):
 
     def _non_blocking_finite_click(self, context, position: Optional[Tuple[int, int]]) -> NodeStatus:
         current_time = time.time() * 1000
+        actual_interval = get_random_interval(self.click_interval, self.click_interval_random)
         
-        if self._last_click_time is not None and self.click_interval > 0:
+        if self._last_click_time is not None and actual_interval > 0:
             elapsed = current_time - self._last_click_time
-            if elapsed < self.click_interval:
+            if elapsed < actual_interval:
                 return NodeStatus.RUNNING
         
         if self._current_click < self.click_count:
@@ -81,7 +85,8 @@ class MouseClickNode(ActionNode):
                 self._reset_click_state()
                 return NodeStatus.ABORTED
             
-            context.execute_mouse_click(self.button, position, self.action, self.duration)
+            actual_duration = get_random_duration(self.duration, self.duration_random)
+            context.execute_mouse_click(self.button, position, self.action, actual_duration)
             self._current_click += 1
             self._last_click_time = time.time() * 1000
             
@@ -97,10 +102,11 @@ class MouseClickNode(ActionNode):
 
     def _non_blocking_infinite_click(self, context, position: Optional[Tuple[int, int]]) -> NodeStatus:
         current_time = time.time() * 1000
+        actual_interval = get_random_interval(self.click_interval, self.click_interval_random)
         
-        if self._last_click_time is not None and self.click_interval > 0:
+        if self._last_click_time is not None and actual_interval > 0:
             elapsed = current_time - self._last_click_time
-            if elapsed < self.click_interval:
+            if elapsed < actual_interval:
                 return NodeStatus.RUNNING
         
         if self._abort_flag or not context.check_running():
@@ -111,7 +117,8 @@ class MouseClickNode(ActionNode):
             )
             return NodeStatus.ABORTED
         
-        context.execute_mouse_click(self.button, position, self.action, self.duration)
+        actual_duration = get_random_duration(self.duration, self.duration_random)
+        context.execute_mouse_click(self.button, position, self.action, actual_duration)
         self._current_click += 1
         self._last_click_time = time.time() * 1000
         
@@ -142,6 +149,8 @@ class MouseClickNode(ActionNode):
         data["config"]["position_key"] = self.position_key
         data["config"]["click_count"] = self.click_count
         data["config"]["click_interval"] = self.click_interval
+        data["config"]["duration_random"] = self.duration_random
+        data["config"]["click_interval_random"] = self.click_interval_random
         return data
 
     @classmethod
@@ -156,6 +165,8 @@ class MouseClickNode(ActionNode):
         node.position_key = config.get("position_key", "last_detection_position")
         node.click_count = config.get_int("click_count", 1)
         node.click_interval = config.get_int("click_interval", 100)
+        node.duration_random = config.get_int("duration_random", 0)
+        node.click_interval_random = config.get_int("click_interval_random", 0)
         return node
 
 
@@ -175,6 +186,7 @@ class MouseMoveNode(ActionNode):
         self.use_blackboard_end = self.config.get_bool("use_blackboard_end", False)
         self.position_key_end = self.config.get("position_key_end", "")
         self.drag_duration = self.config.get_int("drag_duration", 0)
+        self.drag_duration_random = self.config.get_int("drag_duration_random", 0)
 
     def _execute_action(self, context) -> NodeStatus:
         try:
@@ -240,8 +252,9 @@ class MouseMoveNode(ActionNode):
         context.execute_mouse_click(self.drag_button, start_pos, "down", 0)
         time.sleep(0.05)
         
-        if self.drag_duration > 0:
-            steps = max(10, self.drag_duration // 50)
+        actual_drag_duration = get_random_duration(self.drag_duration, self.drag_duration_random)
+        if actual_drag_duration > 0:
+            steps = max(10, actual_drag_duration // 50)
             dx = (drag_end_position[0] - start_pos[0]) / steps
             dy = (drag_end_position[1] - start_pos[1]) / steps
             
@@ -253,7 +266,7 @@ class MouseMoveNode(ActionNode):
                 current_x = int(start_pos[0] + dx * (i + 1))
                 current_y = int(start_pos[1] + dy * (i + 1))
                 context.execute_mouse_move((current_x, current_y), relative=False)
-                time.sleep(self.drag_duration / 1000.0 / steps)
+                time.sleep(actual_drag_duration / 1000.0 / steps)
         else:
             steps = 20
             dx = (drag_end_position[0] - start_pos[0]) / steps
@@ -291,6 +304,7 @@ class MouseMoveNode(ActionNode):
         data["config"]["use_blackboard_end"] = self.use_blackboard_end
         data["config"]["position_key_end"] = self.position_key_end
         data["config"]["drag_duration"] = self.drag_duration
+        data["config"]["drag_duration_random"] = self.drag_duration_random
         return data
 
     @classmethod
@@ -308,4 +322,5 @@ class MouseMoveNode(ActionNode):
         node.use_blackboard_end = config.get_bool("use_blackboard_end", False)
         node.position_key_end = config.get("position_key_end", "")
         node.drag_duration = config.get_int("drag_duration", 0)
+        node.drag_duration_random = config.get_int("drag_duration_random", 0)
         return node

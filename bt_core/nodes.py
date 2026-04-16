@@ -4,6 +4,7 @@ import uuid
 
 from .status import NodeStatus
 from .config import NodeConfig
+from bt_utils.helpers import get_random_interval
 
 if TYPE_CHECKING:
     from .context import ExecutionContext
@@ -91,9 +92,12 @@ class Node(ABC):
                 self._repeat_count += 1
                 
                 repeat_interval_ms = self.config.repeat_interval_ms
-                if repeat_interval_ms > 0:
+                repeat_interval_ms_random = self.config.get("repeat_interval_ms_random", 0)
+                if repeat_interval_ms > 0 or repeat_interval_ms_random > 0:
                     import time
-                    time.sleep(repeat_interval_ms / 1000)
+                    actual_interval = get_random_interval(repeat_interval_ms, repeat_interval_ms_random)
+                    if actual_interval > 0:
+                        time.sleep(actual_interval / 1000)
                 
                 self._reset_for_repeat()
                 return NodeStatus.RUNNING
@@ -238,7 +242,8 @@ class SequenceNode(CompositeNode):
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
         self.continue_on_failure = self.config.get_bool("continue_on_failure", False)
-        self.child_interval = self.config.get_int("child_interval", 0)
+        self.child_interval = self.config.get_int("childinterval", 0)
+        self.child_interval_random = self.config.get_int("childinterval_random", 0)
         self._last_child_finish_time: Optional[float] = None
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
@@ -261,7 +266,8 @@ class SequenceNode(CompositeNode):
 
             if self.child_interval > 0 and self._last_child_finish_time is not None:
                 current_time = context.elapsed_time * 1000
-                if current_time - self._last_child_finish_time < self.child_interval:
+                actual_interval = get_random_interval(self.child_interval, self.child_interval_random)
+                if current_time - self._last_child_finish_time < actual_interval:
                     return NodeStatus.RUNNING
 
             status = child.tick(context)
@@ -313,7 +319,8 @@ class SelectorNode(CompositeNode):
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        self.child_interval = self.config.get_int("child_interval", 0)
+        self.child_interval = self.config.get_int("childinterval", 0)
+        self.child_interval_random = self.config.get_int("childinterval_random", 0)
         self._last_child_time = 0
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
@@ -339,7 +346,8 @@ class SelectorNode(CompositeNode):
 
             if self.child_interval > 0:
                 current_time = context.elapsed_time * 1000
-                if current_time - self._last_child_time < self.child_interval:
+                actual_interval = get_random_interval(self.child_interval, self.child_interval_random)
+                if current_time - self._last_child_time < actual_interval:
                     return NodeStatus.RUNNING
                 self._last_child_time = current_time
 
@@ -515,6 +523,20 @@ class ConditionNode(Node):
             default_position_key = "last_detection_position"
         
         self.position_key = self.config.get("position_key", default_position_key)
+        
+        # 坐标偏移参数 (向后兼容：支持旧的 offset_x/offset_y 格式)
+        offset = self.config.get("offset", None)
+        if offset is not None:
+            if isinstance(offset, (list, tuple)) and len(offset) >= 2:
+                self.offset = (int(offset[0]), int(offset[1]))
+            else:
+                self.offset = (0, 0)
+        else:
+            # 向后兼容：从旧的 offset_x/offset_y 读取
+            offset_x = self.config.get_int("offset_x", 0)
+            offset_y = self.config.get_int("offset_y", 0)
+            self.offset = (offset_x, offset_y)
+        
         self._last_check_time = -self.check_interval_ms - 1
         self._child_index = 0
         self._children_running = False
@@ -573,6 +595,31 @@ class ConditionNode(Node):
             except (ValueError, AttributeError):
                 pass
         return (255, 0, 0)
+
+    def _apply_offset(self, position: tuple) -> tuple:
+        """应用坐标偏移
+        
+        Args:
+            position: 原始位置 (x, y)
+            
+        Returns:
+            tuple: 偏移后的位置
+        """
+        if position is None:
+            return None
+        
+        return (position[0] + self.offset[0], position[1] + self.offset[1])
+    
+    def _save_position(self, context, position: tuple):
+        """保存位置到黑板（应用偏移）
+        
+        Args:
+            context: 执行上下文
+            position: 原始位置
+        """
+        if position and self.save_position:
+            final_position = self._apply_offset(position)
+            context.blackboard.set(self.position_key, final_position)
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         return self._execute_with_decorators(context, self._tick_internal)

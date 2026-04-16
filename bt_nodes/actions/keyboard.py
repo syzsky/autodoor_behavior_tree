@@ -2,6 +2,7 @@ from bt_core.nodes import ActionNode, NodeStatus
 from bt_core.config import NodeConfig
 from typing import Dict, Any
 from bt_utils.log_manager import LogManager
+from bt_utils.helpers import get_random_duration
 
 
 class KeyPressNode(ActionNode):
@@ -12,6 +13,7 @@ class KeyPressNode(ActionNode):
         self.key = self.config.get("key", "space")
         self.action = self.config.get("action", "press")
         self.duration = self.config.get_int("duration", 0)
+        self.duration_random = self.config.get_int("duration_random", 0)
 
     def _execute_action(self, context) -> NodeStatus:
         try:
@@ -23,7 +25,8 @@ class KeyPressNode(ActionNode):
                 )
                 return NodeStatus.FAILURE
             
-            context.execute_key_press(self.key, self.action, self.duration)
+            actual_duration = get_random_duration(self.duration, self.duration_random)
+            context.execute_key_press(self.key, self.action, actual_duration)
             
             LogManager.instance().log_success(
                 node_type="按键节点",
@@ -43,6 +46,7 @@ class KeyPressNode(ActionNode):
         data["config"]["key"] = self.key
         data["config"]["action"] = self.action
         data["config"]["duration"] = self.duration
+        data["config"]["duration_random"] = self.duration_random
         return data
 
     @classmethod
@@ -52,4 +56,5 @@ class KeyPressNode(ActionNode):
         node.key = config.get("key", "space")
         node.action = config.get("action", "press")
         node.duration = config.get_int("duration", 0)
+        node.duration_random = config.get_int("duration_random", 0)
         return node

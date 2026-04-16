@@ -16,7 +16,7 @@ class OCRConditionNode(ConditionNode):
         self.keywords = self.config.get("keywords", "")
         self.language = self.config.get("language", "eng")
         preprocess_display = self.config.get("preprocess_mode", "默认")
-        self.preprocess_mode = "game" if preprocess_display == "游戏" else "normal"
+        self.preprocess_mode = "game" if preprocess_display == "复杂色彩" else "normal"
 
         self.position_key = self.config.get("position_key", "last_detection_position")
 
@@ -30,7 +30,7 @@ class OCRConditionNode(ConditionNode):
             )
 
             if found:
-                context.blackboard.set(self.position_key, position)
+                self._save_position(context, position)
                 LogManager.instance().log_success(
                     node_type="OCR检测节点",
                     node_name=self.name
@@ -59,7 +59,8 @@ class OCRConditionNode(ConditionNode):
         data["config"]["region"] = list(self.region) if self.region else None
         data["config"]["keywords"] = self.keywords
         data["config"]["language"] = self.language
-        data["config"]["preprocess_mode"] = "游戏" if self.preprocess_mode == "game" else "默认"
+        data["config"]["preprocess_mode"] = "复杂色彩" if self.preprocess_mode == "game" else "默认"
         data["config"]["position_key"] = self.position_key
+        data["config"]["offset"] = list(self.offset)
         return data
 

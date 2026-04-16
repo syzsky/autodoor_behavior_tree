@@ -28,7 +28,7 @@ class ColorConditionNode(ConditionNode):
             if found and position and match_count >= self.min_pixels:
                 if self.region:
                     position = (position[0] + self.region[0], position[1] + self.region[1])
-                context.blackboard.set(self.position_key, position)
+                self._save_position(context, position)
                 LogManager.instance().log_success(
                     node_type="颜色检测节点",
                     node_name=self.name,
@@ -59,6 +59,7 @@ class ColorConditionNode(ConditionNode):
         data["config"]["region"] = list(self.region) if self.region else None
         data["config"]["tolerance"] = self.tolerance
         data["config"]["min_pixels"] = self.min_pixels
+        data["config"]["offset"] = list(self.offset)
         return data
 
     @classmethod

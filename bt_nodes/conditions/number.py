@@ -69,7 +69,7 @@ class NumberConditionNode(ConditionNode):
                     abs_position = position
                     if self.region:
                         abs_position = (position[0] + self.region[0], position[1] + self.region[1])
-                    context.blackboard.set(self.position_key, abs_position)
+                    self._save_position(context, abs_position)
                 
                 operator_func = self.OPERATORS.get(self.compare_mode)
                 if operator_func:
@@ -117,6 +117,7 @@ class NumberConditionNode(ConditionNode):
         data["config"]["save_value"] = self.save_value
         data["config"]["value_key"] = self.value_key
         data["config"]["position_key"] = self.position_key
+        data["config"]["offset"] = list(self.offset)
         return data
 
     @classmethod
