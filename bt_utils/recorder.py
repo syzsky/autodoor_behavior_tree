@@ -16,7 +16,6 @@ class ScriptRecorder:
         self.start_time: float = 0
         self.last_event_time: float = 0
         self.pressed_keys = set()
-        self.last_mouse_position: Optional[tuple] = None
 
         self.keyboard_listener: Optional[keyboard.Listener] = None
         self.mouse_listener: Optional[mouse.Listener] = None
@@ -96,7 +95,7 @@ class ScriptRecorder:
             self.pressed_keys.remove(key_name)
 
     def _on_mouse_move(self, x, y):
-        self.last_mouse_position = (x, y)
+        pass
 
     def _on_mouse_click(self, x, y, button, pressed):
         if not self.is_recording:
@@ -104,12 +103,11 @@ class ScriptRecorder:
 
         self._add_delay()
 
-        if self.last_mouse_position:
-            self.events.append({
-                "type": "moveto",
-                "x": self.last_mouse_position[0],
-                "y": self.last_mouse_position[1]
-            })
+        self.events.append({
+            "type": "moveto",
+            "x": x,
+            "y": y
+        })
 
         self.events.append({
             "type": f"mouse_{'down' if pressed else 'up'}",

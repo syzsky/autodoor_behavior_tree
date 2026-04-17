@@ -109,7 +109,6 @@ class ScriptTab(ctk.CTkFrame):
         self._recording_start_time = None
         self._last_event_time = None
         self._pressed_keys = set()
-        self._last_mouse_position = None
         self._keyboard_listener = None
         self._mouse_listener = None
     
@@ -580,7 +579,6 @@ class ScriptTab(ctk.CTkFrame):
         self._recording_start_time = time.time()
         self._last_event_time = self._recording_start_time
         self._pressed_keys = set()
-        self._last_mouse_position = None
         
         self._play_start_sound()
         
@@ -687,7 +685,7 @@ class ScriptTab(ctk.CTkFrame):
         return settings.get("shortcuts.record", "f11")
     
     def _on_mouse_move(self, x, y):
-        self._last_mouse_position = (x, y)
+        pass
     
     def _on_mouse_click(self, x, y, button, pressed):
         if not self._is_recording:
@@ -695,12 +693,11 @@ class ScriptTab(ctk.CTkFrame):
         
         self._add_delay()
         
-        if self._last_mouse_position:
-            self._recording_events.append({
-                "type": "moveto",
-                "x": self._last_mouse_position[0],
-                "y": self._last_mouse_position[1]
-            })
+        self._recording_events.append({
+            "type": "moveto",
+            "x": x,
+            "y": y
+        })
         
         self._recording_events.append({
             "type": f"mouse_{'down' if pressed else 'up'}",

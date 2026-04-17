@@ -33,9 +33,12 @@ class MouseClickNode(ActionNode):
         self._last_click_time: Optional[float] = None
         self._abort_flag = False
         self._click_started = False
+        self._button_pressed = False
+        self._context = None
 
     def _execute_action(self, context) -> NodeStatus:
         try:
+            self._context = context
             click_position = self._get_position(context)
             
             if not self._click_started:
@@ -44,7 +47,7 @@ class MouseClickNode(ActionNode):
                 self._last_click_time = None
             
             if self._abort_flag or not context.check_running():
-                self._reset_click_state()
+                self._release_button()
                 LogManager.instance().log_aborted(
                     node_type="鼠标点击节点",
                     node_name=self.name
@@ -82,11 +85,15 @@ class MouseClickNode(ActionNode):
         
         if self._current_click < self.click_count:
             if self._abort_flag or not context.check_running():
-                self._reset_click_state()
+                self._release_button()
                 return NodeStatus.ABORTED
             
             actual_duration = get_random_duration(self.duration, self.duration_random)
             context.execute_mouse_click(self.button, position, self.action, actual_duration)
+            
+            if self.action == "down":
+                self._button_pressed = True
+            
             self._current_click += 1
             self._last_click_time = time.time() * 1000
             
@@ -110,7 +117,7 @@ class MouseClickNode(ActionNode):
                 return NodeStatus.RUNNING
         
         if self._abort_flag or not context.check_running():
-            self._reset_click_state()
+            self._release_button()
             LogManager.instance().log_aborted(
                 node_type="鼠标点击节点",
                 node_name=self.name
@@ -119,24 +126,42 @@ class MouseClickNode(ActionNode):
         
         actual_duration = get_random_duration(self.duration, self.duration_random)
         context.execute_mouse_click(self.button, position, self.action, actual_duration)
+        
+        if self.action == "down":
+            self._button_pressed = True
+        
         self._current_click += 1
         self._last_click_time = time.time() * 1000
         
         return NodeStatus.RUNNING
 
+    def _release_button(self) -> None:
+        """释放鼠标按钮"""
+        if self._button_pressed and self._context:
+            try:
+                self._context.execute_mouse_click(self.button, None, "up", 0)
+            except Exception:
+                pass
+        self._reset_click_state()
+
     def _reset_click_state(self) -> None:
+        """重置点击状态（不释放按钮）"""
         self._current_click = 0
         self._last_click_time = None
         self._abort_flag = False
         self._click_started = False
+        self._button_pressed = False
 
     def abort(self, context) -> None:
+        """中止节点执行"""
         self._abort_flag = True
-        self._reset_click_state()
+        self._release_button()
         super().abort(context)
 
     def reset(self, reset_counters: bool = True) -> None:
-        self._reset_click_state()
+        """重置节点状态"""
+        self._release_button()
+        self._context = None
         super().reset(reset_counters=reset_counters)
 
     def to_dict(self) -> Dict[str, Any]:

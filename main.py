@@ -3,7 +3,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-VERSION = "1.2.0beta"
+VERSION = "1.2.1a"
 
 from bt_utils.version_checker import BetaExpirationChecker
 

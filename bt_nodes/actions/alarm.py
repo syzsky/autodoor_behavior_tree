@@ -1,6 +1,7 @@
 from bt_core.nodes import ActionNode, NodeStatus
 from bt_core.config import NodeConfig
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import time
 from bt_utils.log_manager import LogManager
 
 
@@ -19,6 +20,10 @@ class AlarmNode(ActionNode):
         self.sound_path = self.config.get("sound_path", default_sound)
         self.volume = self.config.get_int("volume", default_volume)
         self.wait_complete = self.config.get_bool("wait_complete", True)
+        
+        self._sound_started = False
+        self._sound_start_time: Optional[float] = None
+        self._sound_duration: Optional[float] = None
         self._abort_flag = False
         
         if "sound_path" not in self.config.extra:
@@ -29,11 +34,72 @@ class AlarmNode(ActionNode):
 
     def _execute_action(self, context) -> NodeStatus:
         try:
-            from bt_utils.alarm import AlarmPlayer
-            player = AlarmPlayer()
-
-            resolved_sound_path = context.resolve_path(self.sound_path)
-            player.play(resolved_sound_path, self.volume, self.wait_complete)
+            if self._abort_flag or not context.check_running():
+                self._stop_sound()
+                LogManager.instance().log_aborted(
+                    node_type="报警节点",
+                    node_name=self.name
+                )
+                return NodeStatus.ABORTED
+            
+            if not self._sound_started:
+                resolved_sound_path = context.resolve_path(self.sound_path)
+                
+                if not resolved_sound_path:
+                    LogManager.instance().log_failure(
+                        node_type="报警节点",
+                        node_name=self.name,
+                        reason="无法解析音频文件路径"
+                    )
+                    return NodeStatus.FAILURE
+                
+                from bt_utils.alarm import AlarmPlayer
+                import pygame
+                
+                player = AlarmPlayer()
+                player._init_pygame()
+                
+                if not player._pygame_initialized:
+                    LogManager.instance().log_failure(
+                        node_type="报警节点",
+                        node_name=self.name,
+                        reason="无法初始化音频系统"
+                    )
+                    return NodeStatus.FAILURE
+                
+                try:
+                    sound = pygame.mixer.Sound(resolved_sound_path)
+                    sound.set_volume(self.volume / 100)
+                    sound.play()
+                    
+                    self._sound_started = True
+                    self._sound_start_time = time.time()
+                    self._sound_duration = sound.get_length()
+                    
+                    LogManager.instance().log_info(
+                        node_type="报警节点",
+                        node_name=self.name,
+                        message=f"开始播放音频"
+                    )
+                except Exception as e:
+                    LogManager.instance().log_failure(
+                        node_type="报警节点",
+                        node_name=self.name,
+                        reason=f"音频播放失败: {str(e)}"
+                    )
+                    return NodeStatus.FAILURE
+            
+            if self.wait_complete:
+                if self._sound_start_time is None or self._sound_duration is None:
+                    self._stop_sound()
+                    return NodeStatus.FAILURE
+                
+                elapsed = time.time() - self._sound_start_time
+                
+                if elapsed < self._sound_duration:
+                    return NodeStatus.RUNNING
+            
+            self._stop_sound()
             
             LogManager.instance().log_success(
                 node_type="报警节点",
@@ -50,15 +116,30 @@ class AlarmNode(ActionNode):
             )
             return NodeStatus.FAILURE
 
+    def _stop_sound(self) -> None:
+        """停止音频播放并重置状态"""
+        if self._sound_started:
+            try:
+                from bt_utils.alarm import AlarmPlayer
+                AlarmPlayer().stop()
+            except Exception:
+                pass
+        
+        self._sound_started = False
+        self._sound_start_time = None
+        self._sound_duration = None
+        self._abort_flag = False
+
     def abort(self, context) -> None:
+        """中止节点执行"""
         self._abort_flag = True
-        from bt_utils.alarm import AlarmPlayer
-        AlarmPlayer().stop()
+        self._stop_sound()
         super().abort(context)
 
     def reset(self, reset_counters: bool = True) -> None:
+        """重置节点状态"""
+        self._stop_sound()
         super().reset(reset_counters=reset_counters)
-        self._abort_flag = False
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
