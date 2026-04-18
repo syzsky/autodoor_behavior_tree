@@ -1,7 +1,6 @@
 {
     "version": "1.2.2a",
     "expire_date": "2026-05-21",
-    // "expire_date": "2099-12-31",
     "force_update": false,
     "build_type": "beta",
     

@@ -4,19 +4,20 @@ block_cipher = None
 
 import os
 import sys
-import re
+import json
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 project_root = os.path.abspath('.')
 
 def get_version():
-    """从 main.py 读取版本号"""
-    version_file = os.path.join(project_root, 'main.py')
-    with open(version_file, 'r', encoding='utf-8') as f:
-        content = f.read()
-        match = re.search(r'VERSION\s*=\s*["\']V?([0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9]*)["\']', content)
-        if match:
-            return match.group(1)
-    return "0.0.0"
+    """从 build_config.json 读取版本号"""
+    config_file = os.path.join(project_root, 'build_config.json')
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            version = config.get('version', '0.0.0')
+            return version
+    except Exception:
+        return "0.0.0"
 
 VERSION = get_version()
 
