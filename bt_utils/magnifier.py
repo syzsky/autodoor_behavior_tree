@@ -33,6 +33,51 @@ class MagnifierWindow:
         self.last_screenshot: Optional[Image.Image] = None
         self.photo = None
         
+        self._virtual_screen_bounds = None
+    
+    def _get_virtual_screen_bounds(self) -> Tuple[int, int, int, int]:
+        """
+        获取虚拟桌面边界（支持多显示器）
+        
+        Returns:
+            Tuple[int, int, int, int]: (min_x, min_y, max_x, max_y)
+        """
+        if self._virtual_screen_bounds is not None:
+            return self._virtual_screen_bounds
+        
+        try:
+            import screeninfo
+            monitors = screeninfo.get_monitors()
+            if monitors:
+                min_x = min(monitor.x for monitor in monitors)
+                min_y = min(monitor.y for monitor in monitors)
+                max_x = max(monitor.x + monitor.width for monitor in monitors)
+                max_y = max(monitor.y + monitor.height for monitor in monitors)
+                self._virtual_screen_bounds = (min_x, min_y, max_x, max_y)
+                return self._virtual_screen_bounds
+        except ImportError:
+            pass
+        
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            virtual_left = user32.GetSystemMetrics(76)
+            virtual_top = user32.GetSystemMetrics(77)
+            virtual_width = user32.GetSystemMetrics(78)
+            virtual_height = user32.GetSystemMetrics(79)
+            if virtual_width > 0 and virtual_height > 0:
+                self._virtual_screen_bounds = (virtual_left, virtual_top, 
+                                               virtual_left + virtual_width, 
+                                               virtual_top + virtual_height)
+                return self._virtual_screen_bounds
+        except Exception:
+            pass
+        
+        screen_width = self.window.winfo_screenwidth() if self.window else 1920
+        screen_height = self.window.winfo_screenheight() if self.window else 1080
+        self._virtual_screen_bounds = (0, 0, screen_width, screen_height)
+        return self._virtual_screen_bounds
+        
     def show(self, x: int, y: int):
         """
         在指定位置显示放大镜
@@ -84,22 +129,28 @@ class MagnifierWindow:
         更新放大镜显示内容
         
         Args:
-            x: 鼠标X坐标
-            y: 鼠标Y坐标
+            x: 鼠标X坐标（虚拟桌面坐标）
+            y: 鼠标Y坐标（虚拟桌面坐标）
         """
         if self.window is None or self.canvas is None:
             return
         
+        min_x, min_y, max_x, max_y = self._get_virtual_screen_bounds()
+        virtual_width = max_x - min_x
+        virtual_height = max_y - min_y
+        
         window_x = x + 20
         window_y = y + 20
         
-        screen_width = self.window.winfo_screenwidth()
-        screen_height = self.window.winfo_screenheight()
-        
-        if window_x + self.size > screen_width:
+        if window_x + self.size > max_x:
             window_x = x - self.size - 20
-        if window_y + self.size > screen_height:
+        if window_y + self.size > max_y:
             window_y = y - self.size - 20
+        
+        if window_x < min_x:
+            window_x = min_x + 5
+        if window_y < min_y:
+            window_y = min_y + 5
         
         self.window.geometry(f"+{window_x}+{window_y}")
         
@@ -111,7 +162,11 @@ class MagnifierWindow:
         right = x + half_capture
         bottom = y + half_capture
         
-        screenshot = ImageGrab.grab(bbox=(left, top, right, bottom))
+        try:
+            screenshot = ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)
+        except TypeError:
+            screenshot = ImageGrab.grab(bbox=(left, top, right, bottom))
+        
         self.last_screenshot = screenshot
         
         enlarged = screenshot.resize(

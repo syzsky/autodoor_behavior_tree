@@ -37,7 +37,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "region", "label": "检测区域", "type": "region"},
         {"key": "preprocess_mode", "label": "预处理模式", "type": "select", "options": ["普通文本", "艺术字"], "default": "普通文本"},
         {"key": "extract_mode", "label": "提取模式", "type": "select", "options": ["无规则", "x/y", "自定义"], "default": "无规则"},
-        {"key": "extract_pattern", "label": "自定义模式", "type": "text"},
+        {"key": "extract_pattern", "label": "自定义模式", "type": "text", "hide_if": {"field": "extract_mode", "value": ["无规则", "x/y"]}},
         {"key": "compare_mode", "label": "比较模式", "type": "select", "options": ["<", "<=", ">", ">=", "==", "!="], "default": "=="},
         {"key": "threshold", "label": "比较值", "type": "number", "default": 0},
         {"key": "min_confidence", "label": "置信度阈值(%)", "type": "number", "min": 0, "max": 100, "default": 50},
@@ -48,19 +48,19 @@ NODE_CONFIG_SCHEMAS = {
     "VariableConditionNode": [
         {"key": "variable_name", "label": "变量名", "type": "text"},
         {"key": "operator", "label": "运算符", "type": "select", "options": ["==", "!=", ">", "<", ">=", "<=", "exists", "not_exists", "contains", "not_contains"], "default": "=="},
-        {"key": "compare_value", "label": "比较值", "type": "text"},
+        {"key": "compare_value", "label": "比较值", "type": "text", "hide_if": {"field": "operator", "value": ["exists", "not_exists"]}},
     ],
     "KeyPressNode": [
         {"key": "key", "label": "按键", "type": "key"},
         {"key": "action", "label": "动作", "type": "select", "options": ["press", "down", "up"], "default": "press"},
-        {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 0},
-        {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 0, "hide_if": {"field": "action", "value": ["down", "up"]}},
+        {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0, "hide_if": {"field": "action", "value": ["down", "up"]}},
     ],
     "MouseClickNode": [
         {"key": "button", "label": "按钮", "type": "select", "options": ["left", "right", "middle"], "default": "left"},
         {"key": "action", "label": "动作", "type": "select", "options": ["press", "down", "up"], "default": "press"},
-        {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 100},
-        {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 100, "hide_if": {"field": "action", "value": ["down", "up"]}},
+        {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0, "hide_if": {"field": "action", "value": ["down", "up"]}},
         {"key": "position", "label": "位置", "type": "position"},
         {"key": "use_blackboard", "label": "点击最近检测点", "type": "bool", "default": False},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
@@ -491,6 +491,7 @@ class RegionField(FieldWidget):
             canvas.bind("<ButtonRelease-1>", on_mouse_up)
             select_window.bind("<Escape>", on_escape)
             select_window.focus_set()
+            select_window.grab_set()
             
         except ImportError:
             self.app.deiconify()
@@ -892,6 +893,7 @@ class ScreenshotField(FieldWidget):
             canvas.bind("<ButtonRelease-1>", on_mouse_up)
             select_window.bind("<Escape>", on_escape)
             select_window.focus_set()
+            select_window.grab_set()
             
         except ImportError:
             self.app.deiconify()
@@ -993,6 +995,7 @@ class ScreenshotField(FieldWidget):
 class KeyField(FieldWidget):
     def __init__(self, master, label: str, key: str, on_change: Callable, **kwargs):
         self._listening = False
+        self._bound_keys = []
         super().__init__(master, label, key, on_change, **kwargs)
         self._create_widget()
     
@@ -1028,12 +1031,32 @@ class KeyField(FieldWidget):
         )
         self.btn.pack(side="right")
     
+    def _unbind_all_keys(self):
+        toplevel = self.winfo_toplevel()
+        for key in self._bound_keys:
+            try:
+                toplevel.unbind(key)
+            except Exception:
+                pass
+        self._bound_keys = []
+    
+    def _cancel_listening(self):
+        self._listening = False
+        self._unbind_all_keys()
+        try:
+            if self.winfo_exists():
+                self.btn.configure(text="修改", fg_color=self._dark_colors['primary'])
+        except Exception:
+            pass
+    
     def _start_listening(self):
         if self._listening:
+            self._cancel_listening()
             return
         
         self._listening = True
-        self.btn.configure(text="请按键...", fg_color=self._dark_colors['warning'])
+        self._bound_keys = []
+        self.btn.configure(text="取消", fg_color=self._dark_colors['warning'])
         
         def on_key_press(event):
             try:
@@ -1069,32 +1092,42 @@ class KeyField(FieldWidget):
                 if self.winfo_exists():
                     self.btn.configure(text="修改", fg_color=self._dark_colors['primary'])
                 
-                toplevel = self.winfo_toplevel()
-                toplevel.unbind("<KeyPress>")
+                self._unbind_all_keys()
+                
+                return "break"
+            except Exception:
+                pass
+        
+        def on_special_key(event, mapped_name):
+            try:
+                if not self._listening:
+                    return
+                
+                self.var.set(mapped_name)
+                self.on_change(self.key, mapped_name)
+                
+                self._listening = False
+                if self.winfo_exists():
+                    self.btn.configure(text="修改", fg_color=self._dark_colors['primary'])
+                
+                self._unbind_all_keys()
                 
                 return "break"
             except Exception:
                 pass
         
         toplevel = self.winfo_toplevel()
+        
         toplevel.bind("<KeyPress>", on_key_press)
-        self._key_press_binding = on_key_press
+        self._bound_keys.append("<KeyPress>")
         
-        def reset_listening():
-            if self._listening:
-                self._listening = False
-                try:
-                    if self.winfo_exists():
-                        self.btn.configure(text="修改", fg_color=self._dark_colors['primary'])
-                except Exception:
-                    pass
-                try:
-                    toplevel = self.winfo_toplevel()
-                    toplevel.unbind("<KeyPress>")
-                except Exception:
-                    pass
+        toplevel.bind("<Delete>", lambda e: on_special_key(e, "delete"))
+        self._bound_keys.append("<Delete>")
         
-        self.after(10000, reset_listening)
+        toplevel.bind("<BackSpace>", lambda e: on_special_key(e, "backspace"))
+        self._bound_keys.append("<BackSpace>")
+        
+        self.after(10000, self._cancel_listening)
     
     def set_value(self, value: Any):
         self.var.set(str(value or ""))
@@ -1212,6 +1245,7 @@ class PositionField(FieldWidget):
             select_window.bind("<Button-1>", on_click)
             select_window.bind("<Escape>", on_escape)
             select_window.focus_set()
+            select_window.grab_set()
             
         except ImportError:
             self.app.deiconify()
@@ -1351,6 +1385,7 @@ class OffsetField(FieldWidget):
             select_window.bind("<Button-1>", on_click)
             select_window.bind("<Escape>", on_escape)
             select_window.focus_set()
+            select_window.grab_set()
             
         except ImportError:
             self.app.deiconify()
@@ -1840,7 +1875,11 @@ class PropertyPanel(ctk.CTkFrame):
             return
         
         current_value = depend_widget.get_value()
-        should_hide = (current_value == hide_value)
+        
+        if isinstance(hide_value, list):
+            should_hide = current_value in hide_value
+        else:
+            should_hide = (current_value == hide_value)
         
         widget = self.widgets.get(key)
         container = self.field_containers.get(key)

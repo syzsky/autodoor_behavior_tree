@@ -553,6 +553,7 @@ class ScriptTab(ctk.CTkFrame):
         self.coordinate_window.bind("<Escape>", lambda e: self.coordinate_window.destroy())
         
         self.coordinate_window.focus_set()
+        self.coordinate_window.grab_set()
     
     def _on_coordinate_select(self, event):
         abs_x = event.x_root

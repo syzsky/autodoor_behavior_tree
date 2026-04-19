@@ -301,3 +301,4 @@ def create_color_picker(app, callback):
     canvas.bind("<Button-1>", on_click)
     selection_window.bind("<Escape>", on_escape)
     selection_window.focus_set()
+    selection_window.grab_set()
