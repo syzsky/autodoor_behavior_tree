@@ -295,9 +295,9 @@ class BehaviorTreeApp(ctk.CTk):
         ]
         
         for key, callback in shortcuts:
-            self.bind(key, lambda e, cb=callback: self._handle_shortcut(e, cb))
+            self.bind(key, lambda e, cb=callback, k=key: self._handle_shortcut(e, cb, k))
     
-    def _handle_shortcut(self, event, callback):
+    def _handle_shortcut(self, event, callback, key_name):
         if callable(callback):
             callback()
         return "break"

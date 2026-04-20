@@ -1,8 +1,6 @@
 # GitHub Actions 配置文件
 # 实现 Windows 标准版和DD版的自动构建
 # 适配模块化架构 v2.3.0
-# 使用 RapidOCR 替代 Tesseract
-
 name: AutoDoor BehaviorTree Build and Release
 
 on:
@@ -275,14 +273,25 @@ jobs:
       id: read_update_content
       run: |
         if [ -f "UPDATE_CONTENT.md" ]; then
-          UPDATE_CONTENT=$(cat UPDATE_CONTENT.md)
           echo "UPDATE_CONTENT<<EOF" >> $GITHUB_OUTPUT
-          echo "$UPDATE_CONTENT" >> $GITHUB_OUTPUT
+          cat UPDATE_CONTENT.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         else
-          DEFAULT_CONTENT="AutoDoor BehaviorTree v${{ steps.get_version.outputs.VERSION }}\n\n## Version Description\n- **Normal Version**: Uses PyAutoGUI, suitable for general applications\n- **DD Version**: Uses DD Virtual Keyboard, suitable for DirectInput\n\n## OCR Engine\n- Uses RapidOCR (based on ONNX Runtime)\n- Faster and more accurate than Tesseract\n- No external dependencies required\n\n## Download Files\n- autodoor-behaviortree-${{ steps.get_version.outputs.VERSION }}-normal.zip (Normal)\n- autodoor-behaviortree-${{ steps.get_version.outputs.VERSION }}-DD.zip (DD Version)"
           echo "UPDATE_CONTENT<<EOF" >> $GITHUB_OUTPUT
-          echo "$DEFAULT_CONTENT" >> $GITHUB_OUTPUT
+          echo "AutoDoor BehaviorTree v${{ steps.get_version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "## Version Description" >> $GITHUB_OUTPUT
+          echo "- **Normal Version**: Uses PyAutoGUI, suitable for general applications" >> $GITHUB_OUTPUT
+          echo "- **DD Version**: Uses DD Virtual Keyboard, suitable for DirectInput games" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "## OCR Engine" >> $GITHUB_OUTPUT
+          echo "- Uses RapidOCR (based on ONNX Runtime)" >> $GITHUB_OUTPUT
+          echo "- Faster and more accurate than Tesseract" >> $GITHUB_OUTPUT
+          echo "- No external dependencies required" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "## Download Files" >> $GITHUB_OUTPUT
+          echo "- autodoor-behaviortree-${{ steps.get_version.outputs.VERSION }}-normal.zip (Normal)" >> $GITHUB_OUTPUT
+          echo "- autodoor-behaviortree-${{ steps.get_version.outputs.VERSION }}-DD.zip (DD Version)" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         fi
 

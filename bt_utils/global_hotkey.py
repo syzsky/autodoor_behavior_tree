@@ -1,7 +1,11 @@
 import threading
 import time
+import logging
 from typing import Callable, Dict, Optional
 from pynput import keyboard
+
+
+logger = logging.getLogger(__name__)
 
 
 class GlobalHotkeyManager:

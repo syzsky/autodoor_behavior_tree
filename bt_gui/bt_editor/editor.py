@@ -1226,7 +1226,6 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         self.engine = BehaviorTreeEngine(root_node)
         self.engine._on_status_change = self._on_engine_status_change
-        self.engine._on_node_status = self._on_node_status
         
         self.engine.start(self.context)
         self.toolbar.set_running(True)
@@ -1252,10 +1251,18 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self.engine = None
             self.context = None
         
+        was_listening = self._hotkey_manager.is_running()
+        if was_listening:
+            self._hotkey_manager.stop()
+        
         from bt_utils.input_controller_factory import InputController
         InputController.release_all()
         
+        if was_listening:
+            self._hotkey_manager.start()
+        
         self.canvas.after(100, self._clear_status_after_stop)
+        self.canvas.after(200, self._restore_canvas_focus)
         self.toolbar.set_running(False)
         self._is_running = False
     
@@ -1266,6 +1273,13 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     def _clear_status_after_stop(self):
         """延迟清除状态，确保引擎完全停止"""
         self.canvas.clear_all_node_status()
+    
+    def _restore_canvas_focus(self):
+        """恢复画布焦点"""
+        try:
+            self.canvas.canvas.focus_set()
+        except Exception:
+            pass
     
     def _init_ui_dispatcher(self):
         """初始化UI更新分发器"""

@@ -145,9 +145,17 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         self.canvas.bind("<Control-Button-1>", self._on_ctrl_click)
         self.canvas.bind("<Configure>", self._on_resize)
         self.canvas.bind("<Motion>", self._on_motion)
+        self.canvas.bind("<FocusIn>", self._on_canvas_focus_in)
+        self.canvas.bind("<FocusOut>", self._on_canvas_focus_out)
     
     def _on_resize(self, event):
         self._draw_grid()
+    
+    def _on_canvas_focus_in(self, event):
+        pass
+    
+    def _on_canvas_focus_out(self, event):
+        pass
     
     def _on_motion(self, event):
         x = (self.canvas.canvasx(event.x) - self.pan_x) / self.zoom
@@ -161,6 +169,8 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         self.canvas.config(cursor="arrow")
     
     def _on_click(self, event):
+        self.canvas.focus_set()
+        
         if self.property_panel:
             self.property_panel.force_save_current_field()
         

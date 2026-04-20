@@ -38,12 +38,9 @@ class UIUpdateDispatcher:
         self._initialized = True
         self._task_queue: Queue = Queue()
         self._widget = None
-        self._last_event_time = 0
-        self._event_debounce_ms = 16
-        self._node_status_cache: Dict[str, tuple] = {}
-        self._max_batch_size = 50
         self._polling_active = False
         self._polling_interval_ms = 30
+        self._max_batch_size = 50
     
     @classmethod
     def get_instance(cls) -> "UIUpdateDispatcher":
@@ -67,20 +64,12 @@ class UIUpdateDispatcher:
             self._widget = None
     
     def dispatch(self, update_type: UpdateType, data: Any = None, callback: Callable = None):
-        if update_type == UpdateType.NODE_STATUS:
-            node_id = data.get("node_id") if data else None
-            if node_id:
-                self._node_status_cache[node_id] = (data, callback)
-        
         task = UpdateTask(update_type, data, callback)
         self._task_queue.put(task)
         
         self._schedule_process()
     
     def dispatch_node_status(self, node_id: str, status: str, callback: Callable = None):
-        if node_id:
-            self._node_status_cache[node_id] = ({"node_id": node_id, "status": status}, callback)
-        
         task = UpdateTask(UpdateType.NODE_STATUS, {"node_id": node_id, "status": status}, callback)
         self._task_queue.put(task)
         
@@ -113,18 +102,6 @@ class UIUpdateDispatcher:
             try:
                 task = self._task_queue.get_nowait()
                 
-                if task.update_type == UpdateType.NODE_STATUS:
-                    node_id = task.data.get("node_id") if task.data else None
-                    if node_id and node_id in self._node_status_cache:
-                        cached_data, cached_callback = self._node_status_cache.pop(node_id, (None, None))
-                        if cached_callback:
-                            try:
-                                cached_callback(cached_data.get("node_id"), cached_data.get("status"))
-                            except Exception as e:
-                                print(f"[WARN] UI更新回调执行失败: {e}")
-                            processed += 1
-                            continue
-                
                 if task.callback:
                     try:
                         if task.update_type == UpdateType.NODE_STATUS and task.data:
@@ -155,7 +132,6 @@ class UIUpdateDispatcher:
                 self._task_queue.get_nowait()
             except Empty:
                 break
-        self._node_status_cache.clear()
     
     def start_polling(self):
         if self._polling_active and self._widget is not None:
@@ -182,13 +158,13 @@ class UIUpdateDispatcher:
             print(f"[DEBUG] UI轮询处理异常: {e}")
         
         if self._polling_active:
-            if self._widget is not None:
-                try:
+            try:
+                if self._widget is not None:
                     self._widget.after(self._polling_interval_ms, self._poll)
-                except Exception as e:
-                    print(f"[DEBUG] UI轮询调度异常: {e}")
-            else:
-                import threading
+                else:
+                    threading.Timer(self._polling_interval_ms / 1000, self._poll_daemon).start()
+            except Exception as e:
+                print(f"[DEBUG] UI轮询调度异常: {e}")
                 threading.Timer(self._polling_interval_ms / 1000, self._poll_daemon).start()
     
     def _poll_daemon(self):
@@ -197,7 +173,7 @@ class UIUpdateDispatcher:
             try:
                 self._widget.after(0, self._poll)
             except Exception:
-                pass
+                threading.Timer(self._polling_interval_ms / 1000, self._poll_daemon).start()
         elif self._polling_active:
             threading.Timer(self._polling_interval_ms / 1000, self._poll_daemon).start()
 

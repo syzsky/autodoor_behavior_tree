@@ -46,5 +46,6 @@ ENV/
 backup/
 
 /examples/
+/md/
 
 bt_utils/build_info.json

@@ -1,8 +1,12 @@
 import sys
 import os
 import json
+import logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# 注释掉终端日志输出（如需启用，取消下面注释即可）
+# logging.disable(logging.CRITICAL)
 
 def load_version():
     """从build_info.json加载版本信息"""

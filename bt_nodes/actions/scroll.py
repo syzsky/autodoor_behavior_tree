@@ -16,36 +16,24 @@ class MouseScrollNode(ActionNode):
     def _execute_action(self, context) -> NodeStatus:
         try:
             scroll_distance = self.distance
-            scroll_direction = "垂直"
             
             if self.direction == "向上":
                 scroll_distance = abs(self.distance)
-                scroll_direction = "垂直"
             elif self.direction == "向下":
                 scroll_distance = -abs(self.distance)
-                scroll_direction = "垂直"
             elif self.direction == "向左":
                 scroll_distance = -abs(self.distance)
-                scroll_direction = "水平"
             elif self.direction == "向右":
                 scroll_distance = abs(self.distance)
-                scroll_direction = "水平"
             
-            success = context.execute_mouse_scroll(scroll_distance, self.clicks, scroll_direction)
+            for _ in range(self.clicks):
+                context.execute_mouse_scroll(scroll_distance)
             
-            if success:
-                LogManager.instance().log_success(
-                    node_type="鼠标滚轮节点",
-                    node_name=self.name
-                )
-                return NodeStatus.SUCCESS
-            else:
-                LogManager.instance().log_failure(
-                    node_type="鼠标滚轮节点",
-                    node_name=self.name,
-                    reason="滚轮执行失败"
-                )
-                return NodeStatus.FAILURE
+            LogManager.instance().log_success(
+                node_type="鼠标滚轮节点",
+                node_name=self.name
+            )
+            return NodeStatus.SUCCESS
                 
         except Exception as e:
             LogManager.instance().log_failure(
