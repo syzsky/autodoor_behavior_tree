@@ -144,6 +144,16 @@ class WindowCapture:
         return None
 
     @staticmethod
+    def capture_window_region(hwnd: int, region: Tuple[int, int, int, int]) -> Optional[Image.Image]:
+        full_image = WindowCapture.capture_window(hwnd)
+        if full_image is None:
+            return None
+        try:
+            return full_image.crop((region[0], region[1], region[2], region[3]))
+        except Exception:
+            return None
+
+    @staticmethod
     def capture_by_title(title: str, client_only: bool = False) -> Optional[Image.Image]:
         """根据标题捕获窗口
 

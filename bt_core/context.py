@@ -32,7 +32,15 @@ class ExecutionContext:
         self._alarm_player = None
         self._path_resolver = None
         self._stats_collector = None
+        self._bound_window: Optional[int] = None
+        self._saved_foreground_window: Optional[int] = None
     
+    def bind_window(self, hwnd: int) -> None:
+        self._bound_window = hwnd
+
+    def get_bound_window(self) -> Optional[int]:
+        return self._bound_window
+
     def set_stats_collector(self, collector):
         """设置统计收集器
         
@@ -90,14 +98,12 @@ class ExecutionContext:
                 self._on_node_status(node_id, status)
 
     def get_screenshot(self, region: tuple = None):
-        """获取屏幕截图
+        if self._bound_window:
+            from bt_utils.window_capture import WindowCapture
+            if region:
+                return WindowCapture.capture_window_region(self._bound_window, region)
+            return WindowCapture.capture_window(self._bound_window)
 
-        Args:
-            region: 截图区域 (left, top, right, bottom)
-
-        Returns:
-            PIL.Image 截图对象
-        """
         if self._screenshot_manager is None:
             from bt_utils.screenshot import ScreenshotManager
             self._screenshot_manager = ScreenshotManager()
@@ -122,14 +128,9 @@ class ExecutionContext:
 
     def execute_mouse_click(self, button: str = "left", position: tuple = None,
                            action: str = "press", duration: int = 0) -> None:
-        """执行鼠标点击
+        if self._bound_window and position:
+            position = tuple(self.convert_to_screen_coords(position))
 
-        Args:
-            button: 鼠标按钮 (left/right/middle)
-            position: 点击位置 (x, y)
-            action: 动作类型 (press/down/up)
-            duration: 按住时长（毫秒）
-        """
         if self._input_controller is None:
             from bt_utils.input_controller_factory import InputController
             self._input_controller = InputController()
@@ -137,13 +138,9 @@ class ExecutionContext:
         self._input_controller.mouse_click(button, position, action, duration)
 
     def execute_mouse_move(self, position: tuple, relative: bool = False, smooth: bool = False) -> None:
-        """执行鼠标移动
+        if self._bound_window and position and not relative:
+            position = tuple(self.convert_to_screen_coords(position))
 
-        Args:
-            position: 目标位置 (x, y)
-            relative: 是否相对移动
-            smooth: 是否平滑移动
-        """
         if self._input_controller is None:
             from bt_utils.input_controller_factory import InputController
             self._input_controller = InputController()
@@ -195,14 +192,6 @@ class ExecutionContext:
         return self._ocr_manager.recognize(image, keywords, language, region=region)
     
     def resolve_path(self, relative_path: str) -> str:
-        """解析相对路径为绝对路径
-        
-        Args:
-            relative_path: 相对路径（以 ./ 开头）
-        
-        Returns:
-            绝对路径
-        """
         if self._path_resolver is None:
             from bt_utils.path_resolver import PathResolver
             self._path_resolver = PathResolver(self.project_root)
@@ -210,3 +199,38 @@ class ExecutionContext:
         if relative_path.startswith("./"):
             return self._path_resolver.to_absolute(relative_path)
         return relative_path
+
+    def convert_to_screen_coords(self, region: tuple) -> tuple:
+        if self._bound_window is None:
+            return region
+        from bt_utils.coordinate import CoordinateConverter
+        if len(region) == 2:
+            result = CoordinateConverter.window_to_absolute(region[0], region[1], self._bound_window)
+            return result if result else region
+        return CoordinateConverter.window_region_to_screen(region, self._bound_window)
+
+    def convert_to_window_coords(self, region: tuple) -> tuple:
+        if self._bound_window is None:
+            return region
+        from bt_utils.coordinate import CoordinateConverter
+        if len(region) == 2:
+            result = CoordinateConverter.absolute_to_window(region[0], region[1], self._bound_window)
+            return result if result else region
+        return CoordinateConverter.screen_region_to_window(region, self._bound_window)
+
+    def smart_switch_to_bound_window(self) -> bool:
+        if self._bound_window is None:
+            return False
+        from bt_utils.window_manager import WindowManager
+        if WindowManager.is_foreground_window(self._bound_window):
+            return True
+        self._saved_foreground_window = WindowManager.save_foreground_window()
+        return WindowManager.switch_to_window(self._bound_window)
+
+    def smart_restore_foreground_window(self) -> bool:
+        if self._saved_foreground_window is None:
+            return False
+        if self._saved_foreground_window == self._bound_window:
+            return True
+        from bt_utils.window_manager import WindowManager
+        return WindowManager.restore_window(self._saved_foreground_window)

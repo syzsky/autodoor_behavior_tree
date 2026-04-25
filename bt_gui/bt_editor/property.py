@@ -128,6 +128,10 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "childinterval", "label": "子节点间隔(ms)", "type": "number", "min": 0, "default": 0},
         {"key": "childinterval_random", "label": "子节点间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
+    "StartNode": [
+        {"key": "bind_window", "label": "绑定窗口", "type": "bool", "default": False},
+        {"key": "window_title", "label": "窗口标题", "type": "window_select", "default": "", "hide_if": {"field": "bind_window", "value": False}},
+    ],
 }
 
 CONDITION_DECORATOR_FIELDS = [
@@ -472,19 +476,24 @@ class RegionField(FieldWidget):
                     max(start_x_abs[0], end_x_abs),
                     max(start_y_abs[0], end_y_abs)
                 )
-                
+
+                bound_window = self._get_bound_window()
+                if bound_window:
+                    from bt_utils.coordinate import CoordinateConverter
+                    region = CoordinateConverter.screen_region_to_window(region, bound_window)
+
                 self.var.set(f"{region[0]},{region[1]},{region[2]},{region[3]}")
                 self.on_change(self.key, list(region))
-                
+
                 select_window.destroy()
                 self.app.deiconify()
-            
+
             def on_escape(e):
                 magnifier.hide()
                 magnifier_shown[0] = False
                 select_window.destroy()
                 self.app.deiconify()
-            
+
             canvas.bind("<Motion>", on_mouse_move)
             canvas.bind("<Button-1>", on_mouse_down)
             canvas.bind("<B1-Motion>", on_mouse_drag)
@@ -492,13 +501,23 @@ class RegionField(FieldWidget):
             select_window.bind("<Escape>", on_escape)
             select_window.focus_set()
             select_window.grab_set()
-            
+
         except ImportError:
             self.app.deiconify()
             messagebox.showerror("错误", "screeninfo库未安装，无法支持区域选择。\n请运行 'pip install screeninfo' 安装该库。")
         except Exception as e:
             self.app.deiconify()
             messagebox.showerror("错误", f"区域选择失败: {str(e)}")
+
+    def _get_bound_window(self):
+        if self.app and hasattr(self.app, 'behavior_tree'):
+            editor = self.app.behavior_tree
+            if hasattr(editor, 'get_start_node'):
+                start_node = editor.get_start_node()
+                if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window and start_node.window_title:
+                    from bt_utils.window_manager import WindowManager
+                    return WindowManager.find_window_by_title(start_node.window_title)
+        return None
     
     def set_value(self, value: Any):
         if isinstance(value, (list, tuple)) and len(value) == 4:
@@ -1413,6 +1432,67 @@ class OffsetField(FieldWidget):
             return [0, 0]
 
 
+class WindowSelectField(FieldWidget):
+    def __init__(self, master, label: str, key: str, on_change: Callable, app, **kwargs):
+        self.app = app
+        self._window_titles = []
+        self._window_hwnds = {}
+        super().__init__(master, label, key, on_change, **kwargs)
+        self._create_widget()
+
+    def _create_widget(self):
+        input_frame = ctk.CTkFrame(self, fg_color="transparent")
+        input_frame.pack(fill="x")
+
+        self.var = tk.StringVar(value="")
+
+        self._refresh_window_list()
+
+        self.combobox = ctk.CTkOptionMenu(
+            input_frame,
+            variable=self.var,
+            values=self._window_titles,
+            font=Theme.get_font('sm'),
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            button_color=self._dark_colors['border'],
+            button_hover_color=self._dark_colors['node_selected'],
+            text_color=self._dark_colors['text_primary'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            width=140,
+            command=lambda choice: self.on_change(self.key, choice)
+        )
+        self.combobox.pack(side="left", fill="x", expand=True, padx=(0, Theme.DIMENSIONS['spacing_xs']))
+
+        self.refresh_btn = ctk.CTkButton(
+            input_frame,
+            text="刷新",
+            font=Theme.get_font('sm'),
+            width=50,
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['info'],
+            hover_color=self._dark_colors['info_hover'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+        )
+        self.refresh_btn.pack(side="right")
+        self.refresh_btn.bind("<ButtonRelease-1>", lambda e: self._refresh_window_list())
+
+    def _refresh_window_list(self):
+        from bt_utils.window_manager import WindowManager
+        windows = WindowManager.enum_all_windows()
+        self._window_titles = [title for hwnd, title in windows]
+        self._window_hwnds = {title: hwnd for hwnd, title in windows}
+        if hasattr(self, 'combobox'):
+            self.combobox.configure(values=self._window_titles)
+
+    def set_value(self, value: Any):
+        if value and hasattr(self, 'combobox'):
+            self.var.set(str(value))
+
+    def get_value(self) -> Any:
+        return self.var.get()
+
+
 class ColorField(FieldWidget):
     def __init__(self, master, label: str, key: str, on_change: Callable, app, **kwargs):
         self.app = app
@@ -1960,6 +2040,8 @@ class PropertyPanel(ctk.CTkFrame):
             field_widget = ColorField(container, label, key, self._on_field_change, self.app)
         elif field_type == "offset":
             field_widget = OffsetField(container, label, key, self._on_field_change, self.app)
+        elif field_type == "window_select":
+            field_widget = WindowSelectField(container, label, key, self._on_field_change, self.app)
         
         if field_widget:
             field_widget.set_value(value)

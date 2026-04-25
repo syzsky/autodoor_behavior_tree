@@ -152,6 +152,30 @@ class CoordinateConverter:
         return (abs_x - base_x, abs_y - base_y)
 
     @staticmethod
+    def screen_region_to_window(screen_region: tuple, hwnd: int) -> tuple:
+        rect = CoordinateConverter.get_window_rect(hwnd)
+        if not rect:
+            return (0, 0, 0, 0)
+        return (
+            screen_region[0] - rect[0],
+            screen_region[1] - rect[1],
+            screen_region[2] - rect[0],
+            screen_region[3] - rect[1]
+        )
+
+    @staticmethod
+    def window_region_to_screen(window_region: tuple, hwnd: int) -> tuple:
+        rect = CoordinateConverter.get_window_rect(hwnd)
+        if not rect:
+            return (0, 0, 0, 0)
+        return (
+            window_region[0] + rect[0],
+            window_region[1] + rect[1],
+            window_region[2] + rect[0],
+            window_region[3] + rect[1]
+        )
+
+    @staticmethod
     def find_window(title: str = None, class_name: str = None) -> Optional[wintypes.HWND]:
         """查找窗口句柄
 

@@ -289,7 +289,7 @@ class SequenceNode(CompositeNode):
 
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
         from bt_utils.log_manager import LogManager
-        
+
         if not self.children:
             return NodeStatus.SUCCESS
 
@@ -972,6 +972,23 @@ class ActionNode(Node):
         return self._execute_with_decorators(context, self._tick_internal)
 
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
+        bound_window = context.get_bound_window()
+
+        if bound_window:
+            context.smart_switch_to_bound_window()
+            try:
+                status = self._execute_action(context)
+            finally:
+                context.smart_restore_foreground_window()
+            self.status = status
+
+            if status == NodeStatus.SUCCESS and self.children:
+                context.notify_node_status(self.node_id, "success")
+                self._children_running = True
+                return self._execute_children(context)
+
+            return status
+
         if not self._children_running:
             status = self._execute_action(context)
             self.status = status
@@ -1013,6 +1030,8 @@ class StartNode(CompositeNode):
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
         self._is_protected = True
+        self.bind_window = self.config.get_bool("bind_window", False)
+        self.window_title = self.config.get("window_title", "")
     
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         """顺序执行所有子节点,失败后继续执行
@@ -1031,7 +1050,10 @@ class StartNode(CompositeNode):
     
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
         from bt_utils.log_manager import LogManager
-        
+
+        if self.bind_window and self.window_title:
+            self._bind_window_to_context(context)
+
         if not self.children:
             LogManager.instance().log_success(
                 node_type="开始节点",
@@ -1074,6 +1096,12 @@ class StartNode(CompositeNode):
         super().reset(reset_counters)
         for child in self.children:
             child.reset()
+
+    def _bind_window_to_context(self, context: "ExecutionContext") -> None:
+        from bt_utils.window_manager import WindowManager
+        hwnd = WindowManager.find_window_by_title(self.window_title)
+        if hwnd:
+            context.bind_window(hwnd)
     
     def _reset_for_retry(self) -> None:
         """重试时重置状态（保留重试计数器）"""
