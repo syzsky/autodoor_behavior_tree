@@ -480,7 +480,11 @@ class RegionField(FieldWidget):
                 bound_window = self._get_bound_window()
                 if bound_window:
                     from bt_utils.coordinate import CoordinateConverter
+                    original_region = region
                     region = CoordinateConverter.screen_region_to_window(region, bound_window)
+                    print(f"[DEBUG] RegionField: 坐标转换 屏幕绝对{original_region} -> 窗口相对{region}, hwnd={bound_window}")
+                else:
+                    print(f"[DEBUG] RegionField: 未绑定窗口, 使用屏幕绝对坐标{region}")
 
                 self.var.set(f"{region[0]},{region[1]},{region[2]},{region[3]}")
                 self.on_change(self.key, list(region))

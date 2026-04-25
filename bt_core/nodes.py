@@ -975,8 +975,10 @@ class ActionNode(Node):
         bound_window = context.get_bound_window()
 
         if bound_window:
+            print(f"[DEBUG] ActionNode '{self.name}' 检测到绑定窗口: hwnd={bound_window}")
             context.smart_switch_to_bound_window()
             try:
+                print(f"[DEBUG] ActionNode '{self.name}' 执行动作...")
                 status = self._execute_action(context)
             finally:
                 context.smart_restore_foreground_window()
@@ -1102,6 +1104,11 @@ class StartNode(CompositeNode):
         hwnd = WindowManager.find_window_by_title(self.window_title)
         if hwnd:
             context.bind_window(hwnd)
+            rect = WindowManager.get_window_rect(hwnd)
+            title = WindowManager.get_window_title(hwnd)
+            print(f"[DEBUG] StartNode 绑定窗口: hwnd={hwnd}, title='{title}', rect={rect}")
+        else:
+            print(f"[DEBUG] StartNode 未找到窗口: title='{self.window_title}'")
     
     def _reset_for_retry(self) -> None:
         """重试时重置状态（保留重试计数器）"""

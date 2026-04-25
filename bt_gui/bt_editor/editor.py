@@ -464,7 +464,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if not nodes_data:
             return
         
-        paste_offset_x, paste_offset_y = self._calculate_paste_offset()
+        paste_offset_x, paste_offset_y = self._calculate_paste_offset(relative_positions)
         
         if len(nodes_data) == 1:
             node_data = nodes_data[0]
@@ -543,16 +543,62 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self._set_modified(True)
             self._update_toolbar()
     
-    def _calculate_paste_offset(self) -> tuple:
-        base_offset_x = 50
-        base_offset_y = 50
+    def _calculate_paste_offset(self, relative_positions: Dict[str, tuple] = None) -> tuple:
+        canvas_width = self.canvas.canvas.winfo_width() or 800
+        canvas_height = self.canvas.canvas.winfo_height() or 600
         
-        additional_offset = 0
-        for existing_node in self.canvas.nodes.values():
-            if abs(existing_node.x - base_offset_x) < 160 and abs(existing_node.y - base_offset_y) < 70:
-                additional_offset += 80
+        screen_center_x = canvas_width / 2
+        screen_center_y = canvas_height / 2
         
-        return base_offset_x + additional_offset, base_offset_y + additional_offset
+        canvas_center_x = (screen_center_x - self.canvas.pan_x) / self.canvas.zoom
+        canvas_center_y = (screen_center_y - self.canvas.pan_y) / self.canvas.zoom
+        
+        offset_x = canvas_center_x
+        offset_y = canvas_center_y
+        
+        if not relative_positions:
+            return offset_x, offset_y
+        
+        paste_width = 0
+        paste_height = 0
+        for rel_x, rel_y in relative_positions.values():
+            paste_width = max(paste_width, rel_x)
+            paste_height = max(paste_height, rel_y)
+        
+        paste_width += 160
+        paste_height += 70
+        
+        node_width = 160
+        node_height = 70
+        offset_increment = 80
+        max_attempts = 50
+        
+        for attempt in range(max_attempts):
+            has_overlap = False
+            
+            paste_left = offset_x
+            paste_top = offset_y
+            paste_right = offset_x + paste_width
+            paste_bottom = offset_y + paste_height
+            
+            for existing_node in self.canvas.nodes.values():
+                node_left = existing_node.x
+                node_top = existing_node.y
+                node_right = existing_node.x + node_width
+                node_bottom = existing_node.y + node_height
+                
+                if (paste_left < node_right and paste_right > node_left and
+                    paste_top < node_bottom and paste_bottom > node_top):
+                    has_overlap = True
+                    break
+            
+            if not has_overlap:
+                break
+            
+            offset_x += offset_increment
+            offset_y += offset_increment
+        
+        return offset_x, offset_y
     
     def _select_new_nodes(self, node_ids: List[str]):
         """选中新节点"""

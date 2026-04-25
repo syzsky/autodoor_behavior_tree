@@ -100,6 +100,7 @@ class ExecutionContext:
     def get_screenshot(self, region: tuple = None):
         if self._bound_window:
             from bt_utils.window_capture import WindowCapture
+            print(f"[DEBUG] get_screenshot: 使用后台截图, hwnd={self._bound_window}, region={region}")
             if region:
                 return WindowCapture.capture_window_region(self._bound_window, region)
             return WindowCapture.capture_window(self._bound_window)
@@ -108,6 +109,7 @@ class ExecutionContext:
             from bt_utils.screenshot import ScreenshotManager
             self._screenshot_manager = ScreenshotManager()
 
+        print(f"[DEBUG] get_screenshot: 使用屏幕截图, region={region}")
         if region:
             return self._screenshot_manager.get_region_screenshot(region)
         return self._screenshot_manager.get_full_screenshot()
@@ -129,7 +131,9 @@ class ExecutionContext:
     def execute_mouse_click(self, button: str = "left", position: tuple = None,
                            action: str = "press", duration: int = 0) -> None:
         if self._bound_window and position:
+            original = position
             position = tuple(self.convert_to_screen_coords(position))
+            print(f"[DEBUG] execute_mouse_click: 坐标转换 窗口相对{original} -> 屏幕绝对{position}")
 
         if self._input_controller is None:
             from bt_utils.input_controller_factory import InputController
@@ -139,7 +143,9 @@ class ExecutionContext:
 
     def execute_mouse_move(self, position: tuple, relative: bool = False, smooth: bool = False) -> None:
         if self._bound_window and position and not relative:
+            original = position
             position = tuple(self.convert_to_screen_coords(position))
+            print(f"[DEBUG] execute_mouse_move: 坐标转换 窗口相对{original} -> 屏幕绝对{position}")
 
         if self._input_controller is None:
             from bt_utils.input_controller_factory import InputController
@@ -223,9 +229,13 @@ class ExecutionContext:
             return False
         from bt_utils.window_manager import WindowManager
         if WindowManager.is_foreground_window(self._bound_window):
+            print(f"[DEBUG] smart_switch: 窗口已在前台, hwnd={self._bound_window}")
             return True
         self._saved_foreground_window = WindowManager.save_foreground_window()
-        return WindowManager.switch_to_window(self._bound_window)
+        print(f"[DEBUG] smart_switch: 切换窗口, 当前前台hwnd={self._saved_foreground_window} -> 目标hwnd={self._bound_window}")
+        result = WindowManager.switch_to_window(self._bound_window)
+        print(f"[DEBUG] smart_switch: 切换结果={result}")
+        return result
 
     def smart_restore_foreground_window(self) -> bool:
         if self._saved_foreground_window is None:
@@ -233,4 +243,5 @@ class ExecutionContext:
         if self._saved_foreground_window == self._bound_window:
             return True
         from bt_utils.window_manager import WindowManager
+        print(f"[DEBUG] smart_restore: 恢复原窗口, hwnd={self._saved_foreground_window}")
         return WindowManager.restore_window(self._saved_foreground_window)
