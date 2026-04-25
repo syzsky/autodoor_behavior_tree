@@ -35,6 +35,80 @@ class WindowManager:
         return None
 
     @staticmethod
+    def find_window_by_pid(pid: int) -> Optional[int]:
+        """通过进程ID查找窗口
+        
+        Args:
+            pid: 进程ID
+            
+        Returns:
+            Optional[int]: 窗口句柄，未找到返回 None
+        """
+        results = []
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def enum_windows_callback(hwnd, _):
+            if user32.IsWindowVisible(hwnd):
+                window_pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+                if window_pid.value == pid:
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buffer = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buffer, length + 1)
+                        if buffer.value:
+                            results.append(hwnd)
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
+        
+        if results:
+            return results[0]
+        return None
+
+    @staticmethod
+    def get_window_pid(hwnd: int) -> Optional[int]:
+        """获取窗口的进程ID
+        
+        Args:
+            hwnd: 窗口句柄
+            
+        Returns:
+            Optional[int]: 进程ID，获取失败返回 None
+        """
+        try:
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            return pid.value if pid.value else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def find_window_smart(pid: Optional[int], title_keyword: str) -> Tuple[Optional[int], str]:
+        """智能查找窗口：优先PID，其次关键字
+        
+        Args:
+            pid: 进程ID（可选）
+            title_keyword: 窗口标题关键字
+            
+        Returns:
+            Tuple[Optional[int], str]: (窗口句柄, 查找方式说明)
+            查找方式说明: "pid" / "title" / "not_found"
+        """
+        if pid:
+            hwnd = WindowManager.find_window_by_pid(pid)
+            if hwnd:
+                return hwnd, "pid"
+        
+        if title_keyword:
+            hwnd = WindowManager.find_window_by_title(title_keyword)
+            if hwnd:
+                return hwnd, "title"
+        
+        return None, "not_found"
+
+    @staticmethod
     def get_window_title(hwnd: int) -> str:
         try:
             length = user32.GetWindowTextLengthW(hwnd)

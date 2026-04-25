@@ -131,6 +131,7 @@ NODE_CONFIG_SCHEMAS = {
     "StartNode": [
         {"key": "bind_window", "label": "绑定窗口", "type": "bool", "default": False},
         {"key": "window_title", "label": "窗口标题", "type": "window_select", "default": "", "hide_if": {"field": "bind_window", "value": False}},
+        {"key": "window_pid", "label": "窗口PID", "type": "number", "default": 0, "hidden": True},
     ],
 }
 
@@ -1253,6 +1254,20 @@ class PositionField(FieldWidget):
                 magnifier.hide()
                 magnifier_shown[0] = False
                 x, y = event.x_root, event.y_root
+                
+                bound_window = self._get_bound_window()
+                if bound_window:
+                    from bt_utils.coordinate import CoordinateConverter
+                    original_pos = (x, y)
+                    converted = CoordinateConverter.absolute_to_window(x, y, bound_window)
+                    if converted:
+                        x, y = converted
+                        print(f"[DEBUG] PositionField: 坐标转换 屏幕绝对{original_pos} -> 窗口相对{(x, y)}, hwnd={bound_window}")
+                    else:
+                        print(f"[DEBUG] PositionField: 坐标转换失败, 使用屏幕绝对坐标{(x, y)}")
+                else:
+                    print(f"[DEBUG] PositionField: 未绑定窗口, 使用屏幕绝对坐标{(x, y)}")
+                
                 self.var.set(f"{x}, {y}")
                 self.on_change(self.key, [x, y])
                 select_window.destroy()
@@ -1291,6 +1306,16 @@ class PositionField(FieldWidget):
             return None
         except (ValueError, AttributeError):
             return None
+    
+    def _get_bound_window(self):
+        if self.app and hasattr(self.app, 'behavior_tree'):
+            editor = self.app.behavior_tree
+            if hasattr(editor, 'get_start_node'):
+                start_node = editor.get_start_node()
+                if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window and start_node.window_title:
+                    from bt_utils.window_manager import WindowManager
+                    return WindowManager.find_window_by_title(start_node.window_title)
+        return None
 
 
 class OffsetField(FieldWidget):
@@ -1441,6 +1466,7 @@ class WindowSelectField(FieldWidget):
         self.app = app
         self._window_titles = []
         self._window_hwnds = {}
+        self._window_pids = {}
         super().__init__(master, label, key, on_change, **kwargs)
         self._create_widget()
 
@@ -1464,7 +1490,7 @@ class WindowSelectField(FieldWidget):
             text_color=self._dark_colors['text_primary'],
             corner_radius=Theme.DIMENSIONS['button_corner_radius'],
             width=140,
-            command=lambda choice: self.on_change(self.key, choice)
+            command=self._on_window_selected
         )
         self.combobox.pack(side="left", fill="x", expand=True, padx=(0, Theme.DIMENSIONS['spacing_xs']))
 
@@ -1481,11 +1507,24 @@ class WindowSelectField(FieldWidget):
         self.refresh_btn.pack(side="right")
         self.refresh_btn.bind("<ButtonRelease-1>", lambda e: self._refresh_window_list())
 
+    def _on_window_selected(self, choice: str):
+        self.on_change(self.key, choice)
+        if choice in self._window_pids:
+            pid = self._window_pids[choice]
+            if pid:
+                self.on_change("window_pid", pid)
+                print(f"[DEBUG] WindowSelectField: 选择窗口 '{choice}', PID={pid}")
+
     def _refresh_window_list(self):
         from bt_utils.window_manager import WindowManager
         windows = WindowManager.enum_all_windows()
         self._window_titles = [title for hwnd, title in windows]
         self._window_hwnds = {title: hwnd for hwnd, title in windows}
+        self._window_pids = {}
+        for hwnd, title in windows:
+            pid = WindowManager.get_window_pid(hwnd)
+            if pid:
+                self._window_pids[title] = pid
         if hasattr(self, 'combobox'):
             self.combobox.configure(values=self._window_titles)
 
@@ -1654,6 +1693,7 @@ class PropertyPanel(ctk.CTkFrame):
         self.widgets: Dict[str, FieldWidget] = {}
         self.field_schemas: Dict[str, Dict[str, Any]] = {}
         self.field_containers: Dict[str, Any] = {}
+        self._hidden_values: Dict[str, Any] = {}
         self._is_loading: bool = False
         
         self._dark_colors = Theme.get_dark_colors()
@@ -1884,6 +1924,8 @@ class PropertyPanel(ctk.CTkFrame):
         for key, widget in self.widgets.items():
             if hasattr(widget, 'get_value'):
                 config[key] = widget.get_value()
+        for key, value in self._hidden_values.items():
+            config[key] = value
         return config
     
     def _run_condition_node_preview(self, node_type: str, config: Dict[str, Any]):
@@ -2001,6 +2043,10 @@ class PropertyPanel(ctk.CTkFrame):
         
         self.field_schemas[key] = field
         
+        if field.get("hidden", False):
+            self._hidden_values[key] = value
+            return
+        
         container = parent_frame if parent_frame else self.content_frame
         
         field_widget = None
@@ -2056,6 +2102,9 @@ class PropertyPanel(ctk.CTkFrame):
             self._update_single_field_visibility(key, field)
     
     def _on_field_change(self, key: str, value: Any):
+        if key in self._hidden_values:
+            self._hidden_values[key] = value
+        
         if self.on_change and self.current_node_id:
             self.on_change(self.current_node_id, key, value)
         

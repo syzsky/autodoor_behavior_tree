@@ -1034,6 +1034,7 @@ class StartNode(CompositeNode):
         self._is_protected = True
         self.bind_window = self.config.get_bool("bind_window", False)
         self.window_title = self.config.get("window_title", "")
+        self.window_pid = self.config.get_int("window_pid", 0)
     
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         """顺序执行所有子节点,失败后继续执行
@@ -1101,14 +1102,32 @@ class StartNode(CompositeNode):
 
     def _bind_window_to_context(self, context: "ExecutionContext") -> None:
         from bt_utils.window_manager import WindowManager
-        hwnd = WindowManager.find_window_by_title(self.window_title)
+        from bt_utils.log_manager import LogManager
+        
+        hwnd, find_method = WindowManager.find_window_smart(
+            pid=self.window_pid if self.window_pid > 0 else None,
+            title_keyword=self.window_title
+        )
+        
         if hwnd:
             context.bind_window(hwnd)
             rect = WindowManager.get_window_rect(hwnd)
             title = WindowManager.get_window_title(hwnd)
-            print(f"[DEBUG] StartNode 绑定窗口: hwnd={hwnd}, title='{title}', rect={rect}")
+            actual_pid = WindowManager.get_window_pid(hwnd)
+            
+            if find_method == "pid":
+                print(f"[DEBUG] StartNode 通过PID绑定窗口: pid={self.window_pid}, hwnd={hwnd}, title='{title}', rect={rect}")
+            else:
+                print(f"[DEBUG] StartNode 通过标题绑定窗口: title='{self.window_title}', hwnd={hwnd}, actual_title='{title}', pid={actual_pid}, rect={rect}")
+                if actual_pid and actual_pid != self.window_pid:
+                    print(f"[DEBUG] StartNode 提示: 窗口PID已变更 ({self.window_pid} -> {actual_pid})，建议重新选择窗口")
         else:
-            print(f"[DEBUG] StartNode 未找到窗口: title='{self.window_title}'")
+            LogManager.instance().log_failure(
+                node_type="开始节点",
+                node_name=self.name,
+                reason=f"未找到窗口: pid={self.window_pid}, title='{self.window_title}'"
+            )
+            print(f"[DEBUG] StartNode 未找到窗口: pid={self.window_pid}, title='{self.window_title}'")
     
     def _reset_for_retry(self) -> None:
         """重试时重置状态（保留重试计数器）"""
