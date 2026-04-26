@@ -3,6 +3,7 @@ from .image import ImageConditionNode
 from .color import ColorConditionNode
 from .number import NumberConditionNode
 from .variable import VariableConditionNode
+from .text_extract import TextExtractNode
 
 from bt_core.registry import NodeRegistry
 
@@ -11,6 +12,7 @@ NodeRegistry.register("ImageConditionNode", ImageConditionNode)
 NodeRegistry.register("ColorConditionNode", ColorConditionNode)
 NodeRegistry.register("NumberConditionNode", NumberConditionNode)
 NodeRegistry.register("VariableConditionNode", VariableConditionNode)
+NodeRegistry.register("TextExtractNode", TextExtractNode)
 
 __all__ = [
     "OCRConditionNode",
@@ -18,4 +20,5 @@ __all__ = [
     "ColorConditionNode",
     "NumberConditionNode",
     "VariableConditionNode",
+    "TextExtractNode",
 ]

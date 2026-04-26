@@ -6,6 +6,7 @@ from .variable import SetVariableNode
 from .script import ScriptNode
 from .code import CodeNode
 from .alarm import AlarmNode
+from .text_input import TextInputNode
 
 from bt_core.registry import NodeRegistry
 
@@ -18,6 +19,7 @@ NodeRegistry.register("SetVariableNode", SetVariableNode)
 NodeRegistry.register("ScriptNode", ScriptNode)
 NodeRegistry.register("CodeNode", CodeNode)
 NodeRegistry.register("AlarmNode", AlarmNode)
+NodeRegistry.register("TextInputNode", TextInputNode)
 
 __all__ = [
     "KeyPressNode",
@@ -29,4 +31,5 @@ __all__ = [
     "ScriptNode",
     "CodeNode",
     "AlarmNode",
+    "TextInputNode",
 ]

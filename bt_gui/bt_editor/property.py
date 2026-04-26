@@ -111,6 +111,30 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "volume", "label": "音量(0-100,空用全局)", "type": "number", "min": 0, "max": 100, "default": 70},
         {"key": "wait_complete", "label": "等待播放完成", "type": "bool", "default": True},
     ],
+    "TextInputNode": [
+        {"key": "input_mode", "label": "输入模式", "type": "select", "options": ["文本提取值", "预设文本", "文件"], "default": "文本提取值"},
+        {"key": "preset_texts", "label": "预设文本(每行一条)", "type": "text_list", "hide_if": {"field": "input_mode", "value": ["文本提取值", "文件"]}},
+        {"key": "execution_mode", "label": "执行模式", "type": "select", "options": ["顺序", "随机"], "default": "顺序", "hide_if": {"field": "input_mode", "value": ["文本提取值", "文件"]}},
+        {"key": "blackboard_key", "label": "黑板变量名", "type": "text", "default": "last_extracted_text", "hide_if": {"field": "input_mode", "value": ["预设文本", "文件"]}},
+        {"key": "file_path", "label": "文件路径", "type": "file", "width": 120, "filetypes": [("文本文件", "*.txt"), ("所有文件", "*.*")], "hide_if": {"field": "input_mode", "value": ["文本提取值", "预设文本"]}},
+        {"key": "input_delay", "label": "输入间隔(ms)", "type": "number", "min": 0, "default": 50},
+        {"key": "clear_before_input", "label": "输入前清空", "type": "bool", "default": False},
+        {"key": "save_input_text", "label": "保存输入文本", "type": "bool", "default": False},
+        {"key": "output_key", "label": "输出变量名", "type": "text", "default": "last_input_text", "hide_if": {"field": "save_input_text", "value": False}},
+    ],
+    "TextExtractNode": [
+        {"key": "region", "label": "检测区域", "type": "region"},
+        {"key": "extract_mode", "label": "提取模式", "type": "select", "options": ["all", "keywords"], "default": "all"},
+        {"key": "keywords", "label": "关键词", "type": "text", "hide_if": {"field": "extract_mode", "value": "all"}},
+        {"key": "language", "label": "语言", "type": "select", "options": ["简体中文", "English", "繁体中文"], "default": "简体中文"},
+        {"key": "preprocess_mode", "label": "图像预处理", "type": "select", "options": ["默认", "复杂色彩"], "default": "默认"},
+        {"key": "output_key", "label": "输出变量名", "type": "text", "default": "last_extracted_text"},
+        {"key": "save_all_text", "label": "保存全部文本", "type": "bool", "default": False},
+        {"key": "all_text_key", "label": "全部文本变量名", "type": "text", "default": "all_ocr_text", "hide_if": {"field": "save_all_text", "value": False}},
+        {"key": "save_position", "label": "保存位置", "type": "bool", "default": True},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "offset", "label": "坐标偏移", "type": "offset"},
+    ],
     "ParallelNode": [
         {"key": "success_policy", "label": "成功策略", "type": "select", "options": ["require_all", "require_one"], "default": "require_all"},
     ],
@@ -1475,9 +1499,25 @@ class WindowSelectField(FieldWidget):
         input_frame.pack(fill="x")
 
         self.var = tk.StringVar(value="")
+        print(f"[DEBUG] WindowSelectField._create_widget: 初始化 var=''")
 
         self._refresh_window_list()
 
+        # 先放置清空按钮，确保其宽度不被挤压
+        self.clear_btn = ctk.CTkButton(
+            input_frame,
+            text="清空",
+            font=Theme.get_font('sm'),
+            width=50,
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['info'],
+            hover_color=self._dark_colors['info_hover'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+        )
+        self.clear_btn.pack(side="right", padx=(Theme.DIMENSIONS['spacing_xs'], 0))
+        self.clear_btn.bind("<ButtonRelease-1>", lambda e: self._clear_selection())
+
+        # 再放置下拉框，使用剩余空间
         self.combobox = ctk.CTkOptionMenu(
             input_frame,
             variable=self.var,
@@ -1492,31 +1532,35 @@ class WindowSelectField(FieldWidget):
             width=140,
             command=self._on_window_selected
         )
-        self.combobox.pack(side="left", fill="x", expand=True, padx=(0, Theme.DIMENSIONS['spacing_xs']))
-
-        self.refresh_btn = ctk.CTkButton(
-            input_frame,
-            text="刷新",
-            font=Theme.get_font('sm'),
-            width=50,
-            height=Theme.DIMENSIONS['input_height'],
-            fg_color=self._dark_colors['info'],
-            hover_color=self._dark_colors['info_hover'],
-            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
-        )
-        self.refresh_btn.pack(side="right")
-        self.refresh_btn.bind("<ButtonRelease-1>", lambda e: self._refresh_window_list())
+        self.combobox.pack(side="left", fill="x", expand=True)
 
     def _on_window_selected(self, choice: str):
+        print(f"[DEBUG] WindowSelectField._on_window_selected: choice='{choice}'")
+        print(f"[DEBUG] WindowSelectField._on_window_selected: 设置前 var='{self.var.get()}'")
+        self.var.set(choice)
+        print(f"[DEBUG] WindowSelectField._on_window_selected: 设置后 var='{self.var.get()}'")
         self.on_change(self.key, choice)
         if choice in self._window_pids:
             pid = self._window_pids[choice]
             if pid:
                 self.on_change("window_pid", pid)
                 print(f"[DEBUG] WindowSelectField: 选择窗口 '{choice}', PID={pid}")
+        else:
+            print(f"[DEBUG] WindowSelectField: choice='{choice}' 不在 _window_pids 中")
+
+    def _clear_selection(self):
+        print(f"[DEBUG] WindowSelectField._clear_selection: 清空前 var='{self.var.get()}'")
+        self.var.set("")
+        self.on_change(self.key, "")
+        self.on_change("window_pid", 0)
+        print(f"[DEBUG] WindowSelectField: 清空窗口选择")
 
     def _refresh_window_list(self):
         from bt_utils.window_manager import WindowManager
+        
+        current_value = self.var.get() if hasattr(self, 'var') else ""
+        print(f"[DEBUG] WindowSelectField._refresh_window_list: 刷新前 var='{current_value}'")
+        
         windows = WindowManager.enum_all_windows()
         self._window_titles = [title for hwnd, title in windows]
         self._window_hwnds = {title: hwnd for hwnd, title in windows}
@@ -1525,15 +1569,24 @@ class WindowSelectField(FieldWidget):
             pid = WindowManager.get_window_pid(hwnd)
             if pid:
                 self._window_pids[title] = pid
+        print(f"[DEBUG] WindowSelectField._refresh_window_list: 窗口数量={len(self._window_titles)}")
+        
         if hasattr(self, 'combobox'):
             self.combobox.configure(values=self._window_titles)
+            if current_value and current_value in self._window_titles:
+                self.var.set(current_value)
+                print(f"[DEBUG] WindowSelectField._refresh_window_list: 恢复 var='{current_value}'")
 
     def set_value(self, value: Any):
+        print(f"[DEBUG] WindowSelectField.set_value: value='{value}'")
         if value and hasattr(self, 'combobox'):
             self.var.set(str(value))
+            print(f"[DEBUG] WindowSelectField.set_value: 设置后 var='{self.var.get()}'")
 
     def get_value(self) -> Any:
-        return self.var.get()
+        value = self.var.get()
+        print(f"[DEBUG] WindowSelectField.get_value: 返回 '{value}'")
+        return value
 
 
 class ColorField(FieldWidget):
@@ -1680,6 +1733,41 @@ class ColorField(FieldWidget):
             return self._rgb_value
         except (ValueError, AttributeError):
             return self._rgb_value
+
+
+class TextListField(FieldWidget):
+    def __init__(self, master, label: str, key: str, on_change: Callable, **kwargs):
+        super().__init__(master, label, key, on_change, **kwargs)
+        self._create_widget()
+
+    def _create_widget(self):
+        self.textbox = ctk.CTkTextbox(
+            self,
+            height=80,
+            font=Theme.get_font('sm'),
+            fg_color=self._dark_colors['bg_tertiary'],
+            border_color=self._dark_colors['border'],
+            text_color=self._dark_colors['text_primary'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius']
+        )
+        self.textbox.pack(fill="x")
+        self.textbox.bind("<FocusOut>", lambda e: self._on_change())
+
+    def _on_change(self):
+        self.on_change(self.key, self.get_value())
+
+    def set_value(self, value: Any):
+        self.textbox.delete("1.0", tk.END)
+        if isinstance(value, list) and value:
+            self.textbox.insert("1.0", '\n'.join(str(v) for v in value))
+        elif isinstance(value, str) and value:
+            self.textbox.insert("1.0", value)
+
+    def get_value(self) -> Any:
+        text = self.textbox.get("1.0", tk.END).strip()
+        if not text:
+            return []
+        return [line.strip() for line in text.split('\n') if line.strip()]
 
 
 class PropertyPanel(ctk.CTkFrame):
@@ -1829,6 +1917,7 @@ class PropertyPanel(ctk.CTkFrame):
         self.widgets.clear()
         self.field_schemas.clear()
         self.field_containers.clear()
+        self._hidden_values.clear()
     
     def save_and_clear(self):
         self.current_node_id = None
@@ -1983,6 +2072,7 @@ class PropertyPanel(ctk.CTkFrame):
             "ColorConditionNode": "bt_nodes.conditions.color:ColorConditionNode",
             "NumberConditionNode": "bt_nodes.conditions.number:NumberConditionNode",
             "VariableConditionNode": "bt_nodes.conditions.variable:VariableConditionNode",
+            "TextExtractNode": "bt_nodes.conditions.text_extract:TextExtractNode",
         }
         
         if node_type not in node_map:
@@ -2092,6 +2182,8 @@ class PropertyPanel(ctk.CTkFrame):
             field_widget = OffsetField(container, label, key, self._on_field_change, self.app)
         elif field_type == "window_select":
             field_widget = WindowSelectField(container, label, key, self._on_field_change, self.app)
+        elif field_type == "text_list":
+            field_widget = TextListField(container, label, key, self._on_field_change)
         
         if field_widget:
             field_widget.set_value(value)

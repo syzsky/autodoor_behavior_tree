@@ -967,6 +967,13 @@ class ActionNode(Node):
     执行特定动作，动作成功后可选执行子节点。
     """
     NODE_TYPE = "ActionNode"
+    
+    SKIP_WINDOW_SWITCH = False
+
+    def __init__(self, node_id: str = None, config: NodeConfig = None):
+        super().__init__(node_id, config)
+        self._window_switched = False
+        self._was_already_foreground = False
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         return self._execute_with_decorators(context, self._tick_internal)
@@ -974,14 +981,30 @@ class ActionNode(Node):
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
         bound_window = context.get_bound_window()
 
-        if bound_window:
-            print(f"[DEBUG] ActionNode '{self.name}' 检测到绑定窗口: hwnd={bound_window}")
-            context.smart_switch_to_bound_window()
-            try:
-                print(f"[DEBUG] ActionNode '{self.name}' 执行动作...")
-                status = self._execute_action(context)
-            finally:
-                context.smart_restore_foreground_window()
+        if bound_window and not self.SKIP_WINDOW_SWITCH:
+            if self._children_running:
+                return self._execute_children(context)
+            
+            if not self._window_switched:
+                from bt_utils.window_manager import WindowManager
+                self._was_already_foreground = WindowManager.is_foreground_window(bound_window)
+                
+                if self._was_already_foreground:
+                    print(f"[DEBUG] ActionNode '{self.name}' 绑定窗口已在前台，跳过切换")
+                else:
+                    print(f"[DEBUG] ActionNode '{self.name}' 检测到绑定窗口: hwnd={bound_window}")
+                    context.smart_switch_to_bound_window()
+                self._window_switched = True
+            
+            print(f"[DEBUG] ActionNode '{self.name}' 执行动作...")
+            status = self._execute_action(context)
+            
+            if status != NodeStatus.RUNNING:
+                if not self._was_already_foreground:
+                    context.smart_restore_foreground_window()
+                self._window_switched = False
+                self._was_already_foreground = False
+            
             self.status = status
 
             if status == NodeStatus.SUCCESS and self.children:
@@ -1003,6 +1026,11 @@ class ActionNode(Node):
             return status
         else:
             return self._execute_children(context)
+
+    def reset(self, reset_counters: bool = True) -> None:
+        super().reset(reset_counters)
+        self._window_switched = False
+        self._was_already_foreground = False
 
     @abstractmethod
     def _execute_action(self, context: "ExecutionContext") -> NodeStatus:
@@ -1035,6 +1063,7 @@ class StartNode(CompositeNode):
         self.bind_window = self.config.get_bool("bind_window", False)
         self.window_title = self.config.get("window_title", "")
         self.window_pid = self.config.get_int("window_pid", 0)
+        self._window_bound = False
     
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         """顺序执行所有子节点,失败后继续执行
@@ -1054,8 +1083,9 @@ class StartNode(CompositeNode):
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
         from bt_utils.log_manager import LogManager
 
-        if self.bind_window and self.window_title:
+        if self.bind_window and self.window_title and not self._window_bound:
             self._bind_window_to_context(context)
+            self._window_bound = True
 
         if not self.children:
             LogManager.instance().log_success(
@@ -1097,6 +1127,7 @@ class StartNode(CompositeNode):
     def reset(self, reset_counters: bool = True) -> None:
         """重置节点状态"""
         super().reset(reset_counters)
+        self._window_bound = False
         for child in self.children:
             child.reset()
 

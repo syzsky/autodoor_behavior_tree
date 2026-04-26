@@ -10,6 +10,7 @@ class ResourceService:
         'script_path', 
         'code_path',
         'sound_path',
+        'file_path',
     ]
     
     RESOURCE_TYPE_MAP = {
@@ -17,6 +18,7 @@ class ResourceService:
         'script_path': 'script',
         'code_path': 'code',
         'sound_path': 'audio',
+        'file_path': 'data',
     }
     
     TYPE_DIR_MAP = {

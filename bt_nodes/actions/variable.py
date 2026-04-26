@@ -15,6 +15,7 @@ class SetVariableNode(ActionNode):
         operation: 操作类型 (set/increment/delete)
     """
     NODE_TYPE = "SetVariableNode"
+    SKIP_WINDOW_SWITCH = True
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)

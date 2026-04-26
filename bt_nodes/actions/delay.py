@@ -8,6 +8,7 @@ from bt_utils.helpers import get_random_duration
 
 class DelayNode(ActionNode):
     NODE_TYPE = "DelayNode"
+    SKIP_WINDOW_SWITCH = True
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)

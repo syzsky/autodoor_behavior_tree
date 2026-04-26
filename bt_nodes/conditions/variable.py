@@ -9,8 +9,8 @@ class VariableConditionNode(ConditionNode):
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
         self.variable_name = self.config.get("variable_name", "")
-        self.comparison = self.config.get("comparison", "==")
-        self.target_value = self.config.get("target_value", "")
+        self.comparison = self.config.get("comparison") or self.config.get("operator", "==")
+        self.target_value = self.config.get("target_value") or self.config.get("compare_value", "")
 
     def _check_condition(self, context) -> bool:
         try:
@@ -48,18 +48,22 @@ class VariableConditionNode(ConditionNode):
             比较结果
         """
         try:
-            if isinstance(value, (int, float)) and isinstance(self.target_value, str):
+            ops = {
+                ">": lambda a, b: a > b,
+                ">=": lambda a, b: a >= b,
+                "<": lambda a, b: a < b,
+                "<=": lambda a, b: a <= b,
+                "==": lambda a, b: a == b,
+                "!=": lambda a, b: a != b,
+            }
+            
+            if self.comparison in ops:
                 try:
-                    target = float(self.target_value)
-                    ops = {
-                        ">": lambda a, b: a > b,
-                        ">=": lambda a, b: a >= b,
-                        "<": lambda a, b: a < b,
-                        "<=": lambda a, b: a <= b,
-                        "==": lambda a, b: a == b,
-                        "!=": lambda a, b: a != b,
-                    }
-                    return ops.get(self.comparison, lambda a, b: False)(value, target)
+                    num_value = float(value) if isinstance(value, str) else value
+                    num_target = float(self.target_value) if isinstance(self.target_value, str) else self.target_value
+                    
+                    if isinstance(num_value, (int, float)) and isinstance(num_target, (int, float)):
+                        return ops[self.comparison](num_value, num_target)
                 except (ValueError, TypeError):
                     pass
 
@@ -88,4 +92,6 @@ class VariableConditionNode(ConditionNode):
         data["config"]["variable_name"] = self.variable_name
         data["config"]["comparison"] = self.comparison
         data["config"]["target_value"] = self.target_value
+        data["config"]["operator"] = self.comparison
+        data["config"]["compare_value"] = self.target_value
         return data

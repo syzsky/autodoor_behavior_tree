@@ -84,6 +84,7 @@ class CodeSecurityChecker:
 
 class CodeNode(ActionNode):
     NODE_TYPE = "CodeNode"
+    SKIP_WINDOW_SWITCH = True
 
     CODE_TYPE_EXTENSIONS = {
         "python": [".py", ".pyw"],

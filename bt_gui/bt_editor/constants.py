@@ -9,6 +9,7 @@ NODE_CATEGORY_MAP = {
     "ColorConditionNode": "condition",
     "NumberConditionNode": "condition",
     "VariableConditionNode": "condition",
+    "TextExtractNode": "condition",
     "KeyPressNode": "action",
     "MouseClickNode": "action",
     "MouseMoveNode": "action",
@@ -18,6 +19,7 @@ NODE_CATEGORY_MAP = {
     "AlarmNode": "action",
     "ScriptNode": "action",
     "CodeNode": "action",
+    "TextInputNode": "action",
 }
 
 NODE_DISPLAY_NAMES = {
@@ -31,6 +33,7 @@ NODE_DISPLAY_NAMES = {
     "ColorConditionNode": "颜色检测",
     "NumberConditionNode": "数字比较",
     "VariableConditionNode": "变量判断",
+    "TextExtractNode": "文本提取",
     "KeyPressNode": "按键",
     "MouseClickNode": "点击",
     "MouseMoveNode": "移动",
@@ -40,6 +43,7 @@ NODE_DISPLAY_NAMES = {
     "AlarmNode": "报警",
     "ScriptNode": "脚本",
     "CodeNode": "代码",
+    "TextInputNode": "文本输入",
 }
 
 NODE_DESCRIPTIONS = {
@@ -53,6 +57,7 @@ NODE_DESCRIPTIONS = {
     "ColorConditionNode": "检测颜色值",
     "NumberConditionNode": "比较数值大小",
     "VariableConditionNode": "判断变量值",
+    "TextExtractNode": "从指定区域提取文本",
     "KeyPressNode": "模拟键盘按键",
     "MouseClickNode": "模拟鼠标点击",
     "MouseMoveNode": "移动鼠标位置",
@@ -62,11 +67,12 @@ NODE_DESCRIPTIONS = {
     "AlarmNode": "播放报警音效",
     "CodeNode": "执行外部代码文件",
     "ScriptNode": "执行Txt脚本文件",
+    "TextInputNode": "向目标位置输入文本",
 }
 
 COMPOSITE_NODES = ["SequenceNode", "SelectorNode", "ParallelNode", "RandomNode"]
-CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode"]
-ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode"]
+CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode"]
+ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode"]
 
 ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES
 
@@ -104,6 +110,7 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("ColorConditionNode", "颜色检测", "检测颜色值"),
                 ("NumberConditionNode", "数字比较", "比较数值大小"),
                 ("VariableConditionNode", "变量判断", "判断变量值"),
+                ("TextExtractNode", "文本提取", "从指定区域提取文本"),
             ]
         },
         "动作节点": {
@@ -119,6 +126,7 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("AlarmNode", "报警", "播放报警音效"),
                 ("CodeNode", "代码", "执行外部代码文件"),
                 ("ScriptNode", "脚本", "执行Txt脚本文件"),
+                ("TextInputNode", "文本输入", "向目标位置输入文本"),
             ]
         },
     }

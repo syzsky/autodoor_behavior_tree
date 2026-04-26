@@ -10,3 +10,4 @@ numpy>=1.21.0
 screeninfo>=0.6.7
 pywin32>=305
 PyYAML>=6.0
+pyperclip>=1.8.2

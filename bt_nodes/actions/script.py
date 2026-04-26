@@ -13,6 +13,7 @@ class ScriptNode(ActionNode):
     线程安全设计：所有状态操作都通过锁保护。
     """
     NODE_TYPE = "ScriptNode"
+    SKIP_WINDOW_SWITCH = True
     
     _executor_pool: Dict[str, Any] = {}
     _pool_lock = threading.Lock()

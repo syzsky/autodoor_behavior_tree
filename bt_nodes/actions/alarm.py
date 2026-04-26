@@ -7,6 +7,7 @@ from bt_utils.log_manager import LogManager
 
 class AlarmNode(ActionNode):
     NODE_TYPE = "AlarmNode"
+    SKIP_WINDOW_SWITCH = True
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
