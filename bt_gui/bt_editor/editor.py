@@ -369,26 +369,15 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     
     def _delete_selected(self):
         """删除选中的节点或连接"""
-        print(f"[DEBUG] _delete_selected called")
-        print(f"[DEBUG]   selected_nodes={self.canvas.selected_nodes}")
-        print(f"[DEBUG]   selected_node={self.canvas.selected_node}")
-        print(f"[DEBUG]   selected_connections={self.canvas.selected_connections}")
-        print(f"[DEBUG]   selected_connection={self.canvas.selected_connection}")
         if self.canvas.selected_nodes:
             node_ids = list(self.canvas.selected_nodes)
-            print(f"[DEBUG] _delete_selected: deleting nodes {node_ids}")
             self._delete_nodes_with_check(node_ids)
         elif self.canvas.selected_node:
-            print(f"[DEBUG] _delete_selected: deleting single node {self.canvas.selected_node}")
             self._delete_nodes_with_check([self.canvas.selected_node])
         elif self.canvas.selected_connections:
-            print(f"[DEBUG] _delete_selected: deleting connections {self.canvas.selected_connections}")
             self._delete_connections(list(self.canvas.selected_connections))
         elif self.canvas.selected_connection:
-            print(f"[DEBUG] _delete_selected: deleting single connection {self.canvas.selected_connection}")
             self._delete_connection(self.canvas.selected_connection)
-        else:
-            print(f"[DEBUG] _delete_selected: nothing selected to delete")
     
     def _delete_nodes_with_check(self, node_ids: List[str]) -> None:
         """删除节点（带保护检查）
@@ -1301,7 +1290,6 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if not self._is_running:
             return
         
-        print(f"[DEBUG] _stop_running_in_main_thread: stopping...")
         self._play_stop_sound()
         
         if self.engine:
@@ -1310,7 +1298,6 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self.context = None
         
         was_listening = self._hotkey_manager.is_running()
-        print(f"[DEBUG] _stop_running_in_main_thread: hotkey_manager was_listening={was_listening}")
         if was_listening:
             self._hotkey_manager.stop()
         
@@ -1320,12 +1307,10 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if was_listening:
             self._hotkey_manager.start()
         
-        print(f"[DEBUG] _stop_running_in_main_thread: scheduling _clear_status_after_stop and _restore_canvas_focus")
         self.canvas.after(100, self._clear_status_after_stop)
         self.canvas.after(200, self._restore_canvas_focus)
         self.toolbar.set_running(False)
         self._is_running = False
-        print(f"[DEBUG] _stop_running_in_main_thread: done")
     
     def _stop_ui_polling(self):
         """停止UI轮询（已废弃，轮询持续运行）"""
@@ -1338,11 +1323,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     def _restore_canvas_focus(self):
         """恢复画布焦点"""
         try:
-            print(f"[DEBUG] _restore_canvas_focus: attempting to restore focus to canvas")
             self.canvas.canvas.focus_set()
-            print(f"[DEBUG] _restore_canvas_focus: focus restored successfully")
-        except Exception as e:
-            print(f"[DEBUG] _restore_canvas_focus: failed - {e}")
+        except Exception:
+            pass
     
     def _init_ui_dispatcher(self):
         """初始化UI更新分发器"""

@@ -135,6 +135,17 @@ class WindowManager:
             return False
 
     @staticmethod
+    def get_foreground_window() -> Optional[int]:
+        try:
+            return user32.GetForegroundWindow()
+        except Exception:
+            return None
+
+    @staticmethod
+    def set_foreground_window(hwnd: int) -> bool:
+        return WindowManager.switch_to_window(hwnd)
+
+    @staticmethod
     def is_window_valid(hwnd: int) -> bool:
         try:
             return bool(user32.IsWindow(hwnd))

@@ -1044,7 +1044,7 @@ class ScreenshotField(FieldWidget):
 class KeyField(FieldWidget):
     def __init__(self, master, label: str, key: str, on_change: Callable, **kwargs):
         self._listening = False
-        self._bound_keys = []
+        self._bound_key_ids = []
         super().__init__(master, label, key, on_change, **kwargs)
         self._create_widget()
     
@@ -1082,19 +1082,47 @@ class KeyField(FieldWidget):
     
     def _unbind_all_keys(self):
         toplevel = self.winfo_toplevel()
-        for key in self._bound_keys:
+        
+        for key_name, bind_id, bind_type in self._bound_key_ids:
             try:
-                toplevel.unbind(key)
+                toplevel.unbind(key_name, bind_id)
             except Exception:
                 pass
-        self._bound_keys = []
+        self._bound_key_ids = []
     
     def _cancel_listening(self):
         self._listening = False
         self._unbind_all_keys()
         try:
+            toplevel = self.winfo_toplevel()
+            if hasattr(toplevel, 'set_keyfield_listening'):
+                toplevel.set_keyfield_listening(False, None)
+        except Exception:
+            pass
+        try:
             if self.winfo_exists():
                 self.btn.configure(text="修改", fg_color=self._dark_colors['primary'])
+        except Exception:
+            pass
+    
+    def _capture_key(self, key_name: str):
+        """捕获按键（从 app.py 的快捷键处理中调用）"""
+        if not self._listening:
+            return
+        
+        self.var.set(key_name)
+        self.on_change(self.key, key_name)
+        
+        self._listening = False
+        if self.winfo_exists():
+            self.btn.configure(text="修改", fg_color=self._dark_colors['primary'])
+        
+        self._unbind_all_keys()
+        
+        try:
+            toplevel = self.winfo_toplevel()
+            if hasattr(toplevel, 'set_keyfield_listening'):
+                toplevel.set_keyfield_listening(False, None)
         except Exception:
             pass
     
@@ -1104,8 +1132,12 @@ class KeyField(FieldWidget):
             return
         
         self._listening = True
-        self._bound_keys = []
+        self._bound_key_ids = []
         self.btn.configure(text="取消", fg_color=self._dark_colors['warning'])
+        
+        toplevel = self.winfo_toplevel()
+        if hasattr(toplevel, 'set_keyfield_listening'):
+            toplevel.set_keyfield_listening(True, self._capture_key)
         
         def on_key_press(event):
             try:
@@ -1143,38 +1175,18 @@ class KeyField(FieldWidget):
                 
                 self._unbind_all_keys()
                 
-                return "break"
-            except Exception:
-                pass
-        
-        def on_special_key(event, mapped_name):
-            try:
-                if not self._listening:
-                    return
-                
-                self.var.set(mapped_name)
-                self.on_change(self.key, mapped_name)
-                
-                self._listening = False
-                if self.winfo_exists():
-                    self.btn.configure(text="修改", fg_color=self._dark_colors['primary'])
-                
-                self._unbind_all_keys()
+                try:
+                    if hasattr(toplevel, 'set_keyfield_listening'):
+                        toplevel.set_keyfield_listening(False, None)
+                except Exception:
+                    pass
                 
                 return "break"
             except Exception:
                 pass
         
-        toplevel = self.winfo_toplevel()
-        
-        toplevel.bind("<KeyPress>", on_key_press)
-        self._bound_keys.append("<KeyPress>")
-        
-        toplevel.bind("<Delete>", lambda e: on_special_key(e, "delete"))
-        self._bound_keys.append("<Delete>")
-        
-        toplevel.bind("<BackSpace>", lambda e: on_special_key(e, "backspace"))
-        self._bound_keys.append("<BackSpace>")
+        bind_id = toplevel.bind("<Key>", on_key_press)
+        self._bound_key_ids.append(("<Key>", bind_id, "widget"))
         
         self.after(10000, self._cancel_listening)
     

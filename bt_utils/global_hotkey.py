@@ -51,10 +51,8 @@ class GlobalHotkeyManager:
         """启动全局热键监听"""
         with self._lock:
             if self._running:
-                print(f"[DEBUG] GlobalHotkeyManager.start: already running")
                 return
             
-            print(f"[DEBUG] GlobalHotkeyManager.start: starting listener")
             self._running = True
             self._listener = keyboard.Listener(
                 on_press=self._on_press,
@@ -62,22 +60,18 @@ class GlobalHotkeyManager:
                 suppress=False
             )
             self._listener.start()
-            print(f"[DEBUG] GlobalHotkeyManager.start: listener started")
     
     def stop(self):
         """停止全局热键监听"""
         with self._lock:
             if not self._running:
-                print(f"[DEBUG] GlobalHotkeyManager.stop: not running")
                 return
             
-            print(f"[DEBUG] GlobalHotkeyManager.stop: stopping listener")
             self._running = False
             if self._listener:
                 self._listener.stop()
                 self._listener = None
             self._last_trigger_time.clear()
-            print(f"[DEBUG] GlobalHotkeyManager.stop: listener stopped")
     
     def register(self, key_name: str, callback: Callable):
         """注册热键
