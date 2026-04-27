@@ -161,10 +161,10 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         self._draw_grid()
     
     def _on_canvas_focus_in(self, event):
-        pass
+        print(f"[DEBUG] Canvas focus IN: widget={event.widget}")
     
     def _on_canvas_focus_out(self, event):
-        pass
+        print(f"[DEBUG] Canvas focus OUT: widget={event.widget}")
     
     def _on_motion(self, event):
         x = (self.canvas.canvasx(event.x) - self.pan_x) / self.zoom
@@ -178,10 +178,13 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         self.canvas.config(cursor="arrow")
     
     def _on_click(self, event):
+        print(f"[DEBUG] Canvas _on_click: x={event.x}, y={event.y}")
         if self.property_panel:
             self.property_panel.force_save_current_field()
         
+        print(f"[DEBUG] Canvas _on_click: calling focus_set()")
         self.canvas.focus_set()
+        print(f"[DEBUG] Canvas _on_click: focus_set() done, current focus={self.canvas.focus_get()}")
         
         x = (self.canvas.canvasx(event.x) - self.pan_x) / self.zoom
         y = (self.canvas.canvasy(event.y) - self.pan_y) / self.zoom

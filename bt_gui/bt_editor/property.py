@@ -47,7 +47,7 @@ NODE_CONFIG_SCHEMAS = {
     ],
     "VariableConditionNode": [
         {"key": "variable_name", "label": "变量名", "type": "text"},
-        {"key": "operator", "label": "运算符", "type": "select", "options": ["==", "!=", ">", "<", ">=", "<=", "exists", "not_exists", "contains", "not_contains"], "default": "=="},
+        {"key": "operator", "label": "运算符", "type": "select", "options": ["==", "!=", ">", "<", ">=", "<=", "exists", "not_exists", "contains", "not_contains", "starts_with", "ends_with"], "default": "=="},
         {"key": "compare_value", "label": "比较值", "type": "text", "hide_if": {"field": "operator", "value": ["exists", "not_exists"]}},
     ],
     "KeyPressNode": [

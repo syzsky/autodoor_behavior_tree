@@ -298,6 +298,7 @@ class BehaviorTreeApp(ctk.CTk):
             self.bind(key, lambda e, cb=callback, k=key: self._handle_shortcut(e, cb, k))
     
     def _handle_shortcut(self, event, callback, key_name):
+        print(f"[DEBUG] _handle_shortcut: key={key_name}, widget={event.widget}")
         if callable(callback):
             callback()
         return "break"
@@ -338,20 +339,32 @@ class BehaviorTreeApp(ctk.CTk):
                 self.script_editor._new_script()
     
     def _delete(self):
-        if self._is_focused_on_input_widget():
+        focused = self.focus_get()
+        is_input = self._is_focused_on_input_widget()
+        print(f"[DEBUG] _delete called: focused={focused}, widget_type={type(focused).__name__ if focused else 'None'}, is_input_widget={is_input}")
+        if is_input:
+            print(f"[DEBUG] _delete: blocked - focus is on input widget")
             return
         current_tab = self._get_current_tab()
+        print(f"[DEBUG] _delete: current_tab={current_tab}")
         if current_tab == 'bt':
             if hasattr(self.behavior_tree, '_delete_selected'):
+                print(f"[DEBUG] _delete: calling behavior_tree._delete_selected()")
                 self.behavior_tree._delete_selected()
+            else:
+                print(f"[DEBUG] _delete: behavior_tree has no _delete_selected method")
     
     def _is_focused_on_input_widget(self) -> bool:
         """检查当前焦点是否在输入控件上"""
         focused = self.focus_get()
         if focused:
             widget_type = str(type(focused).__name__)
+            print(f"[DEBUG] _is_focused_on_input_widget: focused widget type={widget_type}")
             if widget_type in ("CTkEntry", "Entry", "CTkTextbox", "Text"):
+                print(f"[DEBUG] _is_focused_on_input_widget: returning True (input widget)")
                 return True
+        else:
+            print(f"[DEBUG] _is_focused_on_input_widget: no focused widget")
         return False
     
     def _copy(self):

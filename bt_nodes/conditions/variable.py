@@ -19,6 +19,24 @@ class VariableConditionNode(ConditionNode):
                 return False
 
             value = context.blackboard.get(self.variable_name)
+            exists = context.blackboard.exists(self.variable_name)
+
+            if self.comparison == "exists":
+                if exists:
+                    self._log_condition_result(True, extra_info=f"变量存在: {self.variable_name}")
+                    return True
+                else:
+                    self._log_condition_result(False, f"变量不存在: {self.variable_name}")
+                    return False
+
+            if self.comparison == "not_exists":
+                if not exists:
+                    self._log_condition_result(True, extra_info=f"变量不存在: {self.variable_name}")
+                    return True
+                else:
+                    self._log_condition_result(False, f"变量存在: {self.variable_name}")
+                    return False
+
             if value is None:
                 self._log_condition_result(False, f"变量不存在: {self.variable_name}")
                 return False
@@ -90,8 +108,6 @@ class VariableConditionNode(ConditionNode):
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
         data["config"]["variable_name"] = self.variable_name
-        data["config"]["comparison"] = self.comparison
-        data["config"]["target_value"] = self.target_value
         data["config"]["operator"] = self.comparison
         data["config"]["compare_value"] = self.target_value
         return data
