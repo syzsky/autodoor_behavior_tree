@@ -119,7 +119,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "execution_mode", "label": "执行模式", "type": "select", "options": ["顺序", "随机"], "default": "顺序", "hide_if": {"field": "input_mode", "value": ["文本提取值", "文件"]}},
         {"key": "blackboard_key", "label": "黑板变量名", "type": "text", "default": "last_extracted_text", "hide_if": {"field": "input_mode", "value": ["预设文本", "文件"]}},
         {"key": "file_path", "label": "文件路径", "type": "file", "width": 120, "filetypes": [("文本文件", "*.txt"), ("所有文件", "*.*")], "hide_if": {"field": "input_mode", "value": ["文本提取值", "预设文本"]}},
-        {"key": "input_delay", "label": "输入间隔(ms)", "type": "number", "min": 0, "default": 50},
+        {"key": "input_delay", "label": "输入间隔(ms)", "type": "number", "min": 0, "default": 0},
         {"key": "clear_before_input", "label": "输入前清空", "type": "bool", "default": False},
         {"key": "save_input_text", "label": "保存输入文本", "type": "bool", "default": False},
         {"key": "output_key", "label": "输出变量名", "type": "text", "default": "last_input_text", "hide_if": {"field": "save_input_text", "value": False}},

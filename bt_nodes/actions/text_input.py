@@ -37,7 +37,7 @@ class TextInputNode(ActionNode):
         self.execution_mode = EXECUTION_MODE_MAP.get(execution_mode_display, "sequential")
         self.blackboard_key = self.config.get("blackboard_key", "last_extracted_text")
         self.file_path = self.config.get("file_path", "")
-        self.input_delay = self.config.get_int("input_delay", 50)
+        self.input_delay = self.config.get_int("input_delay", 0)
         self.clear_before_input = self.config.get_bool("clear_before_input", False)
         self.save_input_text = self.config.get_bool("save_input_text", False)
         self.output_key = self.config.get("output_key", "last_input_text")
