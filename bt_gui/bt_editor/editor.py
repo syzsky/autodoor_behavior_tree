@@ -52,25 +52,21 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     def __init__(self, master, app, **kwargs):
         super().__init__(master, **kwargs)
         self.app = app
-        self.file_path: Optional[str] = None
+        self._fallback_file_path: Optional[str] = None
         self._node_counter = 0
         self._modified = False
         
-        self.engine: Optional[BehaviorTreeEngine] = None
-        self.context: Optional[ExecutionContext] = None
+        self._fallback_engine: Optional[BehaviorTreeEngine] = None
+        self._fallback_context: Optional[ExecutionContext] = None
         self._is_running = False
         
         self.project_manager = None
-        self.project_root = None
+        self._fallback_project_root = None
         
         self._dark_colors = Theme.get_dark_colors()
         self.configure(fg_color=self._dark_colors['bg_primary'], corner_radius=0)
         
         self._fallback_canvas = None
-        self._fallback_engine = None
-        self._fallback_context = None
-        self._fallback_project_root = None
-        self._fallback_file_path = None
         self._fallback_command_manager = None
         
         self.tab_manager = GuiTabManager()
@@ -78,7 +74,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self.tab_manager.on_tab_status_changed = self._on_tab_status_changed
         self.tab_manager.on_tab_removed = self._on_tab_removed
         
-        self.command_manager = CommandManager()
+        self._fallback_command_manager = CommandManager()
         self._clipboard_data = None
         
         self._autosave_manager: Optional[AutoSaveManager] = None
@@ -154,7 +150,14 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             return
         
         tree_data = instance.canvas.get_tree_data()
-        save_path = instance.file_path or os.path.join(instance.project_root, "tree.json")
+        
+        if instance.file_path:
+            save_path = instance.file_path
+        elif instance.project_root:
+            save_path = os.path.join(instance.project_root, "tree.json")
+        else:
+            messagebox.showerror("错误", "无法保存：未指定文件路径或项目目录")
+            return
         
         with open(save_path, "w", encoding="utf-8") as f:
             json.dump(tree_data, f, ensure_ascii=False, indent=2)
@@ -1761,6 +1764,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     @project_root.setter
     def project_root(self, value):
         self._fallback_project_root = value
+        tab = self.tab_manager.get_active_tab()
+        if tab:
+            tab.project_root = value
     
     @property
     def file_path(self):
@@ -1771,6 +1777,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     @file_path.setter
     def file_path(self, value):
         self._fallback_file_path = value
+        tab = self.tab_manager.get_active_tab()
+        if tab:
+            tab.file_path = value
     
     def _on_tab_switched(self, tab_id: str, instance: TreeInstance):
         """Tab 切换回调"""
