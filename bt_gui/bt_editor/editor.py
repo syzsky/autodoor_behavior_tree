@@ -1781,6 +1781,19 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if tab:
             tab.file_path = value
     
+    @property
+    def command_manager(self):
+        """代理到当前活动 Tab 的命令管理器"""
+        tab = self.tab_manager.get_active_tab()
+        return tab.command_manager if tab else self._fallback_command_manager
+    
+    @command_manager.setter
+    def command_manager(self, value):
+        self._fallback_command_manager = value
+        tab = self.tab_manager.get_active_tab()
+        if tab:
+            tab.command_manager = value
+    
     def _on_tab_switched(self, tab_id: str, instance: TreeInstance):
         """Tab 切换回调"""
         if not instance or not instance.canvas:
