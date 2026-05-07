@@ -206,8 +206,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             return
         
         try:
-            root_node, canvas_state, _ = Serializer.load_from_file(tree_file)
-            instance.canvas.load_tree_data(root_node, canvas_state)
+            with open(tree_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            instance.canvas.load_tree(data)
             instance.file_path = tree_file
         except Exception as e:
             messagebox.showerror("错误", f"加载行为树失败: {e}")
