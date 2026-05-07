@@ -1,3 +1,21 @@
+"""
+多行为树管理面板
+
+⚠️ 已废弃：此组件已被 TabBar + GuiTabManager 替代。
+保留此文件仅用于向后兼容，新代码请使用 TabBar。
+
+废弃日期：2026-05-07
+计划移除日期：2026-08-01
+"""
+
+import warnings
+
+warnings.warn(
+    "MultiTreePanel 已废弃，请使用 TabBar + GuiTabManager 替代",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 import customtkinter as ctk
 import tkinter as tk
 from typing import Dict, Any, Optional, Callable
@@ -7,6 +25,8 @@ class MultiTreePanel(ctk.CTkFrame):
     """多行为树管理面板
 
     在 GUI 中管理多个独立行为树实例的并行运行。
+    
+    ⚠️ 已废弃：请使用 TabBar + GuiTabManager 替代
     """
 
     def __init__(self, master, app=None, **kwargs):

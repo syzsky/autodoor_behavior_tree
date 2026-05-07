@@ -208,6 +208,34 @@ class EditorToolbar(ctk.CTkFrame):
             state="disabled"
         )
         self.stop_btn.pack(side="left", padx=Theme.DIMENSIONS['spacing_xs'])
+        
+        self._create_separator(run_frame)
+        
+        self.all_run_btn = ctk.CTkButton(
+            run_frame,
+            text="▶▶ 全部运行",
+            width=80,
+            font=Theme.get_font('sm'),
+            height=Theme.DIMENSIONS['button_height'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color='#8B5CF6',
+            hover_color='#7C3AED',
+            command=self._on_all_run_click
+        )
+        self.all_run_btn.pack(side="left", padx=Theme.DIMENSIONS['spacing_xs'])
+        
+        self.all_stop_btn = ctk.CTkButton(
+            run_frame,
+            text="⏹⏹ 全部停止",
+            width=80,
+            font=Theme.get_font('sm'),
+            height=Theme.DIMENSIONS['button_height'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color='#6B7280',
+            hover_color='#4B5563',
+            command=self._on_all_stop_click
+        )
+        self.all_stop_btn.pack(side="left", padx=Theme.DIMENSIONS['spacing_xs'])
     
     def _create_path_display(self, parent):
         path_frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -302,6 +330,20 @@ class EditorToolbar(ctk.CTkFrame):
     def _on_stop_click(self):
         if self.on_stop:
             self.on_stop()
+    
+    def _on_all_run_click(self):
+        if hasattr(self, 'on_all_run') and self.on_all_run:
+            self.on_all_run()
+    
+    def _on_all_stop_click(self):
+        if hasattr(self, 'on_all_stop') and self.on_all_stop:
+            self.on_all_stop()
+    
+    def set_on_all_run(self, callback: Callable):
+        self.on_all_run = callback
+    
+    def set_on_all_stop(self, callback: Callable):
+        self.on_all_stop = callback
     
     def update_undo_redo(self, can_undo: bool, can_redo: bool, 
                          undo_desc: Optional[str] = None, 

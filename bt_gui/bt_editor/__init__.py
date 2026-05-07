@@ -15,6 +15,8 @@ from .undo_redo import (
     MoveNodeCommand, MoveNodesCommand, AddConnectionCommand, RemoveConnectionCommand,
     SetPropertyCommand, ClearCanvasCommand
 )
+from .gui_tab_manager import GuiTabManager
+from .tab_bar import TabBar, TabButton
 
 __all__ = [
     'NODE_CATEGORY_MAP', 'NODE_DISPLAY_NAMES', 'NODE_DESCRIPTIONS',
@@ -27,4 +29,5 @@ __all__ = [
     'AddNodeCommand', 'AddNodesCommand', 'RemoveNodeCommand', 'RemoveNodesCommand',
     'MoveNodeCommand', 'MoveNodesCommand', 'AddConnectionCommand', 'RemoveConnectionCommand',
     'SetPropertyCommand', 'ClearCanvasCommand',
+    'GuiTabManager', 'TabBar', 'TabButton',
 ]
