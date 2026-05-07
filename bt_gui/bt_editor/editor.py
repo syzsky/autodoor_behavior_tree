@@ -1609,7 +1609,15 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             "idle": NodeExecutionStatus.IDLE,
         }
         node_status = status_map.get(status, NodeExecutionStatus.IDLE)
-        self.canvas.set_node_status(node_id, node_status)
+        
+        if self.canvas and node_id in self.canvas.nodes:
+            self.canvas.set_node_status(node_id, node_status)
+            return
+        
+        for tab_id, instance in self.tab_manager._trees.items():
+            if instance.canvas and node_id in instance.canvas.nodes:
+                instance.canvas.set_node_status(node_id, node_status)
+                return
 
     def _on_engine_status_change(self, status: str, node_status: NodeStatus = None):
         if status == "completed":
