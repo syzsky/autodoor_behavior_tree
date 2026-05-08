@@ -551,16 +551,10 @@ class RegionField(FieldWidget):
             messagebox.showerror("错误", f"区域选择失败: {str(e)}")
 
     def _get_bound_window(self):
-        from bt_utils.log_manager import LogManager
-        LogManager.debug_print(f"[DEBUG] RegionField._get_bound_window: 开始检查")
         if self.app and hasattr(self.app, 'behavior_tree'):
             editor = self.app.behavior_tree
-            LogManager.debug_print(f"[DEBUG] RegionField._get_bound_window: editor={editor}")
             if hasattr(editor, 'get_start_node'):
                 start_node = editor.get_start_node()
-                LogManager.debug_print(f"[DEBUG] RegionField._get_bound_window: start_node={start_node}")
-                if start_node:
-                    LogManager.debug_print(f"[DEBUG] RegionField._get_bound_window: bind_window={start_node.bind_window}, window_title='{start_node.window_title}', window_pid={start_node.window_pid}")
                 if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window:
                     window_title = getattr(start_node, 'window_title', '')
                     window_pid = getattr(start_node, 'window_pid', 0)
@@ -570,9 +564,7 @@ class RegionField(FieldWidget):
                             window_pid if window_pid > 0 else None,
                             window_title
                         )
-                        LogManager.debug_print(f"[DEBUG] RegionField._get_bound_window: 找到窗口 hwnd={hwnd}")
                         return hwnd
-        LogManager.debug_print(f"[DEBUG] RegionField._get_bound_window: 未找到绑定窗口")
         return None
     
     def set_value(self, value: Any):
@@ -1511,16 +1503,10 @@ class PositionField(FieldWidget):
             return None
     
     def _get_bound_window(self):
-        from bt_utils.log_manager import LogManager
-        LogManager.debug_print(f"[DEBUG] PositionField._get_bound_window: 开始检查")
         if self.app and hasattr(self.app, 'behavior_tree'):
             editor = self.app.behavior_tree
-            LogManager.debug_print(f"[DEBUG] PositionField._get_bound_window: editor={editor}")
             if hasattr(editor, 'get_start_node'):
                 start_node = editor.get_start_node()
-                LogManager.debug_print(f"[DEBUG] PositionField._get_bound_window: start_node={start_node}")
-                if start_node:
-                    LogManager.debug_print(f"[DEBUG] PositionField._get_bound_window: bind_window={start_node.bind_window}, window_title='{start_node.window_title}', window_pid={start_node.window_pid}")
                 if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window:
                     window_title = getattr(start_node, 'window_title', '')
                     window_pid = getattr(start_node, 'window_pid', 0)
@@ -1530,9 +1516,7 @@ class PositionField(FieldWidget):
                             window_pid if window_pid > 0 else None,
                             window_title
                         )
-                        LogManager.debug_print(f"[DEBUG] PositionField._get_bound_window: 找到窗口 hwnd={hwnd}")
                         return hwnd
-        LogManager.debug_print(f"[DEBUG] PositionField._get_bound_window: 未找到绑定窗口")
         return None
 
 
@@ -2701,7 +2685,6 @@ class PropertyPanel(ctk.CTkFrame):
                 widget.set_value(value)
     
     def _update_single_field_visibility(self, key: str, field: Dict[str, Any]):
-        from bt_utils.log_manager import LogManager
         hide_if = field.get("hide_if")
         if not hide_if:
             return
@@ -2709,10 +2692,7 @@ class PropertyPanel(ctk.CTkFrame):
         depend_field = hide_if.get("field")
         hide_value = hide_if.get("value")
         
-        LogManager.debug_print(f"[DEBUG] _update_single_field_visibility: key={key}, depend_field={depend_field}, hide_value={hide_value}")
-        
         if not depend_field or depend_field not in self.widgets:
-            LogManager.debug_print(f"[DEBUG] _update_single_field_visibility: depend_field={depend_field} 不在 widgets 中")
             return
         
         depend_widget = self.widgets.get(depend_field)
@@ -2720,14 +2700,11 @@ class PropertyPanel(ctk.CTkFrame):
             return
         
         current_value = depend_widget.get_value()
-        LogManager.debug_print(f"[DEBUG] _update_single_field_visibility: current_value={current_value}, type={type(current_value)}")
         
         if isinstance(hide_value, list):
             should_hide = current_value in hide_value
         else:
             should_hide = (current_value == hide_value)
-        
-        LogManager.debug_print(f"[DEBUG] _update_single_field_visibility: should_hide={should_hide}")
         
         widget = self.widgets.get(key)
         container = self.field_containers.get(key)
@@ -2735,14 +2712,12 @@ class PropertyPanel(ctk.CTkFrame):
         if widget and container:
             if should_hide:
                 widget.pack_forget()
-                LogManager.debug_print(f"[DEBUG] _update_single_field_visibility: 隐藏字段 {key}")
             else:
                 next_widget = self._find_next_visible_widget(key, container)
                 if next_widget:
                     widget.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'], before=next_widget)
                 else:
                     widget.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'])
-                LogManager.debug_print(f"[DEBUG] _update_single_field_visibility: 显示字段 {key}")
     
     def _find_next_visible_widget(self, current_key: str, container):
         schema_keys = list(self.field_schemas.keys())

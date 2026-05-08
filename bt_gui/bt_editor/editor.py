@@ -1685,13 +1685,10 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         from bt_core.config import NodeConfig
         config = NodeConfig(name=getattr(start_node, 'name', ''))
         node_config = start_node.config if hasattr(start_node, 'config') else {}
-        from bt_utils.log_manager import LogManager
-        LogManager.debug_print(f"[DEBUG] get_start_node: node_config = {node_config}")
         for key, value in node_config.items():
             config.set(key, value)
         from bt_core.nodes import StartNode
         node = StartNode(node_id="start_node", config=config)
-        LogManager.debug_print(f"[DEBUG] get_start_node: bind_window={node.bind_window}, window_title='{node.window_title}', window_pid={node.window_pid}")
         return node
     
     def set_tree_data(self, data: Dict[str, Any]):
