@@ -45,6 +45,7 @@ def _get_user_data_dir() -> Path:
 
 
 class BehaviorTreeEditor(ctk.CTkFrame):
+    _tab_counter = 0
     AUTOSAVE_INTERVAL = 60000
     BACKUP_DIR = str(_get_user_data_dir() / "backup")
     RECOVERY_DIR = str(_get_user_data_dir() / "recovery")
@@ -73,6 +74,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self.tab_manager.on_tab_switched = self._on_tab_switched
         self.tab_manager.on_tab_status_changed = self._on_tab_status_changed
         self.tab_manager.on_tab_removed = self._on_tab_removed
+        self.tab_manager.on_tab_start_request = self._handle_tab_run
+        self.tab_manager.on_tab_stop_request = self._handle_tab_stop
         
         self._clipboard_data = None
         
@@ -116,10 +119,10 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if instance.is_running:
             if not messagebox.askyesno("确认", "行为树正在运行，是否停止并关闭？"):
                 return
-            self.tab_manager.stop_tab(tab_id)
+            self._handle_tab_stop(tab_id)
         
         if instance.modified:
-            result = messagebox.askyesnocancel("保存", "是否保存修改？")
+            result = messagebox.askyesnocancel("保存", f"项目 \"{instance.name}\" 有未保存的改动。\n\n是否保存？")
             if result is None:
                 return
             if result:
@@ -127,14 +130,127 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         if hasattr(instance, '_autosave_manager') and instance._autosave_manager:
             instance._autosave_manager.stop()
+            instance._autosave_manager.save_now()
+        
+        if instance.canvas:
+            instance.canvas.place_forget()
+            instance.canvas.destroy()
         
         self.tab_manager.remove_tab(tab_id)
+        
+        remaining_tab = self.tab_manager.get_active_tab()
+        if remaining_tab:
+            self.tab_bar.set_active(remaining_tab.tab_id)
+            self._on_tab_switched(remaining_tab.tab_id, remaining_tab)
+        else:
+            self._update_title("未命名")
+            self.toolbar.set_project_path(None)
+            self.toolbar.set_running(False)
     
-    def _handle_tab_run(self, tab_id: str):
-        self.tab_manager.start_tab(tab_id)
+    def _handle_tab_run(self, tab_id: str) -> bool:
+        instance = self.tab_manager.get_tab(tab_id)
+        if not instance or instance.is_running:
+            return False
+        
+        if instance.canvas:
+            instance.canvas.show_all_status_indicators()
+        
+        tree_data = instance.canvas.get_tree_data() if instance.canvas else {}
+        from bt_core.serializer import Serializer
+        result = Serializer.deserialize(tree_data)
+        if isinstance(result, tuple):
+            root_node = result[0]
+        else:
+            root_node = result
+        
+        if not root_node:
+            from tkinter import messagebox
+            messagebox.showwarning("警告", "行为树为空，无法运行")
+            return False
+        
+        from bt_core.engine import BehaviorTreeEngine
+        from bt_core.context import ExecutionContext
+        
+        LogManager.instance().set_stopped(False, tab_name=instance.name)
+        
+        engine = BehaviorTreeEngine(root_node)
+        engine._on_status_change = lambda status, node_status=None: self._on_tab_engine_status_change(tab_id, status, node_status)
+        
+        context = ExecutionContext(project_root=instance.project_root)
+        context._on_node_status = self._on_node_status
+        
+        instance.engine = engine
+        instance.context = context
+        
+        engine.start(context)
+        self.tab_manager.update_tab_status(tab_id, True)
+        
+        self._play_start_sound()
+        return True
     
-    def _handle_tab_stop(self, tab_id: str):
-        self.tab_manager.stop_tab(tab_id)
+    def _handle_tab_stop(self, tab_id: str) -> bool:
+        instance = self.tab_manager.get_tab(tab_id)
+        if not instance or not instance.is_running:
+            return False
+        
+        LogManager.instance().set_stopped(True, tab_name=instance.name)
+        LogManager.instance().clear_tab_entries(instance.name)
+        LogManager.instance().log_info(
+            node_type="系统",
+            node_name="",
+            message="用户停止运行",
+            tab_name=instance.name
+        )
+        
+        if instance.engine:
+            instance.engine.stop()
+        
+        self.tab_manager.update_tab_status(tab_id, False)
+        
+        from bt_utils.input_controller_factory import InputController
+        InputController.release_all()
+        
+        if instance.canvas:
+            instance.canvas.after(100, lambda: instance.canvas.clear_all_node_status() if instance.canvas else None)
+            instance.canvas.after(200, lambda: self._restore_canvas_focus_for_tab(tab_id))
+        
+        self._play_stop_sound()
+        return True
+    
+    def _restore_canvas_focus_for_tab(self, tab_id: str):
+        """恢复指定tab的画布焦点"""
+        instance = self.tab_manager.get_tab(tab_id)
+        if instance and instance.canvas:
+            try:
+                instance.canvas.canvas.focus_set()
+            except Exception:
+                pass
+    
+    def _on_tab_engine_status_change(self, tab_id: str, status: str, node_status=None):
+        """Tab 引擎状态变化回调"""
+        instance = self.tab_manager.get_tab(tab_id)
+        if not instance:
+            return
+        
+        if status in ["completed", "stopped"]:
+            self.tab_manager.update_tab_status(tab_id, False)
+            self._play_stop_sound()
+            
+            from bt_utils.input_controller_factory import InputController
+            InputController.release_all()
+            
+            if instance.canvas:
+                instance.canvas.after(100, lambda: instance.canvas.clear_all_node_status() if instance.canvas else None)
+            
+            any_running = False
+            for tid, inst in self.tab_manager._trees.items():
+                if inst.is_running:
+                    any_running = True
+                    break
+            
+            if not any_running:
+                self._is_running = False
+                self.toolbar.set_running(False)
     
     def _handle_import_project(self):
         from tkinter import filedialog
@@ -150,48 +266,38 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         tree_data = instance.canvas.get_tree_data()
         
-        if instance.file_path:
+        if instance.project_root:
+            from bt_utils.project_manager import ProjectManager
+            pm = ProjectManager(instance.project_root)
+            pm.save_project(tree_data)
+        elif instance.file_path:
             save_path = instance.file_path
-        elif instance.project_root:
-            save_path = os.path.join(instance.project_root, "tree.json")
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(tree_data, f, ensure_ascii=False, indent=2)
         else:
             messagebox.showerror("错误", "无法保存：未指定文件路径或项目目录")
             return
         
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(tree_data, f, ensure_ascii=False, indent=2)
+        if hasattr(instance, '_autosave_manager') and instance._autosave_manager:
+            instance._autosave_manager.clear_autosaves()
         
         instance.modified = False
+        self._modified = False
     
     def import_project_to_new_tab(self, project_path: str) -> Optional[str]:
-        import shutil
-        from config.settings_manager import SettingsManager
-        
         folder_name = os.path.basename(project_path)
-        workspace_path = SettingsManager.get_default_workspace_path()
         
-        os.makedirs(workspace_path, exist_ok=True)
+        for existing_id, existing_instance in self.tab_manager._trees.items():
+            if existing_instance.project_root and os.path.samefile(existing_instance.project_root, project_path):
+                from tkinter import messagebox
+                messagebox.showinfo("提示", f"项目 '{folder_name}' 已在 Tab 中打开")
+                self.tab_manager.switch_tab(existing_id)
+                self.tab_bar.set_active(existing_id)
+                return existing_id
         
-        target_dir = os.path.join(workspace_path, folder_name)
+        tab_id = self._create_new_tab(folder_name, project_path)
         
-        if os.path.exists(target_dir):
-            result = messagebox.askyesnocancel(
-                "项目已存在",
-                f"工作区中已存在同名项目 '{folder_name}'。\n\n"
-                f"是否覆盖？"
-            )
-            if result is None:
-                return None
-            elif result:
-                shutil.rmtree(target_dir)
-            else:
-                return None
-        
-        shutil.copytree(project_path, target_dir)
-        
-        tab_id = self._create_new_tab(folder_name, target_dir)
-        
-        tree_file = os.path.join(target_dir, "tree.json")
+        tree_file = os.path.join(project_path, "tree.json")
         if os.path.exists(tree_file):
             self._load_tree_to_tab(tab_id, tree_file)
         
@@ -221,7 +327,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         engine = BehaviorTreeEngine(None)
         command_manager = CommandManager()
         
-        tab_id = f"tab_{len(self.tab_manager._trees) + 1}"
+        BehaviorTreeEditor._tab_counter += 1
+        tab_id = f"tab_{BehaviorTreeEditor._tab_counter}"
         
         new_canvas = BehaviorTreeCanvas(
             self.canvas_frame,
@@ -233,7 +340,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_node_deselect=self._on_node_deselect,
             property_panel=self.property_panel
         )
-        new_canvas.pack(fill="both", expand=True)
+        new_canvas.place(in_=self.canvas_frame, x=0, y=0, relwidth=1, relheight=1)
+        new_canvas.lower()
         
         instance = TreeInstance(
             name=name,
@@ -275,17 +383,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_stop=self._stop_running,
             on_open_folder=self._open_project_folder
         )
-        self.toolbar.set_on_all_run(self._handle_all_run)
-        self.toolbar.set_on_all_stop(self._handle_all_stop)
         self.toolbar.pack(fill="x")
-    
-    def _handle_all_run(self):
-        count = self.tab_manager.start_all()
-        LogManager.debug_print(f"[OK] 启动了 {count} 个行为树")
-    
-    def _handle_all_stop(self):
-        count = self.tab_manager.stop_all()
-        LogManager.debug_print(f"[OK] 停止了 {count} 个行为树")
     
     def _create_main_area(self):
         self.main_area = ctk.CTkFrame(self.main_container, fg_color="transparent")
@@ -322,7 +420,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_node_deselect=self._on_node_deselect,
             property_panel=None
         )
-        self._fallback_canvas.pack(fill="both", expand=True)
+        self._fallback_canvas.place(in_=self.canvas_frame, x=0, y=0, relwidth=1, relheight=1)
         
         self.property_panel = PropertyPanel(
             self.main_area,
@@ -339,8 +437,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._start_autosave()
     
     def _init_first_tab(self):
-        """将初始画布包装为第一个 Tab"""
-        tab_id = "tab_1"
+        BehaviorTreeEditor._tab_counter += 1
+        tab_id = f"tab_{BehaviorTreeEditor._tab_counter}"
         
         context = ExecutionContext(project_root=self._fallback_project_root)
         engine = BehaviorTreeEngine(None)
@@ -381,15 +479,26 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             return os.path.basename(self._fallback_project_root)
         return "未命名"
     
+    def _update_tab_name(self, tab_id: str, name: str):
+        """更新 Tab 名称"""
+        instance = self.tab_manager.get_tab(tab_id)
+        if instance:
+            instance.name = name
+            self.tab_bar.update_tab_name(tab_id, name)
+            self._update_title(name)
+    
     def _create_property_panel(self):
         pass
     
     def _bind_events(self):
-        self.bind("<<StopRunning>>", lambda e: self._stop_running_in_main_thread())
-        
         self._init_ui_dispatcher()
-        
         self._bind_run_shortcuts()
+    
+    def _init_ui_dispatcher(self):
+        from bt_utils.ui_dispatcher import UIUpdateDispatcher
+        self._dispatcher = UIUpdateDispatcher()
+        self._dispatcher.attach(self)
+        self._dispatcher.start_polling()
     
     def _bind_run_shortcuts(self):
         """绑定运行快捷键（从设置读取）- 使用全局热键"""
@@ -410,11 +519,22 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._stop_shortcut = stop_key
         self._record_shortcut = record_key
         
-        self._hotkey_manager.register(start_key, self._start_running)
-        self._hotkey_manager.register(stop_key, self._stop_running)
+        def start_callback():
+            LogManager.debug_print(f"[DEBUG] F10 pressed, _is_running={self._is_running}")
+            self._start_running()
+        
+        def stop_callback():
+            LogManager.debug_print(f"[DEBUG] F12 pressed, _is_running={self._is_running}")
+            self._stop_running()
+        
+        self._hotkey_manager.register(start_key, start_callback)
+        self._hotkey_manager.register(stop_key, stop_callback)
         self._hotkey_manager.register(record_key, self._toggle_recording)
         
         self._hotkey_manager.start()
+        
+        status = self._hotkey_manager.get_status()
+        LogManager.debug_print(f"[DEBUG] Hotkey manager status: {status}")
     
     def _toggle_recording(self):
         """切换录制状态"""
@@ -921,10 +1041,20 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 from bt_utils.project_manager import ProjectManager
                 self.project_manager = ProjectManager(self.project_root)
                 self.toolbar.set_project_path(self.project_root)
+                
+                project_name = os.path.basename(project_root)
+                active_tab = self.tab_manager.get_active_tab()
+                if active_tab:
+                    self._update_tab_name(active_tab.tab_id, project_name)
             else:
                 self.project_root = None
                 self.project_manager = None
                 self.toolbar.set_file_path(file_path)
+                
+                file_name = os.path.splitext(os.path.basename(file_path))[0]
+                active_tab = self.tab_manager.get_active_tab()
+                if active_tab:
+                    self._update_tab_name(active_tab.tab_id, file_name)
             
             from config.settings_manager import SettingsManager
             SettingsManager.get_instance().set_last_file_path(file_path)
@@ -1139,8 +1269,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             
             self.project_manager.save_project(tree_data)
             
-            if self._autosave_manager:
-                self._autosave_manager.clear_autosaves()
+            active_tab = self.tab_manager.get_active_tab()
+            if active_tab and hasattr(active_tab, '_autosave_manager') and active_tab._autosave_manager:
+                active_tab._autosave_manager.clear_autosaves()
             
             if self.file_path:
                 from config.settings_manager import SettingsManager
@@ -1196,8 +1327,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self._set_modified(False)
             self.toolbar.set_file_path(file_path)
             
-            if self._autosave_manager:
-                self._autosave_manager.clear_autosaves()
+            active_tab = self.tab_manager.get_active_tab()
+            if active_tab and hasattr(active_tab, '_autosave_manager') and active_tab._autosave_manager:
+                active_tab._autosave_manager.clear_autosaves()
             
             from config.settings_manager import SettingsManager
             SettingsManager.get_instance().set_last_file_path(file_path)
@@ -1477,125 +1609,28 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if self._is_running:
             return
         
-        if self.engine and self.engine._running:
-            return
+        started_count = 0
+        for tab_id in list(self.tab_manager._trees.keys()):
+            instance = self.tab_manager.get_tab(tab_id)
+            if instance and not instance.is_running:
+                self._handle_tab_run(tab_id)
+                started_count += 1
         
-        if self.property_panel:
-            self.property_panel.force_save_current_field()
-
-        tree_data = self.canvas.get_tree_data()
-        result = Serializer.deserialize(tree_data)
-        if isinstance(result, tuple):
-            root_node = result[0]
-        else:
-            root_node = result
-        
-        if not root_node:
-            messagebox.showwarning("警告", "行为树为空，无法运行")
-            return
-
-        self._is_running = True
-        self._stop_requested = False
-        
-        from bt_utils.log_manager import LogManager
-        LogManager.instance().set_stopped(False)
-        
-        self._play_start_sound()
-
-        self.canvas.show_all_status_indicators()
-        
-        self.context = ExecutionContext(project_root=self.project_root)
-        self.context._on_node_status = self._on_node_status
-        
-        self.engine = BehaviorTreeEngine(root_node)
-        self.engine._on_status_change = self._on_engine_status_change
-        
-        self.engine.start(self.context)
-        self.toolbar.set_running(True)
-        
-        self._start_ui_polling()
+        if started_count > 0:
+            self._is_running = True
+            self.toolbar.set_running(True)
 
     def _stop_running(self):
-        if not self._is_running:
-            return
+        stopped_count = 0
+        for tab_id in list(self.tab_manager._trees.keys()):
+            instance = self.tab_manager.get_tab(tab_id)
+            if instance and instance.is_running:
+                self._handle_tab_stop(tab_id)
+                stopped_count += 1
         
-        from bt_utils.log_manager import LogManager
-        log_manager = LogManager.instance()
-        log_manager.set_stopped(True)
-        log_manager.clear_success_failure_entries()
-        log_manager.log_info(
-            node_type="系统",
-            node_name="",
-            message="用户停止运行"
-        )
-        
-        self._stop_requested = True
-        self.after(0, self._stop_running_in_main_thread)
-    
-    def _stop_running_in_main_thread(self):
-        """在主线程中执行停止操作"""
-        if not self._is_running:
-            return
-        
-        from bt_utils.log_manager import LogManager
-        log_manager = LogManager.instance()
-        if not log_manager.is_stopped():
-            log_manager.set_stopped(True)
-            log_manager.clear_success_failure_entries()
-            log_manager.log_info(
-                node_type="系统",
-                node_name="",
-                message="用户停止运行"
-            )
-        
-        self._play_stop_sound()
-        
-        if self.engine:
-            self.engine.stop()
-            self.engine = None
-            self.context = None
-        
-        was_listening = self._hotkey_manager.is_running()
-        if was_listening:
-            self._hotkey_manager.stop()
-        
-        from bt_utils.input_controller_factory import InputController
-        InputController.release_all()
-        
-        if was_listening:
-            self._hotkey_manager.start()
-        
-        self.canvas.after(100, self._clear_status_after_stop)
-        self.canvas.after(200, self._restore_canvas_focus)
-        self.toolbar.set_running(False)
         self._is_running = False
+        self.toolbar.set_running(False)
     
-    def _stop_ui_polling(self):
-        """停止UI轮询（已废弃，轮询持续运行）"""
-        pass
-    
-    def _clear_status_after_stop(self):
-        """延迟清除状态，确保引擎完全停止"""
-        self.canvas.clear_all_node_status()
-    
-    def _restore_canvas_focus(self):
-        """恢复画布焦点"""
-        try:
-            self.canvas.canvas.focus_set()
-        except Exception:
-            pass
-    
-    def _init_ui_dispatcher(self):
-        """初始化UI更新分发器"""
-        from bt_utils.ui_dispatcher import UIUpdateDispatcher
-        self._dispatcher = UIUpdateDispatcher()
-        self._dispatcher.attach(self)
-        self._dispatcher.start_polling()
-    
-    def _start_ui_polling(self):
-        """启动UI轮询，确保后台线程的更新能及时处理"""
-        pass
-
     def _play_start_sound(self):
         try:
             from bt_utils.alarm import AlarmPlayer
@@ -1632,15 +1667,11 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 instance.canvas.set_node_status(node_id, node_status)
                 return
 
-    def _on_engine_status_change(self, status: str, node_status: NodeStatus = None):
-        if status == "completed":
-            self._is_running = False
-            self._play_stop_sound()
-            self.toolbar.set_running(False)
-            self.canvas.after(100, self._clear_status_after_stop)
-    
     def _set_modified(self, modified: bool):
         self._modified = modified
+        active_tab = self.tab_manager.get_active_tab()
+        if active_tab:
+            active_tab.modified = modified
         if modified:
             self.on_content_changed()
     
@@ -1654,10 +1685,13 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         from bt_core.config import NodeConfig
         config = NodeConfig(name=getattr(start_node, 'name', ''))
         node_config = start_node.config if hasattr(start_node, 'config') else {}
+        from bt_utils.log_manager import LogManager
+        LogManager.debug_print(f"[DEBUG] get_start_node: node_config = {node_config}")
         for key, value in node_config.items():
             config.set(key, value)
         from bt_core.nodes import StartNode
         node = StartNode(node_id="start_node", config=config)
+        LogManager.debug_print(f"[DEBUG] get_start_node: bind_window={node.bind_window}, window_title='{node.window_title}', window_pid={node.window_pid}")
         return node
     
     def set_tree_data(self, data: Dict[str, Any]):
@@ -1743,6 +1777,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     @engine.setter
     def engine(self, value):
         self._fallback_engine = value
+        tab = self.tab_manager.get_active_tab()
+        if tab:
+            tab.engine = value
     
     @property
     def context(self):
@@ -1753,6 +1790,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     @context.setter
     def context(self, value):
         self._fallback_context = value
+        tab = self.tab_manager.get_active_tab()
+        if tab:
+            tab.context = value
     
     @property
     def project_root(self):
@@ -1800,7 +1840,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         current_tab = self.tab_manager.get_active_tab()
         if current_tab and current_tab.canvas:
-            selected = current_tab.canvas.get_selected_nodes()
+            selected = list(current_tab.canvas.selected_nodes) if current_tab.canvas.selected_nodes else []
             current_tab.selected_node_id = selected[0] if selected else None
         
         instance.canvas.tkraise()
@@ -1809,7 +1849,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         if instance.selected_node_id and instance.canvas:
             if instance.selected_node_id in instance.canvas.nodes:
-                instance.canvas.select_node(instance.selected_node_id)
+                instance.canvas._select_node(instance.selected_node_id)
         
         self._update_title(instance.name)
         self.toolbar.set_project_path(instance.project_root)
@@ -1898,7 +1938,12 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         tree_file = os.path.join(project_root, "tree.json")
         self.load_tree(tree_file)
         
-        self._update_title(config["project_info"]["name"])
+        project_name = config["project_info"]["name"]
+        self._update_title(project_name)
+        
+        active_tab = self.tab_manager.get_active_tab()
+        if active_tab:
+            self._update_tab_name(active_tab.tab_id, project_name)
         
         self.file_path = tree_file
         
@@ -1988,9 +2033,13 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self.winfo_toplevel().title(f"autodoor - 行为树 - {project_name}")
     
     def destroy(self):
-        if self._autosave_manager:
-            self._autosave_manager.stop()
-            self._autosave_manager.save_now()
+        if hasattr(self, 'tab_manager'):
+            for tab_id, instance in list(self.tab_manager._trees.items()):
+                if hasattr(instance, '_autosave_manager') and instance._autosave_manager:
+                    instance._autosave_manager.stop()
+                    instance._autosave_manager.save_now()
+                if instance.is_running:
+                    self._handle_tab_stop(tab_id)
         
         if hasattr(self, '_crash_recovery_handler'):
             self._crash_recovery_handler.uninstall()

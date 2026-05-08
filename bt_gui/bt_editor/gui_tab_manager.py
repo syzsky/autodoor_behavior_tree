@@ -21,6 +21,8 @@ class GuiTabManager(MultiTreeManager):
         self.on_tab_status_changed: Optional[Callable[[str, bool], None]] = None
         self.on_tab_added: Optional[Callable[[str, TreeInstance], None]] = None
         self.on_tab_removed: Optional[Callable[[str], None]] = None
+        self.on_tab_start_request: Optional[Callable[[str], bool]] = None
+        self.on_tab_stop_request: Optional[Callable[[str], bool]] = None
     
     @property
     def active_tab_id(self) -> Optional[str]:
@@ -37,6 +39,9 @@ class GuiTabManager(MultiTreeManager):
             添加的实例
         """
         with self._tab_lock:
+            if tab_id in self._trees:
+                raise ValueError(f"Tab ID '{tab_id}' already exists")
+            
             instance.tab_id = tab_id
             self._trees[tab_id] = instance
             
@@ -66,11 +71,20 @@ class GuiTabManager(MultiTreeManager):
             if instance.status == "running":
                 instance.engine.stop()
             
+            tab_keys = list(self._trees.keys())
+            closed_index = tab_keys.index(tab_id) if tab_id in tab_keys else -1
+            
             del self._trees[tab_id]
             
             if self._active_tab_id == tab_id:
                 tab_ids = list(self._trees.keys())
-                self._active_tab_id = tab_ids[0] if tab_ids else None
+                if tab_ids:
+                    if closed_index < len(tab_ids):
+                        self._active_tab_id = tab_ids[closed_index]
+                    else:
+                        self._active_tab_id = tab_ids[-1]
+                else:
+                    self._active_tab_id = None
             
             if self.on_tab_removed:
                 self.on_tab_removed(tab_id)
@@ -121,10 +135,9 @@ class GuiTabManager(MultiTreeManager):
             self.on_tab_status_changed(tab_id, running)
     
     def start_tab(self, tab_id: str) -> bool:
-        """启动指定 Tab 的行为树
+        if self.on_tab_start_request:
+            return self.on_tab_start_request(tab_id)
         
-        注意：此方法不在锁内调用 engine.start()，避免死锁
-        """
         instance = self._trees.get(tab_id)
         if not instance or instance.status == "running":
             return False
@@ -134,10 +147,9 @@ class GuiTabManager(MultiTreeManager):
         return True
     
     def stop_tab(self, tab_id: str) -> bool:
-        """停止指定 Tab 的行为树
+        if self.on_tab_stop_request:
+            return self.on_tab_stop_request(tab_id)
         
-        注意：此方法不在锁内调用 engine.stop()，避免死锁
-        """
         instance = self._trees.get(tab_id)
         if not instance or instance.status != "running":
             return False

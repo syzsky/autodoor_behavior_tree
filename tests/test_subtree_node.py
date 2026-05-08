@@ -130,3 +130,38 @@ class TestSubtreeNode:
     def test_node_type(self):
         node = SubtreeNode()
         assert node.NODE_TYPE == "SubtreeNode"
+
+    def test_abort_then_tick_recreates_context(self):
+        """测试 abort 后再次 tick 能正确重建 _subtree_context"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subtree_dir = os.path.join(tmpdir, "subtrees", "test_subtree")
+            os.makedirs(subtree_dir)
+
+            tree_data = {
+                "version": "2.0",
+                "root_node": "node_1",
+                "nodes": {
+                    "node_1": {"type": "SequenceNode", "name": "Root"}
+                }
+            }
+            tree_file = os.path.join(subtree_dir, "tree.json")
+            with open(tree_file, "w", encoding="utf-8") as f:
+                json.dump(tree_data, f)
+
+            config = NodeConfig(name="TestSubtree")
+            config.set("subtree_path", subtree_dir)
+            config.set("blackboard_mode", "inherit")
+
+            node = SubtreeNode(config=config)
+            context = ExecutionContext(tmpdir)
+
+            status1 = node.tick(context)
+            assert status1 == NodeStatus.SUCCESS
+            assert node._subtree_context is not None
+
+            node.abort(context)
+            assert node._subtree_context is None
+
+            status2 = node.tick(context)
+            assert status2 == NodeStatus.SUCCESS
+            assert node._subtree_context is not None

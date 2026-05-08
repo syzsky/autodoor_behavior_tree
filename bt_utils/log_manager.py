@@ -77,6 +77,7 @@ class LogManager:
         self._buffer: List[LogEntry] = []
         self._buffer_lock = threading.Lock()
         self._stopped = False
+        self._stopped_tabs: set = set()
         
         if LogManager._console_output_enabled is None:
             LogManager._console_output_enabled = _is_console_output_enabled()
@@ -134,7 +135,7 @@ class LogManager:
         Args:
             entry: 日志条目
         """
-        if self._stopped and entry.level in (LogLevel.SUCCESS, LogLevel.FAILURE):
+        if self._should_suppress_log(entry):
             return
         
         with self._buffer_lock:
@@ -146,6 +147,15 @@ class LogManager:
             dispatcher.dispatch_log_flush()
         except ImportError:
             pass
+    
+    def _should_suppress_log(self, entry: LogEntry) -> bool:
+        if entry.level not in (LogLevel.SUCCESS, LogLevel.FAILURE):
+            return False
+        if self._stopped:
+            return True
+        if entry.tab_name and entry.tab_name in self._stopped_tabs:
+            return True
+        return False
     
     def log_success(self, node_type: str, node_name: str, message: str = "", tab_name: str = "") -> None:
         """记录成功日志（前端显示）
@@ -230,21 +240,28 @@ class LogManager:
             tab_name=tab_name
         ))
     
-    def set_stopped(self, stopped: bool) -> None:
-        """设置停止标志
-        
-        当设置为 True 时，log_success 和 log_failure 将被抑制，
-        防止停止运行时产生误导性的成功/失败日志。
-        log_aborted 和 log_info 不受影响。
-        
-        Args:
-            stopped: 是否停止
-        """
-        self._stopped = stopped
+    def set_stopped(self, stopped: bool, tab_name: str = None) -> None:
+        if tab_name:
+            if stopped:
+                self._stopped_tabs.add(tab_name)
+            else:
+                self._stopped_tabs.discard(tab_name)
+        else:
+            self._stopped = stopped
+            if stopped:
+                self._stopped_tabs.clear()
     
-    def is_stopped(self) -> bool:
-        """检查是否处于停止状态"""
+    def is_stopped(self, tab_name: str = None) -> bool:
+        if tab_name:
+            return tab_name in self._stopped_tabs
         return self._stopped
+    
+    def clear_tab_entries(self, tab_name: str) -> None:
+        with self._buffer_lock:
+            self._buffer = [
+                entry for entry in self._buffer
+                if entry.tab_name != tab_name or entry.level not in (LogLevel.SUCCESS, LogLevel.FAILURE)
+            ]
     
     def clear_success_failure_entries(self) -> None:
         """清除缓冲区中的成功和失败日志条目

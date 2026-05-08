@@ -1437,6 +1437,8 @@ class SubtreeNode(CompositeNode):
         if self._subtree_root and not self.auto_reload:
             if self._loaded_path == tree_file:
                 if not self._has_file_changed(tree_file):
+                    if self._subtree_context is None:
+                        self._subtree_context = self._create_subtree_context(context)
                     return True
 
         detector = CycleDetector()

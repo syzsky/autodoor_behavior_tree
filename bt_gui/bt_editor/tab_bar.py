@@ -147,18 +147,19 @@ class TabBar(ctk.CTkFrame):
     def _create_widgets(self):
         self._tabs_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._tabs_frame.pack(side="left", fill="x", expand=True)
-
-        self._import_btn = ctk.CTkButton(
-            self,
-            text="+ \u5bfc\u5165",
-            width=60,
+        
+        self._add_btn = ctk.CTkButton(
+            self._tabs_frame,
+            text="+",
+            width=28,
             height=28,
-            font=("Microsoft YaHei", 10),
+            font=("Arial", 14),
             fg_color="transparent",
             hover_color=("gray70", "gray30"),
+            text_color=("gray10", "gray90"),
             command=self._on_import_click
         )
-        self._import_btn.pack(side="right", padx=4)
+        self._add_btn.pack(side="left", padx=2, pady=4)
 
     def _on_import_click(self):
         if self._on_import:
@@ -173,7 +174,7 @@ class TabBar(ctk.CTkFrame):
             on_close=self._handle_close,
             on_click=self._handle_click
         )
-        btn.pack(side="left", padx=2, pady=4)
+        btn.pack(side="left", padx=2, pady=4, before=self._add_btn)
         self._tab_buttons[tab_id] = btn
 
         if self._active_tab_id is None:

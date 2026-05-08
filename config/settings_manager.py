@@ -47,6 +47,8 @@ class SessionConfig:
     recent_files: List[str] = field(default_factory=list)
     window_geometry: str = "1280x800"
     last_export_path: str = ""
+    open_tabs: List[Dict[str, str]] = field(default_factory=list)
+    active_tab_id: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -54,6 +56,8 @@ class SessionConfig:
             "recent_files": self.recent_files[:10],
             "window_geometry": self.window_geometry,
             "last_export_path": self.last_export_path,
+            "open_tabs": self.open_tabs,
+            "active_tab_id": self.active_tab_id,
         }
     
     @classmethod
@@ -63,6 +67,8 @@ class SessionConfig:
             recent_files=data.get("recent_files", [])[:10],
             window_geometry=data.get("window_geometry", "1280x800"),
             last_export_path=data.get("last_export_path", ""),
+            open_tabs=data.get("open_tabs", []),
+            active_tab_id=data.get("active_tab_id", ""),
         )
 
 
@@ -114,7 +120,9 @@ class SettingsManager:
             "last_file_path": "",
             "recent_files": [],
             "window_geometry": "1280x800",
-            "last_export_path": ""
+            "last_export_path": "",
+            "open_tabs": [],
+            "active_tab_id": ""
         },
         "blackboard": {
             "default_position_key": "last_detection_position",
@@ -422,6 +430,22 @@ class SettingsManager:
     def set_last_export_path(self, export_path: str) -> None:
         """设置上次导出路径"""
         self.set("session.last_export_path", export_path)
+    
+    def get_open_tabs(self) -> List[Dict[str, str]]:
+        """获取打开的 Tab 列表"""
+        return self.get("session.open_tabs", [])
+    
+    def set_open_tabs(self, tabs: List[Dict[str, str]]) -> None:
+        """保存打开的 Tab 列表"""
+        self.set("session.open_tabs", tabs)
+    
+    def get_active_tab_id(self) -> str:
+        """获取活动 Tab ID"""
+        return self.get("session.active_tab_id", "")
+    
+    def set_active_tab_id(self, tab_id: str) -> None:
+        """保存活动 Tab ID"""
+        self.set("session.active_tab_id", tab_id)
     
     def get_all_settings(self) -> Dict[str, Any]:
         """获取所有设置"""
