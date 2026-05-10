@@ -277,8 +277,6 @@ class ScreenshotProxy:
         if self._initialized:
             return
         self._initialized = True
-        from bt_utils.screenshot import ScreenshotManager
-        self._screenshot = ScreenshotManager()
 
     def get_full_screenshot(self) -> Image.Image:
         """获取全屏截图
@@ -286,7 +284,8 @@ class ScreenshotProxy:
         Returns:
             PIL.Image 图像
         """
-        return self._screenshot.get_full_screenshot()
+        from bt_utils.screen_service import ScreenService
+        return ScreenService.capture_screen()
 
     def get_region_screenshot(self, region: Tuple[int, int, int, int]) -> Image.Image:
         """获取区域截图
@@ -297,7 +296,8 @@ class ScreenshotProxy:
         Returns:
             PIL.Image 图像
         """
-        return self._screenshot.get_region_screenshot(region)
+        from bt_utils.screen_service import ScreenService
+        return ScreenService.capture_screen(region=region)
 
     def capture_window(self, hwnd) -> Optional[Image.Image]:
         """捕获窗口图像
@@ -308,11 +308,8 @@ class ScreenshotProxy:
         Returns:
             PIL.Image 图像
         """
-        try:
-            from bt_utils.window_capture import WindowCapture
-            return WindowCapture.capture_window(hwnd)
-        except Exception:
-            return None
+        from bt_utils.screen_service import ScreenService
+        return ScreenService.capture_window(hwnd)
 
     def capture_window_by_title(self, title: str) -> Optional[Image.Image]:
         """根据标题捕获窗口
@@ -324,8 +321,12 @@ class ScreenshotProxy:
             PIL.Image 图像
         """
         try:
+            from bt_utils.screen_service import ScreenService
             from bt_utils.window_capture import WindowCapture
-            return WindowCapture.capture_by_title(title)
+            hwnd = WindowCapture.find_window(title=title)
+            if not hwnd:
+                return None
+            return ScreenService.capture_window(hwnd)
         except Exception:
             return None
 

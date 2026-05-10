@@ -525,19 +525,8 @@ class ScriptTab(ctk.CTkFrame):
         self.script_text.see(tk.END)
     
     def _select_coordinate(self):
-        try:
-            import screeninfo
-            
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
-        except ImportError:
-            messagebox.showerror("错误", "screeninfo库未安装，无法支持多显示器选择。")
-            return
-        except Exception:
-            min_x, min_y, max_x, max_y = 0, 0, 1920, 1080
+        from bt_utils.screen_utils import get_virtual_screen_bounds
+        min_x, min_y, max_x, max_y = get_virtual_screen_bounds()
         
         self.coordinate_window = tk.Toplevel(self.winfo_toplevel())
         self.coordinate_window.overrideredirect(True)

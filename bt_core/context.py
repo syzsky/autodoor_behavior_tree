@@ -31,7 +31,6 @@ class ExecutionContext:
         self._is_running = True
         self._is_paused = False
         self._on_node_status: Optional[Callable] = None
-        self._screenshot_manager = None
         self._input_controller = None
         self._ocr_manager = None
         self._alarm_player = None
@@ -146,19 +145,12 @@ class ExecutionContext:
         Returns:
             PIL.Image 截图对象
         """
+        from bt_utils.screen_service import ScreenService
+
         if self._bound_window:
-            from bt_utils.window_capture import WindowCapture
-            if region:
-                return WindowCapture.capture_window_region(self._bound_window, region)
-            return WindowCapture.capture_window(self._bound_window)
+            return ScreenService.capture_window(self._bound_window, region=region)
 
-        if self._screenshot_manager is None:
-            from bt_utils.screenshot import ScreenshotManager
-            self._screenshot_manager = ScreenshotManager()
-
-        if region:
-            return self._screenshot_manager.get_region_screenshot(region)
-        return self._screenshot_manager.get_full_screenshot()
+        return ScreenService.capture_screen(region=region)
 
     def execute_key_press(self, key: str, action: str = "press", duration: int = 0) -> None:
         """执行按键操作

@@ -433,17 +433,13 @@ class RegionField(FieldWidget):
         from bt_utils.magnifier import MagnifierWindow
         
         try:
-            import screeninfo
+            from bt_utils.screen_utils import get_virtual_screen_bounds
             
             self.app.iconify()
             
             time.sleep(0.2)
             
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
+            min_x, min_y, max_x, max_y = get_virtual_screen_bounds()
             
             select_window = tk.Toplevel(self.app)
             select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
@@ -1001,17 +997,13 @@ class ScreenshotField(FieldWidget):
         from bt_utils.magnifier import MagnifierWindow
         
         try:
-            import screeninfo
+            from bt_utils.screen_utils import get_virtual_screen_bounds
             
             self.app.iconify()
             
             time.sleep(0.2)
             
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
+            min_x, min_y, max_x, max_y = get_virtual_screen_bounds()
             
             select_window = tk.Toplevel(self.app)
             select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
@@ -1407,17 +1399,13 @@ class PositionField(FieldWidget):
         from bt_utils.magnifier import MagnifierWindow
         
         try:
-            import screeninfo
+            from bt_utils.screen_utils import get_virtual_screen_bounds
             
             self.app.iconify()
             
             time.sleep(0.2)
             
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
+            min_x, min_y, max_x, max_y = get_virtual_screen_bounds()
             
             select_window = tk.Toplevel(self.app)
             select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
@@ -1572,16 +1560,12 @@ class OffsetField(FieldWidget):
         from bt_utils.magnifier import MagnifierWindow
         
         try:
-            import screeninfo
+            from bt_utils.screen_utils import get_virtual_screen_bounds
             
             self.app.iconify()
             time.sleep(0.2)
             
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
+            min_x, min_y, max_x, max_y = get_virtual_screen_bounds()
             
             select_window = tk.Toplevel(self.app)
             select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
@@ -2463,26 +2447,27 @@ class PropertyPanel(ctk.CTkFrame):
             
             def get_screenshot(ctx, region=None):
                 if ctx._bound_window:
-                    from bt_utils.window_capture import WindowCapture
+                    from bt_utils.screen_service import ScreenService
                     if ctx._screenshot is None:
-                        ctx._screenshot = WindowCapture.capture_window(ctx._bound_window)
+                        ctx._screenshot = ScreenService.capture_window(ctx._bound_window)
                     if region and ctx._screenshot:
                         return ctx._screenshot.crop(region)
                     return ctx._screenshot
                 else:
+                    from bt_utils.screen_service import ScreenService
                     if ctx._screenshot is None:
-                        ctx._screenshot = ImageGrab.grab(all_screens=True)
+                        ctx._screenshot = ScreenService.capture_screen()
                     if region:
-                        return ImageGrab.grab(bbox=region, all_screens=True)
+                        return ScreenService.capture_screen(region=region)
                     return ctx._screenshot
             
             def get_full_screenshot(ctx):
                 if ctx._screenshot is None:
+                    from bt_utils.screen_service import ScreenService
                     if ctx._bound_window:
-                        from bt_utils.window_capture import WindowCapture
-                        ctx._screenshot = WindowCapture.capture_window(ctx._bound_window)
+                        ctx._screenshot = ScreenService.capture_window(ctx._bound_window)
                     else:
-                        ctx._screenshot = ImageGrab.grab(all_screens=True)
+                        ctx._screenshot = ScreenService.capture_screen()
                 return ctx._screenshot
             
             def get_bound_window(ctx):
@@ -2526,13 +2511,8 @@ class PropertyPanel(ctk.CTkFrame):
         if images_dir and context._screenshot:
             screenshot = context._screenshot.copy()
             
-            try:
-                import screeninfo
-                monitors = screeninfo.get_monitors()
-                offset_x = -min(monitor.x for monitor in monitors)
-                offset_y = -min(monitor.y for monitor in monitors)
-            except Exception:
-                offset_x, offset_y = 0, 0
+            from bt_utils.screen_utils import get_virtual_screen_bounds
+            min_x, min_y, _, _ = get_virtual_screen_bounds()
             
             draw = ImageDraw.Draw(screenshot)
             
@@ -2553,11 +2533,19 @@ class PropertyPanel(ctk.CTkFrame):
                     region = None
             
             if region and len(region) == 4:
-                draw.rectangle(
-                    [region[0] + offset_x, region[1] + offset_y,
-                     region[2] + offset_x, region[3] + offset_y],
-                    outline="red", width=2
-                )
+                if context._bound_window:
+                    # 窗口截图：region 是窗口相对坐标，直接使用
+                    draw.rectangle(
+                        [region[0], region[1], region[2], region[3]],
+                        outline="red", width=2
+                    )
+                else:
+                    # 全屏截图：region 是屏幕绝对坐标，需要减去 min 偏移
+                    draw.rectangle(
+                        [region[0] - min_x, region[1] - min_y,
+                         region[2] - min_x, region[3] - min_y],
+                        outline="red", width=2
+                    )
             
             timestamp = int(time.time() * 1000)
             image_path = os.path.join(images_dir, f"preview_{timestamp}.png")

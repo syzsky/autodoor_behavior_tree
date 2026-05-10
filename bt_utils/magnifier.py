@@ -36,46 +36,11 @@ class MagnifierWindow:
         self._virtual_screen_bounds = None
     
     def _get_virtual_screen_bounds(self) -> Tuple[int, int, int, int]:
-        """
-        获取虚拟桌面边界（支持多显示器）
-        
-        Returns:
-            Tuple[int, int, int, int]: (min_x, min_y, max_x, max_y)
-        """
+        """获取虚拟桌面边界（支持多显示器）"""
         if self._virtual_screen_bounds is not None:
             return self._virtual_screen_bounds
-        
-        try:
-            import screeninfo
-            monitors = screeninfo.get_monitors()
-            if monitors:
-                min_x = min(monitor.x for monitor in monitors)
-                min_y = min(monitor.y for monitor in monitors)
-                max_x = max(monitor.x + monitor.width for monitor in monitors)
-                max_y = max(monitor.y + monitor.height for monitor in monitors)
-                self._virtual_screen_bounds = (min_x, min_y, max_x, max_y)
-                return self._virtual_screen_bounds
-        except ImportError:
-            pass
-        
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            virtual_left = user32.GetSystemMetrics(76)
-            virtual_top = user32.GetSystemMetrics(77)
-            virtual_width = user32.GetSystemMetrics(78)
-            virtual_height = user32.GetSystemMetrics(79)
-            if virtual_width > 0 and virtual_height > 0:
-                self._virtual_screen_bounds = (virtual_left, virtual_top, 
-                                               virtual_left + virtual_width, 
-                                               virtual_top + virtual_height)
-                return self._virtual_screen_bounds
-        except Exception:
-            pass
-        
-        screen_width = self.window.winfo_screenwidth() if self.window else 1920
-        screen_height = self.window.winfo_screenheight() if self.window else 1080
-        self._virtual_screen_bounds = (0, 0, screen_width, screen_height)
+        from bt_utils.screen_utils import get_virtual_screen_bounds
+        self._virtual_screen_bounds = get_virtual_screen_bounds()
         return self._virtual_screen_bounds
         
     def show(self, x: int, y: int):
@@ -163,8 +128,9 @@ class MagnifierWindow:
         bottom = y + half_capture
         
         try:
-            screenshot = ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)
-        except TypeError:
+            from bt_utils.screen_service import ScreenService
+            screenshot = ScreenService.capture_screen(region=(left, top, right, bottom))
+        except Exception:
             screenshot = ImageGrab.grab(bbox=(left, top, right, bottom))
         
         self.last_screenshot = screenshot
