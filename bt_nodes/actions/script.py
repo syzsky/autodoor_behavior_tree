@@ -25,11 +25,10 @@ class ScriptNode(ActionNode):
     def _get_or_create_executor(self) -> Any:
         from bt_utils.script_executor import ScriptExecutor
         
-        with self._lock:
-            if self._executor is None or not self._executor.is_running:
-                self._executor = ScriptExecutor()
-            
-            return self._executor
+        if self._executor is None or not self._executor.is_running:
+            self._executor = ScriptExecutor()
+        
+        return self._executor
     
     @classmethod
     def cleanup_executor_pool(cls) -> None:
