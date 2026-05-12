@@ -25,11 +25,10 @@ class ScriptNode(ActionNode):
     def _get_or_create_executor(self) -> Any:
         from bt_utils.script_executor import ScriptExecutor
         
-        with self._lock:
-            if self._executor is None or not self._executor.is_running:
-                self._executor = ScriptExecutor()
-            
-            return self._executor
+        if self._executor is None or not self._executor.is_running:
+            self._executor = ScriptExecutor()
+        
+        return self._executor
     
     @classmethod
     def cleanup_executor_pool(cls) -> None:
@@ -40,21 +39,20 @@ class ScriptNode(ActionNode):
         pass
     
     def stop_executor(self) -> None:
+        executor = None
         with self._lock:
-            if self._executor is not None and self._executor.is_running:
-                try:
-                    self._executor.stop_script()
-                except Exception:
-                    pass
+            executor = self._executor
             self._executor = None
             self._script_started = False
             self._script_content = None
+        
+        if executor is not None and executor.is_running:
+            try:
+                executor.stop_script()
+            except Exception:
+                pass
 
     def _execute_action(self, context) -> NodeStatus:
-        """执行脚本动作
-        
-        线程安全：所有状态访问都在锁保护下进行。
-        """
         with self._lock:
             self._aborted = False
         
@@ -81,6 +79,8 @@ class ScriptNode(ActionNode):
                         return status
                     return NodeStatus.RUNNING
             
+            executor_to_stop = None
+            result_status = None
             with self._lock:
                 if self._aborted:
                     return NodeStatus.FAILURE
@@ -90,11 +90,24 @@ class ScriptNode(ActionNode):
                 
                 if self._executor.is_running:
                     if not context.check_running():
-                        self._stop_executor()
-                        return NodeStatus.ABORTED
-                    return NodeStatus.RUNNING
-                
-                self._cleanup_executor()
+                        executor_to_stop = self._executor
+                        self._executor = None
+                        self._script_started = False
+                        self._script_content = None
+                        result_status = NodeStatus.ABORTED
+                    else:
+                        return NodeStatus.RUNNING
+                else:
+                    self._cleanup_executor()
+            
+            if executor_to_stop is not None and executor_to_stop.is_running:
+                try:
+                    executor_to_stop.stop_script()
+                except Exception:
+                    pass
+            
+            if result_status is not None:
+                return result_status
             
             LogManager().log_success(
                 node_type="脚本节点",
@@ -227,24 +240,34 @@ class ScriptNode(ActionNode):
         self._script_content = None
 
     def abort(self, context) -> None:
-        """中止脚本执行"""
         with self._lock:
             self._aborted = True
-            self._stop_executor()
+            executor = self._executor
+            self._executor = None
+            self._script_started = False
+            self._script_content = None
+        
+        if executor is not None and executor.is_running:
+            try:
+                executor.stop_script()
+            except Exception:
+                pass
+        
         super().abort(context)
     
     def reset(self, reset_counters: bool = True) -> None:
         with self._lock:
-            if self._executor is not None and self._executor.is_running:
-                try:
-                    self._executor.stop_script()
-                except Exception:
-                    pass
-            
+            executor = self._executor
             self._executor = None
             self._script_started = False
             self._aborted = False
             self._script_content = None
+        
+        if executor is not None and executor.is_running:
+            try:
+                executor.stop_script()
+            except Exception:
+                pass
         
         super().reset(reset_counters=reset_counters)
 
