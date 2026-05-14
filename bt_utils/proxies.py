@@ -233,21 +233,15 @@ class InputProxy:
         """
         self._get_controller().mouse_click(button, position, action, duration)
 
-    def mouse_move(self, position: Tuple[int, int], relative: bool = False,
-                   smooth: bool = False, duration: float = 0.3) -> None:
+    def mouse_move(self, position: Tuple[int, int], relative: bool = False) -> None:
         """移动鼠标
 
         Args:
             position: 目标位置 (x, y)
             relative: 是否相对移动
-            smooth: 是否平滑移动
-            duration: 平滑移动时长
         """
         controller = self._get_controller()
-        if hasattr(controller, 'mouse_move'):
-            controller.mouse_move(position, relative, smooth, duration)
-        else:
-            controller.mouse_move(position, relative)
+        controller.mouse_move(position, relative)
 
     def mouse_scroll(self, amount: int, position: Tuple[int, int] = None) -> None:
         """鼠标滚轮

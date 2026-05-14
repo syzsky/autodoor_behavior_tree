@@ -150,7 +150,6 @@ class MouseClickNode(ActionNode):
         return NodeStatus.RUNNING
 
     def _release_button(self) -> None:
-        """释放鼠标按钮"""
         if self._button_pressed and self._context:
             try:
                 self._context.execute_mouse_click(self.button, None, "up", 0)
@@ -168,13 +167,11 @@ class MouseClickNode(ActionNode):
         self._button_pressed = False
 
     def abort(self, context) -> None:
-        """中止节点执行"""
         self._abort_flag = True
         self._release_button()
         super().abort(context)
 
     def reset(self, reset_counters: bool = True) -> None:
-        """重置节点状态"""
         self._release_button()
         self._context = None
         super().reset(reset_counters=reset_counters)
@@ -218,37 +215,43 @@ class MouseMoveNode(ActionNode):
         self.position: Tuple[int, int] = self.config.get("position", (0, 0))
         self.use_blackboard = self.config.get_bool("use_blackboard", False)
         self.position_key = self.config.get("position_key", _get_default_position_key())
-        self.relative = self.config.get_bool("relative", False)
-        self.smooth = self.config.get_bool("smooth", True)
         self.move_type = self.config.get("move_type", "移动")
         self.drag_button = self.config.get("drag_button", "left")
         self.end_position: Optional[Tuple[int, int]] = self.config.get("end_position", None)
+        self.relative = self.config.get_bool("relative", False)
+        offset = self.config.get("offset", None)
+        if offset is not None:
+            if isinstance(offset, (list, tuple)) and len(offset) >= 2:
+                self.offset = (int(offset[0]), int(offset[1]))
+            else:
+                self.offset = (0, 0)
+        else:
+            self.offset = (0, 0)
         self.use_blackboard_end = self.config.get_bool("use_blackboard_end", False)
         self.position_key_end = self.config.get("position_key_end", "")
+        self.move_duration = self.config.get_int("move_duration", 0)
+        self.move_duration_random = self.config.get_int("move_duration_random", 0)
         self.drag_duration = self.config.get_int("drag_duration", 0)
         self.drag_duration_random = self.config.get_int("drag_duration_random", 0)
 
     def _execute_action(self, context) -> NodeStatus:
         try:
-            move_position = self.position
+            start_pos = self._get_start_position(context)
             
-            if self.use_blackboard:
-                bb_position = context.blackboard.get(self.position_key)
-                if bb_position:
-                    move_position = bb_position
-            
-            if not move_position:
+            if not start_pos:
                 LogManager.instance().log_failure(
                     node_type="鼠标移动节点",
                     node_name=self.name,
-                    reason="未指定位置"
+                    reason="未指定起点位置"
                 )
                 return NodeStatus.FAILURE
             
+            end_pos = self._get_end_position(context, start_pos)
+            
             if self.move_type == "拖拽":
-                return self._execute_drag(context, move_position)
+                return self._execute_drag(context, start_pos, end_pos)
             else:
-                return self._execute_move(context, move_position)
+                return self._execute_move(context, start_pos, end_pos)
                 
         except Exception as e:
             from bt_utils.exception_handler import log_exception
@@ -264,23 +267,76 @@ class MouseMoveNode(ActionNode):
                 pass
             return NodeStatus.FAILURE
 
-    def _execute_move(self, context, position: Tuple[int, int]) -> NodeStatus:
-        context.execute_mouse_move(position, self.relative, self.smooth)
+    def _get_start_position(self, context) -> Optional[Tuple[int, int]]:
+        if self.use_blackboard:
+            bb_position = context.blackboard.get(self.position_key)
+            if bb_position:
+                return bb_position
+        return self.position
+
+    def _get_end_position(self, context, start_pos: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        if self.relative:
+            return (start_pos[0] + self.offset[0], start_pos[1] + self.offset[1])
+        
+        if self.use_blackboard_end:
+            bb_position = context.blackboard.get(self.position_key_end)
+            if bb_position:
+                return bb_position
+        
+        return self.end_position
+
+    def _smoothstep(self, t: float) -> float:
+        return t * t * (3 - 2 * t)
+
+    def _execute_move(self, context, start_pos: Tuple[int, int], end_pos: Optional[Tuple[int, int]]) -> NodeStatus:
+        if not end_pos:
+            context.execute_mouse_move(start_pos, relative=False)
+            LogManager.instance().log_success(
+                node_type="鼠标移动节点",
+                node_name=self.name
+            )
+            return NodeStatus.SUCCESS
+        
+        actual_duration = get_random_duration(self.move_duration, self.move_duration_random)
+        
+        context.execute_mouse_move(start_pos, relative=False)
+        time.sleep(0.01)
+        
+        if actual_duration > 0:
+            total_duration_sec = actual_duration / 1000.0
+            steps = max(10, actual_duration // 50)
+            dx = end_pos[0] - start_pos[0]
+            dy = end_pos[1] - start_pos[1]
+            
+            start_time = time.time()
+            
+            for i in range(steps):
+                if not context.check_running():
+                    return NodeStatus.ABORTED
+                
+                elapsed = time.time() - start_time
+                progress = min(elapsed / total_duration_sec, 1.0)
+                
+                t = self._smoothstep(progress)
+                current_x = int(start_pos[0] + dx * t)
+                current_y = int(start_pos[1] + dy * t)
+                context.execute_mouse_move((current_x, current_y), relative=False)
+                
+                if progress >= 1.0:
+                    break
+                
+                time.sleep(total_duration_sec / steps)
+        else:
+            context.execute_mouse_move(end_pos, relative=False)
+        
         LogManager.instance().log_success(
             node_type="鼠标移动节点",
             node_name=self.name
         )
         return NodeStatus.SUCCESS
 
-    def _execute_drag(self, context, start_pos: Tuple[int, int]) -> NodeStatus:
-        drag_end_position = self.end_position
-        
-        if self.use_blackboard_end:
-            bb_position = context.blackboard.get(self.position_key_end)
-            if bb_position:
-                drag_end_position = bb_position
-        
-        if not drag_end_position:
+    def _execute_drag(self, context, start_pos: Tuple[int, int], end_pos: Optional[Tuple[int, int]]) -> NodeStatus:
+        if not end_pos:
             LogManager.instance().log_failure(
                 node_type="鼠标移动节点",
                 node_name=self.name,
@@ -288,44 +344,47 @@ class MouseMoveNode(ActionNode):
             )
             return NodeStatus.FAILURE
         
+        actual_duration = get_random_duration(
+            self.move_duration if self.move_duration > 0 else self.drag_duration,
+            self.move_duration_random if self.move_duration_random > 0 else self.drag_duration_random
+        )
+        
         context.execute_mouse_move(start_pos, relative=False)
-        time.sleep(0.05)
+        time.sleep(0.02)
         
         context.execute_mouse_click(self.drag_button, start_pos, "down", 0)
-        time.sleep(0.05)
+        time.sleep(0.02)
         
-        actual_drag_duration = get_random_duration(self.drag_duration, self.drag_duration_random)
-        if actual_drag_duration > 0:
-            steps = max(10, actual_drag_duration // 50)
-            dx = (drag_end_position[0] - start_pos[0]) / steps
-            dy = (drag_end_position[1] - start_pos[1]) / steps
+        if actual_duration > 0:
+            total_duration_sec = actual_duration / 1000.0
+            steps = max(10, actual_duration // 50)
+            dx = end_pos[0] - start_pos[0]
+            dy = end_pos[1] - start_pos[1]
+            
+            start_time = time.time()
             
             for i in range(steps):
                 if not context.check_running():
-                    context.execute_mouse_click(self.drag_button, drag_end_position, "up", 0)
+                    context.execute_mouse_click(self.drag_button, end_pos, "up", 0)
                     return NodeStatus.ABORTED
                 
-                current_x = int(start_pos[0] + dx * (i + 1))
-                current_y = int(start_pos[1] + dy * (i + 1))
+                elapsed = time.time() - start_time
+                progress = min(elapsed / total_duration_sec, 1.0)
+                
+                t = self._smoothstep(progress)
+                current_x = int(start_pos[0] + dx * t)
+                current_y = int(start_pos[1] + dy * t)
                 context.execute_mouse_move((current_x, current_y), relative=False)
-                time.sleep(actual_drag_duration / 1000.0 / steps)
+                
+                if progress >= 1.0:
+                    break
+                
+                time.sleep(total_duration_sec / steps)
         else:
-            steps = 20
-            dx = (drag_end_position[0] - start_pos[0]) / steps
-            dy = (drag_end_position[1] - start_pos[1]) / steps
-            
-            for i in range(steps):
-                if not context.check_running():
-                    context.execute_mouse_click(self.drag_button, drag_end_position, "up", 0)
-                    return NodeStatus.ABORTED
-                
-                current_x = int(start_pos[0] + dx * (i + 1))
-                current_y = int(start_pos[1] + dy * (i + 1))
-                context.execute_mouse_move((current_x, current_y), relative=False)
-                time.sleep(0.02)
+            context.execute_mouse_move(end_pos, relative=False)
         
-        time.sleep(0.05)
-        context.execute_mouse_click(self.drag_button, drag_end_position, "up", 0)
+        time.sleep(0.02)
+        context.execute_mouse_click(self.drag_button, end_pos, "up", 0)
         
         LogManager.instance().log_success(
             node_type="鼠标移动节点",
@@ -338,13 +397,15 @@ class MouseMoveNode(ActionNode):
         data["config"]["position"] = self.position
         data["config"]["use_blackboard"] = self.use_blackboard
         data["config"]["position_key"] = self.position_key
-        data["config"]["relative"] = self.relative
-        data["config"]["smooth"] = self.smooth
         data["config"]["move_type"] = self.move_type
         data["config"]["drag_button"] = self.drag_button
         data["config"]["end_position"] = self.end_position
+        data["config"]["relative"] = self.relative
+        data["config"]["offset"] = list(self.offset)
         data["config"]["use_blackboard_end"] = self.use_blackboard_end
         data["config"]["position_key_end"] = self.position_key_end
+        data["config"]["move_duration"] = self.move_duration
+        data["config"]["move_duration_random"] = self.move_duration_random
         data["config"]["drag_duration"] = self.drag_duration
         data["config"]["drag_duration_random"] = self.drag_duration_random
         return data
@@ -356,13 +417,22 @@ class MouseMoveNode(ActionNode):
         node.position = config.get("position", (0, 0))
         node.use_blackboard = config.get_bool("use_blackboard", False)
         node.position_key = config.get("position_key", "last_detection_position")
-        node.relative = config.get_bool("relative", False)
-        node.smooth = config.get_bool("smooth", True)
         node.move_type = config.get("move_type", "移动")
         node.drag_button = config.get("drag_button", "left")
         node.end_position = config.get("end_position", None)
+        node.relative = config.get_bool("relative", False)
+        offset = config.get("offset", None)
+        if offset is not None:
+            if isinstance(offset, (list, tuple)) and len(offset) >= 2:
+                node.offset = (int(offset[0]), int(offset[1]))
+            else:
+                node.offset = (0, 0)
+        else:
+            node.offset = (0, 0)
         node.use_blackboard_end = config.get_bool("use_blackboard_end", False)
         node.position_key_end = config.get("position_key_end", "")
+        node.move_duration = config.get_int("move_duration", 0)
+        node.move_duration_random = config.get_int("move_duration_random", 0)
         node.drag_duration = config.get_int("drag_duration", 0)
         node.drag_duration_random = config.get_int("drag_duration_random", 0)
         return node

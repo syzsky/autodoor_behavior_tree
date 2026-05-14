@@ -72,18 +72,18 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "click_interval_random", "label": "间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseMoveNode": [
-        {"key": "position", "label": "起点位置(相对移动值)", "type": "position"},
-        {"key": "use_blackboard", "label": "使用最近检测点", "type": "bool", "default": False},
-        {"key": "position_key", "label": "黑板变量名", "type": "text", "default": "last_detection_position"},
-        {"key": "relative", "label": "相对移动", "type": "bool", "default": False},
-        {"key": "smooth", "label": "平滑移动", "type": "bool", "default": True},
-        {"key": "move_type", "label": "移动类型", "type": "select", "options": ["移动", "拖拽"], "default": "移动"},
-        {"key": "drag_button", "label": "拖拽按键", "type": "select", "options": ["left", "right", "middle"], "default": "left", "hide_if": {"field": "relative", "value": True}},
+        {"key": "position", "label": "起点位置", "type": "position"},
+        {"key": "use_blackboard", "label": "起点使用最近检测点", "type": "bool", "default": False},
+        {"key": "position_key", "label": "起点黑板变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "move_type", "label": "操作类型", "type": "select", "options": ["移动", "拖拽"], "default": "移动"},
+        {"key": "drag_button", "label": "拖拽按键", "type": "select", "options": ["left", "right", "middle"], "default": "left", "hide_if": {"field": "move_type", "value": "移动"}},
+        {"key": "relative", "label": "增量移动", "type": "bool", "default": False},
+        {"key": "offset", "label": "增量值", "type": "offset", "hide_if": {"field": "relative", "value": False}},
         {"key": "end_position", "label": "终点", "type": "position", "hide_if": {"field": "relative", "value": True}},
-        {"key": "use_blackboard_end", "label": "终点使用黑板位置", "type": "bool", "default": False, "hide_if": {"field": "relative", "value": True}},
-        {"key": "position_key_end", "label": "终点位置变量名", "type": "text", "default": "", "hide_if": {"field": "relative", "value": True}},
-        {"key": "drag_duration", "label": "拖拽时长(ms)", "type": "number", "default": 0, "hide_if": {"field": "relative", "value": True}},
-        {"key": "drag_duration_random", "label": "拖拽时长随机范围(±ms)", "type": "number", "min": 0, "default": 0, "hide_if": {"field": "relative", "value": True}},
+        {"key": "use_blackboard_end", "label": "终点使用最近检测点", "type": "bool", "default": False, "hide_if": {"field": "relative", "value": True}},
+        {"key": "position_key_end", "label": "终点黑板变量名", "type": "text", "default": "", "hide_if": {"field": "relative", "value": True}},
+        {"key": "move_duration", "label": "移动时长(ms)", "type": "number", "default": 0},
+        {"key": "move_duration_random", "label": "移动时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseScrollNode": [
         {"key": "distance", "label": "滚动距离", "type": "number", "default": 5},
@@ -2763,6 +2763,13 @@ class PropertyPanel(ctk.CTkFrame):
             
             depend_field = hide_if.get("field")
             if depend_field != changed_key:
+                continue
+            
+            self._update_single_field_visibility(key, field)
+        
+        for key, field in self.field_schemas.items():
+            hide_if = field.get("hide_if")
+            if not hide_if:
                 continue
             
             self._update_single_field_visibility(key, field)
