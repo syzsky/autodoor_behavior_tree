@@ -2,17 +2,27 @@
 from .trainer import (
     TrainingConfig,
     BoundingBox,
-    DatasetManager,
     AutoScreenshotCollector,
     SmartAnnotator,
+    DataAugmentor,
     YOLOTrainer,
+)
+from .smart_train import (
+    SmartTrainingConfig,
+    SmartTrainer,
+    TrainingQualityAnalyzer,
+    AutoHPO,
 )
 
 __all__ = [
     "TrainingConfig",
     "BoundingBox",
-    "DatasetManager",
     "AutoScreenshotCollector",
     "SmartAnnotator",
+    "DataAugmentor",
     "YOLOTrainer",
+    "SmartTrainingConfig",
+    "SmartTrainer",
+    "TrainingQualityAnalyzer",
+    "AutoHPO",
 ]
