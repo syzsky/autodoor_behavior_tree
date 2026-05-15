@@ -39,7 +39,7 @@ data_files = [
     (os.path.join(project_root, 'assets/icons/autodoor.png'), 'assets/icons'),
     (os.path.join(project_root, 'config/settings.json'), 'config'),
     (os.path.join(project_root, 'bt_utils/build_info.json'), 'bt_utils'),
-] + collect_data_files('rapidocr') + collect_data_files('ultralytics') + collect_data_files('torch')
+] + collect_data_files('rapidocr')
 
 binaries = []
 
@@ -147,11 +147,6 @@ a = Analysis(
         'modules.yolo_trainer.utils.config',
         'modules.yolo_trainer.utils.visualizer',
         'modules.yolo_trainer.utils.dataset_utils',
-        'ultralytics',
-        'ultralytics.models',
-        'ultralytics.models.yolo',
-        'torch',
-        'torchvision',
         
         'win32gui',
         'win32ui',
@@ -170,6 +165,7 @@ a = Analysis(
         'statsmodels', 'plotly', 'bokeh', 'networkx', 'nltk',
         'spacy', 'transformers', 'onnx',
         'jax', 'jaxlib', 'timm', 'diffusers', 'peft',
+        'torch', 'torchvision', 'ultralytics', 'ultralytics.models', 'ultralytics.models.yolo',
         'gradio', 'streamlit', 'dash',
         
         'flask', 'django', 'fastapi', 'uvicorn', 'gunicorn',
