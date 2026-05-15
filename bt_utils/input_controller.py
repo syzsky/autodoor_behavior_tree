@@ -78,6 +78,7 @@ class InputController(BaseInputController):
                     pass
             
             mouse_controller.release(mouse.Button.left)
+            mouse_controller.release(mouse.Button.right)
             mouse_controller.release(mouse.Button.middle)
             
         except Exception as e:
@@ -202,14 +203,63 @@ class InputController(BaseInputController):
         else:
             pyautogui.moveTo(position[0], position[1])
 
-    def move_to(self, x: int, y: int) -> None:
+    def smooth_move(self, position: Tuple[int, int], relative: bool = False,
+                    duration: float = 0.3) -> None:
+        """平滑移动鼠标
+
+        Args:
+            position: 目标位置
+            relative: 是否相对移动
+            duration: 移动时长
+        """
+        self._smooth_move(position, relative, duration)
+
+    def _smooth_move(self, target: Tuple[int, int], relative: bool, duration: float) -> None:
+        """平滑移动鼠标
+
+        Args:
+            target: 目标位置
+            relative: 是否相对移动
+            duration: 移动时长
+        """
+        start_x, start_y = pyautogui.position()
+
+        if relative:
+            target_x = start_x + target[0]
+            target_y = start_y + target[1]
+        else:
+            target_x, target_y = target
+
+        distance = math.sqrt((target_x - start_x) ** 2 + (target_y - start_y) ** 2)
+        
+        if distance < 1:
+            return
+
+        steps = max(int(duration * 60), 10)
+        
+        for i in range(steps + 1):
+            t = i / steps
+            t = t * t * (3 - 2 * t)
+            
+            current_x = int(start_x + (target_x - start_x) * t)
+            current_y = int(start_y + (target_y - start_y) * t)
+            
+            pyautogui.moveTo(current_x, current_y, _pause=False)
+            time.sleep(duration / steps)
+
+    def move_to(self, x: int, y: int, smooth: bool = False, duration: float = 0.3) -> None:
         """移动鼠标到指定位置
 
         Args:
             x: X坐标
             y: Y坐标
+            smooth: 是否平滑移动
+            duration: 平滑移动时长
         """
-        self.mouse_move((x, y), relative=False)
+        if smooth:
+            self.smooth_move((x, y), relative=False, duration=duration)
+        else:
+            self.mouse_move((x, y), relative=False)
 
     def mouse_scroll(self, amount: int, position: Tuple[int, int] = None) -> None:
         """鼠标滚轮

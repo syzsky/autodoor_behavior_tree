@@ -105,27 +105,14 @@ class BehaviorTreeEngine:
             elif self.root_node:
                 self.root_node.reset()
 
-            self._stop_all_script_nodes()
+            from bt_nodes.actions.script import ScriptNode
+            ScriptNode.clear_executor_pool()
 
             self._stats.end_session()
             self._output_stats_report()
 
             if self._on_status_change:
                 self._on_status_change("stopped")
-
-    def _stop_all_script_nodes(self) -> None:
-        if not self.root_node:
-            return
-        from bt_nodes.actions.script import ScriptNode
-        for node in self._iter_all_nodes(self.root_node):
-            if isinstance(node, ScriptNode):
-                node.stop_executor()
-
-    def _iter_all_nodes(self, node):
-        yield node
-        if hasattr(node, 'children'):
-            for child in node.children:
-                yield from self._iter_all_nodes(child)
 
     def pause(self) -> None:
         self._paused = True

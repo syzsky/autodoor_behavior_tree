@@ -16,9 +16,6 @@ class NumberConditionNode(ConditionNode):
         self.extract_pattern = self.config.get("extract_pattern", "")
         self.min_confidence = self.config.get_float("min_confidence", 50) / 100.0
         self.value_key = self.config.get("value_key", "last_number_value")
-        
-        self.search_direction = self.config.get("search_direction", "左上")
-        
         language_display = self.config.get("language", "简体中文")
         from bt_nodes.conditions.ocr import LANGUAGE_MAP
         self.language = LANGUAGE_MAP.get(language_display, "chi_sim")
@@ -35,17 +32,13 @@ class NumberConditionNode(ConditionNode):
             if screenshot is None:
                 return False
 
-            from bt_utils.direction import SearchDirection
-            direction = SearchDirection.VALUE_MAP.get(self.search_direction, SearchDirection.TOP_LEFT)
-            
             success, value, all_text, position = OCRManager().recognize_number_with_position(
                 screenshot,
                 language=self.language,
                 preprocess_mode=self.preprocess_mode,
                 extract_mode=self.extract_mode,
                 extract_pattern=self.extract_pattern,
-                min_confidence=self.min_confidence,
-                search_direction=direction
+                min_confidence=self.min_confidence
             )
 
             if not success or value is None:
@@ -104,7 +97,6 @@ class NumberConditionNode(ConditionNode):
         data["config"]["extract_pattern"] = self.extract_pattern
         data["config"]["min_confidence"] = int(self.min_confidence * 100)
         data["config"]["value_key"] = self.value_key
-        data["config"]["search_direction"] = self.search_direction
         from bt_nodes.conditions.ocr import LANGUAGE_MAP
         reverse_language_map = {"eng": "English", "chi_sim": "简体中文", "chi_tra": "繁体中文"}
         data["config"]["language"] = reverse_language_map.get(self.language, self.language)

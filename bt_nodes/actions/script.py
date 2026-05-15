@@ -7,9 +7,15 @@ from bt_utils.log_manager import LogManager
 
 
 class ScriptNode(ActionNode):
+    """脚本执行节点
+    
+    执行外部脚本文件，支持循环执行。
+    线程安全设计：所有状态操作都通过锁保护。
+    """
     NODE_TYPE = "ScriptNode"
     SKIP_WINDOW_SWITCH = True
-
+    
+    _executor_pool: Dict[str, Any] = {}
     _pool_lock = threading.Lock()
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
@@ -23,36 +29,55 @@ class ScriptNode(ActionNode):
         self._lock = threading.Lock()
 
     def _get_or_create_executor(self) -> Any:
+        """获取或创建执行器
+        
+        线程安全：所有操作在锁内完成。
+        
+        Returns:
+            ScriptExecutor 实例
+        """
         from bt_utils.script_executor import ScriptExecutor
         
-        if self._executor is None or not self._executor.is_running:
-            self._executor = ScriptExecutor()
-        
-        return self._executor
+        with ScriptNode._pool_lock:
+            executor = ScriptNode._executor_pool.get(self.node_id)
+            
+            if executor is None or not executor.is_running:
+                executor = ScriptExecutor()
+                ScriptNode._executor_pool[self.node_id] = executor
+            
+            self._executor = executor
+            
+            return executor
     
     @classmethod
     def cleanup_executor_pool(cls) -> None:
-        pass
+        """清理执行器池中已停止的执行器"""
+        with cls._pool_lock:
+            to_remove = [
+                node_id for node_id, executor in cls._executor_pool.items()
+                if not executor.is_running
+            ]
+            
+            for node_id in to_remove:
+                del cls._executor_pool[node_id]
     
     @classmethod
     def clear_executor_pool(cls) -> None:
-        pass
-    
-    def stop_executor(self) -> None:
-        executor = None
-        with self._lock:
-            executor = self._executor
-            self._executor = None
-            self._script_started = False
-            self._script_content = None
-        
-        if executor is not None and executor.is_running:
-            try:
-                executor.stop_script()
-            except Exception:
-                pass
+        """清空执行器池"""
+        with cls._pool_lock:
+            for executor in cls._executor_pool.values():
+                if executor.is_running:
+                    try:
+                        executor.stop_script()
+                    except Exception:
+                        pass
+            cls._executor_pool.clear()
 
     def _execute_action(self, context) -> NodeStatus:
+        """执行脚本动作
+        
+        线程安全：所有状态访问都在锁保护下进行。
+        """
         with self._lock:
             self._aborted = False
         
@@ -79,8 +104,6 @@ class ScriptNode(ActionNode):
                         return status
                     return NodeStatus.RUNNING
             
-            executor_to_stop = None
-            result_status = None
             with self._lock:
                 if self._aborted:
                     return NodeStatus.FAILURE
@@ -90,24 +113,11 @@ class ScriptNode(ActionNode):
                 
                 if self._executor.is_running:
                     if not context.check_running():
-                        executor_to_stop = self._executor
-                        self._executor = None
-                        self._script_started = False
-                        self._script_content = None
-                        result_status = NodeStatus.ABORTED
-                    else:
-                        return NodeStatus.RUNNING
-                else:
-                    self._cleanup_executor()
-            
-            if executor_to_stop is not None and executor_to_stop.is_running:
-                try:
-                    executor_to_stop.stop_script()
-                except Exception:
-                    pass
-            
-            if result_status is not None:
-                return result_status
+                        self._stop_executor()
+                        return NodeStatus.ABORTED
+                    return NodeStatus.RUNNING
+                
+                self._cleanup_executor()
             
             LogManager().log_success(
                 node_type="脚本节点",
@@ -240,34 +250,29 @@ class ScriptNode(ActionNode):
         self._script_content = None
 
     def abort(self, context) -> None:
+        """中止脚本执行"""
         with self._lock:
             self._aborted = True
-            executor = self._executor
-            self._executor = None
-            self._script_started = False
-            self._script_content = None
-        
-        if executor is not None and executor.is_running:
-            try:
-                executor.stop_script()
-            except Exception:
-                pass
-        
+            self._stop_executor()
         super().abort(context)
     
     def reset(self, reset_counters: bool = True) -> None:
+        """重置节点状态"""
         with self._lock:
-            executor = self._executor
+            if self._executor is not None and self._executor.is_running:
+                try:
+                    self._executor.stop_script()
+                except Exception:
+                    pass
+            
+            with ScriptNode._pool_lock:
+                if self.node_id in ScriptNode._executor_pool:
+                    del ScriptNode._executor_pool[self.node_id]
+            
             self._executor = None
             self._script_started = False
             self._aborted = False
             self._script_content = None
-        
-        if executor is not None and executor.is_running:
-            try:
-                executor.stop_script()
-            except Exception:
-                pass
         
         super().reset(reset_counters=reset_counters)
 

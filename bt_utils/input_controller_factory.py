@@ -255,6 +255,7 @@ class InputController:
                     pass
             
             mouse_controller.release(mouse.Button.left)
+            mouse_controller.release(mouse.Button.right)
             mouse_controller.release(mouse.Button.middle)
             
         except Exception:
@@ -331,7 +332,7 @@ class InputController:
         if self._impl:
             self._impl.mouse_up(button)
     
-    def mouse_move(self, position: tuple, relative: bool = False) -> None:
+    def mouse_move(self, position: tuple, relative: bool = False, smooth: bool = False, duration: float = 0.3) -> None:
         if self._impl:
             self._impl.mouse_move(position, relative)
     
@@ -339,8 +340,9 @@ class InputController:
         if self._impl:
             self._impl.mouse_scroll(amount, position)
     
-    def move_to(self, x: int, y: int) -> None:
-        self.mouse_move((x, y), relative=False)
+    def move_to(self, x: int, y: int, smooth: bool = False, duration: float = 0.3) -> None:
+        """移动鼠标到指定位置"""
+        self.mouse_move((x, y), relative=False, smooth=smooth, duration=duration)
     
     def get_position(self) -> tuple:
         try:

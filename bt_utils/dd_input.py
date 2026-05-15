@@ -112,8 +112,6 @@ VK_CODE_MAP = {
 class DDVirtualInput(BaseInputController):
     """DD虚拟键盘输入控制器"""
     
-    _stop_requested = False  # 类变量：全局停止标志
-    
     def __init__(self, app=None, dll_path: str = None):
         self._dd_dll = None
         self._available = False
@@ -122,26 +120,6 @@ class DDVirtualInput(BaseInputController):
         self._vk_cache = {}
         
         self._load_dd_dll()
-    
-    @classmethod
-    def request_stop(cls):
-        """请求停止所有正在进行的操作（F12调用）"""
-        cls._stop_requested = True
-        print("[DD] 收到停止请求")
-    
-    @classmethod
-    def clear_stop(cls):
-        """清除停止标志（新操作开始前调用）"""
-        cls._stop_requested = False
-    
-    def _check_stop(self) -> bool:
-        """检查是否应该停止
-        
-        Returns:
-            True: 应该停止
-            False: 继续执行
-        """
-        return DDVirtualInput._stop_requested
     
     def _load_dd_dll(self) -> bool:
         """加载DD虚拟键盘DLL"""
@@ -197,18 +175,18 @@ class DDVirtualInput(BaseInputController):
         通过DD_todc函数动态转换Windows VK码到DD码
         """
         key_lower = key.lower()
-
+        
         if key_lower in self._vk_cache:
             return self._vk_cache[key_lower]
-
+        
         vk_code = VK_CODE_MAP.get(key_lower)
-
+        
         if vk_code is None:
             if len(key_lower) == 1 and key_lower.isalpha():
                 vk_code = ord(key_lower.upper())
             else:
                 return 0
-
+        
         if self._available and self._dd_dll:
             try:
                 dd_code = self._dd_dll.DD_todc(vk_code)
@@ -217,23 +195,7 @@ class DDVirtualInput(BaseInputController):
                     return dd_code
             except Exception:
                 pass
-
-        fallback_map = {
-            'altleft': 0x12, 'alt_l': 0x12, 'altright': 0x12, 'alt_r': 0x12,
-            'ctrlleft': 0x11, 'ctrl_l': 0x11, 'ctrlright': 0x11, 'ctrl_r': 0x11,
-            'shiftleft': 0x10, 'shift_l': 0x10, 'shiftright': 0x10, 'shift_r': 0x10,
-        }
-
-        fallback_vk = fallback_map.get(key_lower)
-        if fallback_vk and self._available and self._dd_dll:
-            try:
-                dd_code = self._dd_dll.DD_todc(fallback_vk)
-                if dd_code > 0:
-                    self._vk_cache[key_lower] = dd_code
-                    return dd_code
-            except Exception:
-                pass
-
+        
         return 0
     
     def key_press(self, key: str, action: str = "press", duration: int = 0) -> None:
@@ -335,83 +297,13 @@ class DDVirtualInput(BaseInputController):
             pass
     
     def mouse_scroll(self, amount: int, position: Tuple[int, int] = None) -> None:
-        """鼠标滚轮
-
-        Args:
-            amount: 滚动量（点击数，正数向上，负数向下）
-            position: 滚动位置 (x, y)
-
-        DD_whl()的参数定义（官方文档确认）:
-            - 1 = 向前/向上滚动1格 (≈120 WHEEL_DELTA)
-            - 2 = 向后/向下滚动1格 (≈120 WHEEL_DELTA)
-
-        实现特性:
-            1. 最快速度执行滚动
-            2. 最长执行时间5秒（超时自动停止）
-            3. 响应F12全局停止请求（立即中断）
-        """
+        """鼠标滚轮"""
         if not self._available or not self._dd_dll:
             return
         
         try:
             if position:
                 self._dd_dll.DD_mov(position[0], position[1])
-
-            import time
-            
-            total = abs(amount)
-            if total == 0:
-                return
-            
-            # ★ 关键检查：如果已经收到停止请求，直接返回（防止clicks循环重复启动）
-            if self._check_stop():
-                print(f"[DD_SCROLL] ⚠️ 检测到已停止状态，跳过本次滚动")
-                return
-            
-            # ★ 清除停止标志，开始新的滚动操作
-            DDVirtualInput.clear_stop()
-            
-            # ★ 计算参数：最快速度 + 1秒超时
-            MAX_DURATION = 1.0  # 最大执行时间1秒（用户要求）
-            start_time = time.time()
-            
-            # 动态计算间隔：在1秒内完成所有滚动
-            # 如果total=500，则间隔=2ms；如果total=50，则间隔=20ms
-            interval = MAX_DURATION / total
-            interval = max(interval, 0.001)  # 最少1ms（尽可能快）
-            
-            print(f"[DD_SCROLL] 开始滚动: amount={amount}, 总次数={total}, 间隔={interval*1000:.1f}ms, 最大时长={MAX_DURATION}s")
-            
-            executed_count = 0
-            direction = 1 if amount > 0 else 2  # 1=向上, 2=向下
-            
-            for i in range(total):
-                # ★ 检查1：是否超过1秒
-                elapsed = time.time() - start_time
-                if elapsed >= MAX_DURATION:
-                    print(f"[DD_SCROLL] ⏱ 1秒超时！已执行 {i}/{total} 次 ({elapsed:.1f}s)")
-                    break
-                
-                # ★ 检查2：是否收到F12停止请求
-                if self._check_stop():
-                    print(f"[DD_SCROLL] 🛑 收到停止信号！已执行 {i}/{total} 次 ({elapsed:.1f}s)")
-                    break
-                
-                # 执行滚动
-                result = self._dd_dll.DD_whl(direction)
-                executed_count += 1
-                
-                # 只打印前3次和最后3次（避免刷屏）
-                if i < 3 or i >= total - 3:
-                    print(f"[DD_SCROLL] DD_whl({direction}) {i+1}/{total}, 返回值={result}, 已用时{elapsed:.2f}s")
-                
-                # ★ 短暂休眠（让出CPU，可响应中断）
-                time.sleep(interval)
-            
-            total_time = time.time() - start_time
-            print(f"[DD_SCROLL] ✓ 滚动完成: 实际执行{executed_count}/{total}次, 用时{total_time:.2f}s")
-            
-        except Exception as e:
-            print(f"[DD_SCROLL_ERROR] mouse_scroll异常: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            self._dd_dll.DD_whl(amount)
+        except Exception:
+            pass

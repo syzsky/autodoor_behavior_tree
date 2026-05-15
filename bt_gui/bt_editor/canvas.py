@@ -5,7 +5,7 @@ import math
 
 from ..theme import Theme
 from .constants import NODE_DISPLAY_NAMES
-from .node_item import NodeItem, NodeExecutionStatus, SubtreeNodeItem
+from .node_item import NodeItem, NodeExecutionStatus
 from bt_utils.log_manager import LogManager
 
 
@@ -202,10 +202,6 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
                 return
             
             if node.contains_point(x, y):
-                if node.node_type == "SubtreeNode" and isinstance(node, SubtreeNodeItem):
-                    if node.is_on_toggle_btn(x, y):
-                        node.toggle_preview()
-                        return
                 self._click_pos = (x, y)
                 self._click_node_id = node_id
                 if node_id not in self.selected_nodes:
@@ -501,11 +497,6 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         
         for node_id, node in self.nodes.items():
             if node.contains_point(x, y):
-                if node.node_type == "SubtreeNode":
-                    from .node_item import SubtreeNodeItem
-                    if isinstance(node, SubtreeNodeItem):
-                        node.toggle_preview()
-                        return
                 self._edit_node_properties(node_id)
                 return
     
@@ -627,10 +618,7 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         if not name:
             name = NODE_DISPLAY_NAMES.get(node_type, node_type)
         
-        if node_type == "SubtreeNode":
-            node = SubtreeNodeItem(self.canvas, node_id, node_type, x, y, name, config, enabled, self.zoom, self.pan_x, self.pan_y)
-        else:
-            node = NodeItem(self.canvas, node_id, node_type, x, y, name, config, enabled, self.zoom, self.pan_x, self.pan_y)
+        node = NodeItem(self.canvas, node_id, node_type, x, y, name, config, enabled, self.zoom, self.pan_x, self.pan_y)
         self.nodes[node_id] = node
         return node
     

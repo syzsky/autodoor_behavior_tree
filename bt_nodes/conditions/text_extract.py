@@ -14,21 +14,13 @@ LANGUAGE_MAP = {
     "chi_tra": "chi_tra",
 }
 
-EXTRACT_MODE_MAP = {
-    "全部": "all",
-    "关键词": "keywords",
-    "all": "all",
-    "keywords": "keywords",
-}
-
 
 class TextExtractNode(ConditionNode):
     NODE_TYPE = "TextExtractNode"
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        extract_mode_display = self.config.get("extract_mode", "全部")
-        self.extract_mode = EXTRACT_MODE_MAP.get(extract_mode_display, "all")
+        self.extract_mode = self.config.get("extract_mode", "all")
         self.region: Optional[Tuple[int, int, int, int]] = self._parse_region(
             self.config.get("region", None)
         )
@@ -71,7 +63,7 @@ class TextExtractNode(ConditionNode):
             if self.save_position and self.region:
                 center_x = (self.region[0] + self.region[2]) // 2
                 center_y = (self.region[1] + self.region[3]) // 2
-                context.blackboard.set(self.position_key, (center_x, center_y))
+                self._save_position(context, (center_x, center_y))
 
             if extracted_text:
                 self._log_condition_result(True)
@@ -104,8 +96,7 @@ class TextExtractNode(ConditionNode):
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
-        reverse_extract_mode = {"all": "全部", "keywords": "关键词"}
-        data["config"]["extract_mode"] = reverse_extract_mode.get(self.extract_mode, self.extract_mode)
+        data["config"]["extract_mode"] = self.extract_mode
         data["config"]["region"] = list(self.region) if self.region else None
         data["config"]["keywords"] = self.keywords
         reverse_language_map = {"eng": "English", "chi_sim": "简体中文", "chi_tra": "繁体中文"}

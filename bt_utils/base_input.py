@@ -89,14 +89,30 @@ class BaseInputController(ABC):
         """
         pass
 
-    def move_to(self, x: int, y: int) -> None:
+    def smooth_move(self, position: Tuple[int, int], relative: bool = False,
+                    duration: float = 0.3) -> None:
+        """平滑移动鼠标（默认实现，子类可覆盖）
+
+        Args:
+            position: 目标位置 (x, y)
+            relative: 是否相对移动
+            duration: 移动时长（秒）
+        """
+        self.mouse_move(position, relative)
+
+    def move_to(self, x: int, y: int, smooth: bool = False, duration: float = 0.3) -> None:
         """移动鼠标到指定位置
 
         Args:
             x: X坐标
             y: Y坐标
+            smooth: 是否平滑移动
+            duration: 平滑移动时长
         """
-        self.mouse_move((x, y), relative=False)
+        if smooth:
+            self.smooth_move((x, y), relative=False, duration=duration)
+        else:
+            self.mouse_move((x, y), relative=False)
 
     def get_position(self) -> Tuple[int, int]:
         """获取当前鼠标位置

@@ -665,7 +665,6 @@ class OCRManager:
                   language: str = "eng",
                   preprocess_mode: str = "normal",
                   region: Tuple[int, int, int, int] = None,
-                  search_direction: str = "top-left",
                   use_cache: bool = True) -> Tuple[bool, Optional[Tuple[int, int]], str]:
         """执行OCR识别
 
@@ -675,7 +674,6 @@ class OCRManager:
             language: OCR语言
             preprocess_mode: 预处理模式
             region: 截图区域 (left, top, right, bottom)，用于坐标转换
-            search_direction: 识别起点 (top-left/top-right/bottom-left/bottom-right)
             use_cache: 是否使用缓存
 
         Returns:
@@ -692,8 +690,7 @@ class OCRManager:
             if use_cache:
                 cache_key = self._compute_cache_key(
                     image, keywords=keywords, language=language,
-                    preprocess_mode=preprocess_mode, region=region,
-                    search_direction=search_direction
+                    preprocess_mode=preprocess_mode, region=region
                 )
                 cached = self._get_cached_result(cache_key)
                 if cached is not None:
@@ -715,8 +712,6 @@ class OCRManager:
             
             if keywords:
                 keyword_list = [k.strip().lower() for k in keywords.split(",")]
-                
-                all_matches = []
                 
                 for i, text in enumerate(result.txts):
                     if not text:
@@ -741,25 +736,20 @@ class OCRManager:
                                 x += region[0]
                                 y += region[1]
                             
-                            all_matches.append((x, y))
+                            result = (True, (x, y), all_text)
+                            if cache_key:
+                                self._set_cached_result(cache_key, result)
+                            return result
                 
-                if all_matches:
-                    from bt_utils.direction import sort_positions_by_direction
-                    sorted_matches = sort_positions_by_direction(all_matches, search_direction)
-                    result_data = (True, sorted_matches[0], all_text)
-                    if cache_key:
-                        self._set_cached_result(cache_key, result_data)
-                    return result_data
-                
-                result_data = (False, None, all_text)
+                result = (False, None, all_text)
                 if cache_key:
-                    self._set_cached_result(cache_key, result_data)
-                return result_data
+                    self._set_cached_result(cache_key, result)
+                return result
             
-            result_data = (True, None, all_text)
+            result = (True, None, all_text)
             if cache_key:
-                self._set_cached_result(cache_key, result_data)
-            return result_data
+                self._set_cached_result(cache_key, result)
+            return result
         
         except Exception as e:
             _logger.error(f"OCR识别异常: {e}", exc_info=True)
@@ -812,7 +802,6 @@ class OCRManager:
                                         extract_mode: str = "无规则",
                                         extract_pattern: str = "",
                                         min_confidence: float = 0.5,
-                                        search_direction: str = "top-left",
                                         use_cache: bool = True) -> Tuple[bool, Optional[float], str, Optional[Tuple[int, int]]]:
         """识别数字（带位置）
 
@@ -823,7 +812,6 @@ class OCRManager:
             extract_mode: 提取模式 (无规则/x/y/自定义)
             extract_pattern: 自定义提取模式（使用*作为通配符）
             min_confidence: 最小置信度 (RapidOCR自动过滤低置信度结果)
-            search_direction: 识别起点 (top-left/top-right/bottom-left/bottom-right)
             use_cache: 是否使用缓存
 
         Returns:
@@ -841,8 +829,7 @@ class OCRManager:
                 cache_key = self._compute_cache_key(
                     image, language=language, preprocess_mode=preprocess_mode,
                     extract_mode=extract_mode, extract_pattern=extract_pattern,
-                    min_confidence=min_confidence, method="number",
-                    search_direction=search_direction
+                    min_confidence=min_confidence, method="number"
                 )
                 cached = self._get_cached_result(cache_key)
                 if cached is not None:
@@ -859,10 +846,12 @@ class OCRManager:
             
             all_text = " ".join(result.txts)
             
-            all_number_data = []
+            extracted = self._extract_number(all_text, extract_mode, extract_pattern)
             
-            if result.boxes is not None and len(result.boxes) > 0:
-                for i, box in enumerate(result.boxes):
+            if extracted is not None:
+                position = None
+                if result.boxes is not None and len(result.boxes) > 0:
+                    box = result.boxes[0]
                     center_x = int((box[0][0] + box[2][0]) / 2)
                     center_y = int((box[0][1] + box[2][1]) / 2)
                     
@@ -872,26 +861,9 @@ class OCRManager:
                         center_x = int(center_x * scale_x)
                         center_y = int(center_y * scale_y)
                     
-                    if result.txts and i < len(result.txts):
-                        text = result.txts[i]
-                        extracted = self._extract_number(text, extract_mode, extract_pattern)
-                        if extracted is not None:
-                            all_number_data.append((center_x, center_y, extracted))
-            
-            if all_number_data:
-                from bt_utils.direction import sort_positions_by_direction
+                    position = (center_x, center_y)
                 
-                positions = [(d[0], d[1]) for d in all_number_data]
-                sorted_positions = sort_positions_by_direction(positions, search_direction)
-                
-                first_pos = sorted_positions[0]
-                extracted_value = None
-                for x, y, val in all_number_data:
-                    if x == first_pos[0] and y == first_pos[1]:
-                        extracted_value = val
-                        break
-                
-                result_data = (True, extracted_value, all_text, first_pos)
+                result_data = (True, extracted, all_text, position)
                 if cache_key:
                     self._set_cached_result(cache_key, result_data)
                 return result_data

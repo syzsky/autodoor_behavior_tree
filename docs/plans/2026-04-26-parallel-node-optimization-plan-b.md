@@ -144,9 +144,9 @@ class ThreadSafeContextProxy:
         with self._input_lock:
             self._original.execute_mouse_click(button, position, action, duration)
 
-    def execute_mouse_move(self, position, relative=False):
+    def execute_mouse_move(self, position, relative=False, smooth=False):
         with self._input_lock:
-            self._original.execute_mouse_move(position, relative)
+            self._original.execute_mouse_move(position, relative, smooth)
 
     def resolve_path(self, relative_path):
         return self._original.resolve_path(relative_path)

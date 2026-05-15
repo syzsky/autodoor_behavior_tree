@@ -48,65 +48,15 @@ class BehaviorTreeApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
     
     def _restore_last_file(self):
-        """恢复上次打开的文件和 Tab 列表"""
-        open_tabs = self._settings.get_open_tabs()
-        
-        if open_tabs:
-            restored_active_id = self._settings.get_active_tab_id()
-            first_tab_id = None
-            
-            for i, tab_info in enumerate(open_tabs):
-                file_path = tab_info.get("file_path", "")
-                project_root = tab_info.get("project_root", "")
-                name = tab_info.get("name", "")
-                
-                if not file_path or not os.path.exists(file_path):
-                    continue
-                
-                if i == 0:
-                    self.behavior_tree.load_tree(file_path)
-                    if project_root and os.path.exists(project_root):
-                        self.behavior_tree.project_root = project_root
-                        from bt_utils.project_manager import ProjectManager
-                        self.behavior_tree.project_manager = ProjectManager(project_root)
-                        self.behavior_tree.toolbar.set_project_path(project_root)
-                    if name:
-                        self.behavior_tree._update_tab_name(
-                            self.behavior_tree.tab_manager.get_active_tab().tab_id, name
-                        )
-                    first_tab_id = self.behavior_tree.tab_manager.active_tab_id
-                else:
-                    if project_root and os.path.exists(project_root):
-                        self.behavior_tree.import_project_to_new_tab(project_root)
-                    else:
-                        tab_id = self.behavior_tree._create_new_tab(
-                            name or os.path.splitext(os.path.basename(file_path))[0],
-                            project_root or None,
-                            file_path
-                        )
-                        self.behavior_tree._load_tree_to_tab(tab_id, file_path)
-                        self.behavior_tree.tab_manager.switch_tab(tab_id)
-                        self.behavior_tree.tab_bar.set_active(tab_id)
-                        instance = self.behavior_tree.tab_manager.get_tab(tab_id)
-                        self.behavior_tree._on_tab_switched(tab_id, instance)
-            
-            if restored_active_id:
-                active_instance = self.behavior_tree.tab_manager.get_tab(restored_active_id)
-                if active_instance:
-                    self.behavior_tree.tab_manager.switch_tab(restored_active_id)
-                    self.behavior_tree.tab_bar.set_active(restored_active_id)
-                    self.behavior_tree._on_tab_switched(restored_active_id, active_instance)
-            
-            self._update_window_title()
-        else:
-            last_file = self._settings.get_last_file_path()
-            if last_file and os.path.exists(last_file):
-                try:
-                    if hasattr(self, 'behavior_tree') and self.behavior_tree:
-                        self.behavior_tree.load_tree(last_file)
-                        self._update_window_title()
-                except Exception:
-                    pass
+        """恢复上次打开的文件"""
+        last_file = self._settings.get_last_file_path()
+        if last_file and os.path.exists(last_file):
+            try:
+                if hasattr(self, 'behavior_tree') and self.behavior_tree:
+                    self.behavior_tree.load_tree(last_file)
+                    self._update_window_title()
+            except Exception:
+                pass
     
     def _update_window_title(self):
         """更新窗口标题，显示项目名称"""
@@ -472,46 +422,20 @@ class BehaviorTreeApp(ctk.CTk):
             if hasattr(self.behavior_tree, 'property_panel'):
                 self.behavior_tree.property_panel.cleanup_preview_images()
             
-            if hasattr(self.behavior_tree, 'tab_manager'):
-                tabs_info = []
-                for tab_id, instance in self.behavior_tree.tab_manager._trees.items():
-                    if instance.file_path and os.path.exists(instance.file_path):
-                        tabs_info.append({
-                            "tab_id": tab_id,
-                            "name": instance.name,
-                            "file_path": instance.file_path,
-                            "project_root": instance.project_root or "",
-                        })
-                self._settings.set_open_tabs(tabs_info)
-                active_tab = self.behavior_tree.tab_manager.get_active_tab()
-                if active_tab:
-                    self._settings.set_active_tab_id(active_tab.tab_id)
+            file_path = self.behavior_tree.file_path
+            if file_path:
+                self._settings.set_last_file_path(file_path)
+            
+            if hasattr(self.behavior_tree, '_modified') and self.behavior_tree._modified:
+                result = messagebox.askyesnocancel(
+                    "未保存的改动",
+                    "当前项目有未保存的改动。\n\n是否保存？"
+                )
                 
-                for tab_id, instance in list(self.behavior_tree.tab_manager._trees.items()):
-                    if instance.modified:
-                        result = messagebox.askyesnocancel(
-                            "未保存的改动",
-                            f"项目 \"{instance.name}\" 有未保存的改动。\n\n是否保存？"
-                        )
-                        if result is None:
-                            return
-                        elif result:
-                            self.behavior_tree._save_tab(tab_id)
-            else:
-                file_path = self.behavior_tree.file_path
-                if file_path:
-                    self._settings.set_last_file_path(file_path)
-                
-                if hasattr(self.behavior_tree, '_modified') and self.behavior_tree._modified:
-                    result = messagebox.askyesnocancel(
-                        "未保存的改动",
-                        "当前项目有未保存的改动。\n\n是否保存？"
-                    )
-                    
-                    if result is None:
-                        return
-                    elif result:
-                        self.behavior_tree.save_tree()
+                if result is None:
+                    return
+                elif result:
+                    self.behavior_tree.save_tree()
             
             self.behavior_tree.destroy()
         

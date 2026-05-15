@@ -39,7 +39,7 @@ data_files = [
     (os.path.join(project_root, 'assets/icons/autodoor.png'), 'assets/icons'),
     (os.path.join(project_root, 'config/settings.json'), 'config'),
     (os.path.join(project_root, 'bt_utils/build_info.json'), 'bt_utils'),
-] + collect_data_files('rapidocr')
+] + collect_data_files('rapidocr') + collect_data_files('ultralytics') + collect_data_files('torch')
 
 binaries = []
 
@@ -132,6 +132,27 @@ a = Analysis(
         'imagehash',
         'cv2',
         
+        # === YOLO 训练器模块 ===
+        'modules.yolo_trainer',
+        'modules.yolo_trainer.capture',
+        'modules.yolo_trainer.capture.window_capture',
+        'modules.yolo_trainer.capture.screen_stream',
+        'modules.yolo_trainer.training',
+        'modules.yolo_trainer.training.trainer',
+        'modules.yolo_trainer.annotation',
+        'modules.yolo_trainer.annotation.smart_labeler',
+        'modules.yolo_trainer.bt_nodes',
+        'modules.yolo_trainer.gui_tab',
+        'modules.yolo_trainer.utils',
+        'modules.yolo_trainer.utils.config',
+        'modules.yolo_trainer.utils.visualizer',
+        'modules.yolo_trainer.utils.dataset_utils',
+        'ultralytics',
+        'ultralytics.models',
+        'ultralytics.models.yolo',
+        'torch',
+        'torchvision',
+        
         'win32gui',
         'win32ui',
         'win32con',
@@ -144,10 +165,10 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'torch', 'tensorflow', 'keras', 'scipy', 'pandas', 'matplotlib',
+        'tensorflow', 'keras', 'scipy', 'pandas', 'matplotlib',
         'sklearn', 'xgboost', 'lightgbm', 'catboost', 'seaborn',
         'statsmodels', 'plotly', 'bokeh', 'networkx', 'nltk',
-        'spacy', 'transformers', 'torchvision', 'torchaudio', 'onnx',
+        'spacy', 'transformers', 'onnx',
         'jax', 'jaxlib', 'timm', 'diffusers', 'peft',
         'gradio', 'streamlit', 'dash',
         
@@ -194,16 +215,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(project_root, 'assets', 'icons', 'autodoor.ico'),
-    manifest='''
-    <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-      <application xmlns="urn:schemas-microsoft-com:asm.v3">
-        <windowsSettings>
-          <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
-          <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2,PerMonitor</dpiAwareness>
-        </windowsSettings>
-      </application>
-    </assembly>
-    ''',
 )
 
 coll = COLLECT(

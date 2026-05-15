@@ -35,25 +35,23 @@ class NodeRegistry:
 
 
 def register_core_nodes():
-    from .nodes import SequenceNode, SelectorNode, ParallelNode, StartNode, RandomNode, SubtreeNode
+    from .nodes import SequenceNode, SelectorNode, ParallelNode, StartNode, RandomNode
 
     NodeRegistry.register("SequenceNode", SequenceNode)
     NodeRegistry.register("SelectorNode", SelectorNode)
     NodeRegistry.register("ParallelNode", ParallelNode)
     NodeRegistry.register("RandomNode", RandomNode)
     NodeRegistry.register("StartNode", StartNode)
-    NodeRegistry.register("SubtreeNode", SubtreeNode)
 
 
 def register_all_nodes():
-    from .nodes import SequenceNode, SelectorNode, ParallelNode, StartNode, RandomNode, SubtreeNode
+    from .nodes import SequenceNode, SelectorNode, ParallelNode, StartNode, RandomNode
     
     NodeRegistry.register("SequenceNode", SequenceNode)
     NodeRegistry.register("SelectorNode", SelectorNode)
     NodeRegistry.register("ParallelNode", ParallelNode)
     NodeRegistry.register("RandomNode", RandomNode)
     NodeRegistry.register("StartNode", StartNode)
-    NodeRegistry.register("SubtreeNode", SubtreeNode)
     
     from bt_nodes.actions.keyboard import KeyPressNode
     from bt_nodes.actions.mouse import MouseClickNode, MouseMoveNode

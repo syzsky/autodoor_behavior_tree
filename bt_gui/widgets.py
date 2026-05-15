@@ -229,8 +229,18 @@ def create_color_picker(app, callback):
     """
     from tkinter import messagebox
     
-    from bt_utils.screen_utils import get_virtual_screen_bounds
-    min_x, min_y, max_x, max_y = get_virtual_screen_bounds()
+    try:
+        import screeninfo
+        monitors = screeninfo.get_monitors()
+        min_x = min(monitor.x for monitor in monitors)
+        min_y = min(monitor.y for monitor in monitors)
+        max_x = max(monitor.x + monitor.width for monitor in monitors)
+        max_y = max(monitor.y + monitor.height for monitor in monitors)
+    except ImportError:
+        messagebox.showerror("错误", "screeninfo库未安装，无法支持多显示器选择。\n请运行 'pip install screeninfo' 安装该库。")
+        return
+    except Exception:
+        min_x, min_y, max_x, max_y = 0, 0, 1920, 1080
     
     root = app.root if hasattr(app, 'root') else app.winfo_toplevel()
     
@@ -258,14 +268,23 @@ def create_color_picker(app, callback):
         
         abs_x, abs_y = event.x_root, event.y_root
         
-        from bt_utils.screen_service import ScreenService
-        screen = ScreenService.capture_screen()
+        try:
+            from bt_utils.screenshot import ScreenshotManager
+            screen = ScreenshotManager().get_full_screenshot()
+        except Exception:
+            from PIL import ImageGrab
+            screen = ImageGrab.grab(all_screens=True)
         
-        from bt_utils.screen_utils import get_virtual_screen_bounds
-        min_x, min_y, _, _ = get_virtual_screen_bounds()
+        try:
+            import screeninfo
+            monitors = screeninfo.get_monitors()
+            offset_x = min(monitor.x for monitor in monitors)
+            offset_y = min(monitor.y for monitor in monitors)
+        except:
+            offset_x, offset_y = 0, 0
         
-        rel_x = abs_x - min_x
-        rel_y = abs_y - min_y
+        rel_x = abs_x - offset_x
+        rel_y = abs_y - offset_y
         
         pixel = screen.getpixel((rel_x, rel_y))
         r, g, b = pixel[:3]

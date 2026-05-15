@@ -196,16 +196,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(project_root, 'assets', 'icons', 'autodoor.ico'),
-    manifest='''
-    <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-      <application xmlns="urn:schemas-microsoft-com:asm.v3">
-        <windowsSettings>
-          <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
-          <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2,PerMonitor</dpiAwareness>
-        </windowsSettings>
-      </application>
-    </assembly>
-    ''',
 )
 
 coll = COLLECT(

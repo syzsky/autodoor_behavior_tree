@@ -16,7 +16,6 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "keywords", "label": "关键词", "type": "text"},
         {"key": "language", "label": "语言", "type": "select", "options": ["简体中文", "English", "繁体中文"], "default": "简体中文"},
         {"key": "preprocess_mode", "label": "图像预处理", "type": "select", "options": ["默认", "复杂色彩", "自适应", "自动调优"], "default": "默认"},
-        {"key": "search_direction", "label": "识别起点", "type": "select", "options": ["左上", "右上", "左下", "右下"], "default": "左上"},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
@@ -43,7 +42,6 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "compare_mode", "label": "比较模式", "type": "select", "options": ["<", "<=", ">", ">=", "==", "!="], "default": "=="},
         {"key": "threshold", "label": "比较值", "type": "number", "default": 0},
         {"key": "min_confidence", "label": "置信度阈值(%)", "type": "number", "min": 0, "max": 100, "default": 50},
-        {"key": "search_direction", "label": "识别起点", "type": "select", "options": ["左上", "右上", "左下", "右下"], "default": "左上"},
         {"key": "value_key", "label": "值变量名", "type": "text", "default": "last_number_value"},
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
@@ -56,7 +54,7 @@ NODE_CONFIG_SCHEMAS = {
     "KeyPressNode": [
         {"key": "key", "label": "按键", "type": "key"},
         {"key": "action", "label": "动作", "type": "select", "options": ["press", "down", "up"], "default": "press"},
-        {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 100, "hide_if": {"field": "action", "value": ["down", "up"]}},
+        {"key": "duration", "label": "按住时长(ms)", "type": "number", "default": 0, "hide_if": {"field": "action", "value": ["down", "up"]}},
         {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0, "hide_if": {"field": "action", "value": ["down", "up"]}},
     ],
     "MouseClickNode": [
@@ -72,18 +70,18 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "click_interval_random", "label": "间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseMoveNode": [
-        {"key": "position", "label": "起点位置", "type": "position"},
-        {"key": "use_blackboard", "label": "起点使用最近检测点", "type": "bool", "default": False},
-        {"key": "position_key", "label": "起点黑板变量名", "type": "text", "default": "last_detection_position"},
-        {"key": "move_type", "label": "操作类型", "type": "select", "options": ["移动", "拖拽"], "default": "移动"},
-        {"key": "drag_button", "label": "拖拽按键", "type": "select", "options": ["left", "right", "middle"], "default": "left", "hide_if": {"field": "move_type", "value": "移动"}},
-        {"key": "relative", "label": "增量移动", "type": "bool", "default": False},
-        {"key": "offset", "label": "增量值", "type": "offset", "hide_if": {"field": "relative", "value": False}},
+        {"key": "position", "label": "起点位置(相对移动值)", "type": "position"},
+        {"key": "use_blackboard", "label": "移动到最近检测点", "type": "bool", "default": False},
+        {"key": "position_key", "label": "黑板变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "relative", "label": "相对移动", "type": "bool", "default": False},
+        {"key": "smooth", "label": "平滑移动", "type": "bool", "default": True},
+        {"key": "move_type", "label": "移动类型", "type": "select", "options": ["移动", "拖拽"], "default": "移动"},
+        {"key": "drag_button", "label": "拖拽按键", "type": "select", "options": ["left", "right", "middle"], "default": "left", "hide_if": {"field": "relative", "value": True}},
         {"key": "end_position", "label": "终点", "type": "position", "hide_if": {"field": "relative", "value": True}},
-        {"key": "use_blackboard_end", "label": "终点使用最近检测点", "type": "bool", "default": False, "hide_if": {"field": "relative", "value": True}},
-        {"key": "position_key_end", "label": "终点黑板变量名", "type": "text", "default": "", "hide_if": {"field": "relative", "value": True}},
-        {"key": "move_duration", "label": "移动时长(ms)", "type": "number", "default": 0},
-        {"key": "move_duration_random", "label": "移动时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "use_blackboard_end", "label": "终点使用黑板位置", "type": "bool", "default": False, "hide_if": {"field": "relative", "value": True}},
+        {"key": "position_key_end", "label": "终点位置变量名", "type": "text", "default": "", "hide_if": {"field": "relative", "value": True}},
+        {"key": "drag_duration", "label": "拖拽时长(ms)", "type": "number", "default": 0, "hide_if": {"field": "relative", "value": True}},
+        {"key": "drag_duration_random", "label": "拖拽时长随机范围(±ms)", "type": "number", "min": 0, "default": 0, "hide_if": {"field": "relative", "value": True}},
     ],
     "MouseScrollNode": [
         {"key": "distance", "label": "滚动距离", "type": "number", "default": 5},
@@ -160,12 +158,6 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "bind_window", "label": "绑定窗口", "type": "bool", "default": False},
         {"key": "window_title", "label": "窗口标题", "type": "window_select", "default": "", "hide_if": {"field": "bind_window", "value": False}},
         {"key": "window_pid", "label": "窗口PID", "type": "number", "default": 0, "hidden": True},
-    ],
-    "SubtreeNode": [
-        {"key": "subtree_path", "label": "子树项目文件夹", "type": "folder", "width": 150},
-        {"key": "blackboard_mode", "label": "黑板模式", "type": "select", "options": ["inherit", "isolated", "namespaced"], "default": "inherit"},
-        {"key": "namespace", "label": "命名空间", "type": "text", "hide_if": {"field": "blackboard_mode", "value": ["inherit", "isolated"]}},
-        {"key": "auto_reload", "label": "自动重载", "type": "bool", "default": False},
     ],
 }
 
@@ -362,13 +354,12 @@ class SelectField(FieldWidget):
 
 
 class BoolField(FieldWidget):
-    def __init__(self, master, label: str, key: str, on_change: Callable, default: bool = False, **kwargs):
-        self._default = default
+    def __init__(self, master, label: str, key: str, on_change: Callable, **kwargs):
         super().__init__(master, label, key, on_change, **kwargs)
         self._create_widget()
     
     def _create_widget(self):
-        self.var = tk.BooleanVar(value=self._default)
+        self.var = tk.BooleanVar(value=True)
         self.switch = ctk.CTkSwitch(
             self,
             text="",
@@ -382,10 +373,7 @@ class BoolField(FieldWidget):
         self.switch.pack(anchor="w")
     
     def set_value(self, value: Any):
-        if value is None:
-            self.var.set(self._default)
-        else:
-            self.var.set(bool(value))
+        self.var.set(bool(value))
     
     def get_value(self) -> Any:
         return self.var.get()
@@ -557,16 +545,9 @@ class RegionField(FieldWidget):
             editor = self.app.behavior_tree
             if hasattr(editor, 'get_start_node'):
                 start_node = editor.get_start_node()
-                if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window:
-                    window_title = getattr(start_node, 'window_title', '')
-                    window_pid = getattr(start_node, 'window_pid', 0)
-                    if window_title or window_pid:
-                        from bt_utils.window_manager import WindowManager
-                        hwnd, _ = WindowManager.find_window_smart(
-                            window_pid if window_pid > 0 else None,
-                            window_title
-                        )
-                        return hwnd
+                if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window and start_node.window_title:
+                    from bt_utils.window_manager import WindowManager
+                    return WindowManager.find_window_by_title(start_node.window_title)
         return None
     
     def set_value(self, value: Any):
@@ -707,144 +688,6 @@ class FileField(FieldWidget):
         else:
             self.var.set("")
     
-    def get_value(self) -> Any:
-        return self.full_path
-
-
-class FolderField(FieldWidget):
-    def __init__(self, master, label: str, key: str, on_change: Callable,
-                 app=None, width: int = None, **kwargs):
-        self.full_path = ""
-        self.app = app
-        self._width = width
-        super().__init__(master, label, key, on_change, **kwargs)
-        self._create_widget()
-
-    def _create_widget(self):
-        input_frame = ctk.CTkFrame(self, fg_color="transparent")
-        input_frame.pack(fill="x")
-
-        self.var = tk.StringVar(value="")
-
-        entry_kwargs = {
-            "textvariable": self.var,
-            "font": Theme.get_font('sm'),
-            "height": Theme.DIMENSIONS['input_height'],
-            "fg_color": self._dark_colors['bg_tertiary'],
-            "border_color": self._dark_colors['border'],
-            "text_color": self._dark_colors['text_primary'],
-            "corner_radius": Theme.DIMENSIONS['button_corner_radius'],
-            "state": "disabled"
-        }
-        if self._width:
-            entry_kwargs["width"] = self._width
-
-        self.entry = ctk.CTkEntry(input_frame, **entry_kwargs)
-        self.entry.pack(side="left", fill="x", expand=True, padx=(0, Theme.DIMENSIONS['spacing_xs']))
-
-        self.btn = ctk.CTkButton(
-            input_frame,
-            text="浏览",
-            font=Theme.get_font('sm'),
-            width=60,
-            height=Theme.DIMENSIONS['input_height'],
-            fg_color=self._dark_colors['primary'],
-            hover_color=self._dark_colors['primary_hover'],
-            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
-        )
-        self.btn.pack(side="right")
-        self.btn.bind("<ButtonRelease-1>", lambda e: self._browse())
-
-    def _get_project_root(self):
-        if self.app and hasattr(self.app, 'behavior_tree'):
-            editor = self.app.behavior_tree
-            if hasattr(editor, 'project_root') and editor.project_root:
-                return editor.project_root
-        return None
-
-    def _browse(self):
-        project_root = self._get_project_root()
-
-        initial_dir = None
-        if self.full_path:
-            abs_full_path = self.full_path
-            if self.full_path.startswith("./"):
-                abs_full_path = os.path.normpath(os.path.join(project_root or ".", self.full_path[2:]))
-            if os.path.isdir(abs_full_path):
-                initial_dir = os.path.dirname(abs_full_path)
-        else:
-            if project_root and os.path.exists(project_root):
-                initial_dir = os.path.dirname(project_root)
-
-        folder_path = filedialog.askdirectory(
-            initialdir=initial_dir,
-            title="选择子树项目文件夹"
-        )
-
-        if not folder_path:
-            return
-
-        project_json = os.path.join(folder_path, "project.json")
-        tree_json = os.path.join(folder_path, "tree.json")
-        if not os.path.exists(project_json) and not os.path.exists(tree_json):
-            from tkinter import messagebox
-            result = messagebox.askyesno(
-                "提示",
-                f"所选文件夹中未找到 project.json 或 tree.json。\n\n是否仍要使用此文件夹作为子树项目？"
-            )
-            if not result:
-                return
-
-        if project_root:
-            import shutil
-            folder_name = os.path.basename(folder_path)
-            subtrees_dir = os.path.join(project_root, "subtrees")
-            os.makedirs(subtrees_dir, exist_ok=True)
-
-            dest_dir = os.path.join(subtrees_dir, folder_name)
-
-            if os.path.exists(dest_dir):
-                from tkinter import messagebox
-                result = messagebox.askyesno(
-                    "文件夹已存在",
-                    f"子树文件夹 '{folder_name}' 已存在于当前项目中。\n\n是否覆盖？"
-                )
-                if not result:
-                    rel_path = "./subtrees/" + folder_name
-                    self.full_path = rel_path
-                    self.var.set(folder_name)
-                    self.on_change(self.key, rel_path)
-                    return
-                shutil.rmtree(dest_dir)
-
-            try:
-                shutil.copytree(folder_path, dest_dir)
-            except Exception as e:
-                from tkinter import messagebox
-                messagebox.showerror("复制失败", f"复制子树项目文件夹失败: {e}")
-                return
-
-            rel_path = "./subtrees/" + folder_name
-            self.full_path = rel_path
-            self.var.set(folder_name)
-            self.on_change(self.key, rel_path)
-            return
-
-        self.full_path = folder_path
-        folder_name = os.path.basename(folder_path)
-        self.var.set(folder_name)
-        self.on_change(self.key, folder_path)
-
-    def set_value(self, value: Any):
-        if value:
-            self.full_path = str(value)
-            display = str(value)
-            if "/" in display or "\\" in display:
-                display = display.replace("\\", "/").split("/")[-1]
-            self.var.set(display)
-        else:
-            self.var.set("")
-
     def get_value(self) -> Any:
         return self.full_path
 
@@ -1509,16 +1352,9 @@ class PositionField(FieldWidget):
             editor = self.app.behavior_tree
             if hasattr(editor, 'get_start_node'):
                 start_node = editor.get_start_node()
-                if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window:
-                    window_title = getattr(start_node, 'window_title', '')
-                    window_pid = getattr(start_node, 'window_pid', 0)
-                    if window_title or window_pid:
-                        from bt_utils.window_manager import WindowManager
-                        hwnd, _ = WindowManager.find_window_smart(
-                            window_pid if window_pid > 0 else None,
-                            window_title
-                        )
-                        return hwnd
+                if start_node and hasattr(start_node, 'bind_window') and start_node.bind_window and start_node.window_title:
+                    from bt_utils.window_manager import WindowManager
+                    return WindowManager.find_window_by_title(start_node.window_title)
         return None
 
 
@@ -1666,12 +1502,11 @@ class OffsetField(FieldWidget):
 
 
 class WindowSelectField(FieldWidget):
-    def __init__(self, master, label: str, key: str, on_change: Callable, app, update_other_field: Callable = None, **kwargs):
+    def __init__(self, master, label: str, key: str, on_change: Callable, app, **kwargs):
         self.app = app
         self._window_titles = []
         self._window_hwnds = {}
         self._window_pids = {}
-        self._update_other_field = update_other_field
         super().__init__(master, label, key, on_change, **kwargs)
         self._create_widget()
 
@@ -1725,10 +1560,7 @@ class WindowSelectField(FieldWidget):
             pid = self._window_pids[choice]
             if pid:
                 self.on_change("window_pid", pid)
-                self.on_change("bind_window", True)
-                if self._update_other_field:
-                    self._update_other_field("bind_window", True)
-                LogManager.debug_print(f"[DEBUG] WindowSelectField: 选择窗口 '{choice}', PID={pid}, 已设置 bind_window=True")
+                LogManager.debug_print(f"[DEBUG] WindowSelectField: 选择窗口 '{choice}', PID={pid}")
         else:
             LogManager.debug_print(f"[DEBUG] WindowSelectField: choice='{choice}' 不在 _window_pids 中")
 
@@ -2103,9 +1935,6 @@ class TextListField(FieldWidget):
     def _on_change(self):
         self.on_change(self.key, self.get_value())
 
-    def validate_and_save(self):
-        self._on_change()
-
     def set_value(self, value: Any):
         self.textbox.delete("1.0", tk.END)
         if isinstance(value, list) and value:
@@ -2169,31 +1998,24 @@ class PropertyPanel(ctk.CTkFrame):
             return
         
         for key, widget in self.widgets.items():
+            if not hasattr(widget, 'entry'):
+                continue
+            
             try:
-                if hasattr(widget, 'entry'):
-                    entry_widget = widget.entry
-                    
-                    if entry_widget == focused:
-                        self._save_widget_value(widget)
-                        return
-                    
-                    if hasattr(entry_widget, '_entry'):
-                        if entry_widget._entry == focused:
-                            self._save_widget_value(widget)
-                            return
-                    
-                    if hasattr(entry_widget, 'winfo_children'):
-                        for child in entry_widget.winfo_children():
-                            if child == focused:
-                                self._save_widget_value(widget)
-                                return
+                entry_widget = widget.entry
                 
-                if hasattr(widget, 'textbox'):
-                    if widget.textbox == focused:
+                if entry_widget == focused:
+                    self._save_widget_value(widget)
+                    return
+                
+                if hasattr(entry_widget, '_entry'):
+                    if entry_widget._entry == focused:
                         self._save_widget_value(widget)
                         return
-                    if hasattr(widget.textbox, '_textbox'):
-                        if widget.textbox._textbox == focused:
+                
+                if hasattr(entry_widget, 'winfo_children'):
+                    for child in entry_widget.winfo_children():
+                        if child == focused:
                             self._save_widget_value(widget)
                             return
             except Exception:
@@ -2473,9 +2295,9 @@ class PropertyPanel(ctk.CTkFrame):
                     return ctx._screenshot
                 else:
                     if ctx._screenshot is None:
-                        ctx._screenshot = ImageGrab.grab(all_screens=True)
+                        ctx._screenshot = ImageGrab.grab()
                     if region:
-                        return ImageGrab.grab(bbox=region, all_screens=True)
+                        return ctx._screenshot.crop(region)
                     return ctx._screenshot
             
             def get_full_screenshot(ctx):
@@ -2484,7 +2306,7 @@ class PropertyPanel(ctk.CTkFrame):
                         from bt_utils.window_capture import WindowCapture
                         ctx._screenshot = WindowCapture.capture_window(ctx._bound_window)
                     else:
-                        ctx._screenshot = ImageGrab.grab(all_screens=True)
+                        ctx._screenshot = ImageGrab.grab()
                 return ctx._screenshot
             
             def get_bound_window(ctx):
@@ -2527,18 +2349,6 @@ class PropertyPanel(ctk.CTkFrame):
         images_dir = self._get_preview_images_dir()
         if images_dir and context._screenshot:
             screenshot = context._screenshot.copy()
-            
-            if context._bound_window:
-                offset_x, offset_y = 0, 0
-            else:
-                try:
-                    import screeninfo
-                    monitors = screeninfo.get_monitors()
-                    offset_x = -min(monitor.x for monitor in monitors)
-                    offset_y = -min(monitor.y for monitor in monitors)
-                except Exception:
-                    offset_x, offset_y = 0, 0
-            
             draw = ImageDraw.Draw(screenshot)
             
             region = config.get("region")
@@ -2558,11 +2368,7 @@ class PropertyPanel(ctk.CTkFrame):
                     region = None
             
             if region and len(region) == 4:
-                draw.rectangle(
-                    [region[0] + offset_x, region[1] + offset_y,
-                     region[2] + offset_x, region[3] + offset_y],
-                    outline="red", width=2
-                )
+                draw.rectangle([region[0], region[1], region[2], region[3]], outline="red", width=2)
             
             timestamp = int(time.time() * 1000)
             image_path = os.path.join(images_dir, f"preview_{timestamp}.png")
@@ -2641,19 +2447,13 @@ class PropertyPanel(ctk.CTkFrame):
                 options=field.get("options", [])
             )
         elif field_type == "bool":
-            field_widget = BoolField(container, label, key, self._on_field_change, default=field.get("default", False))
+            field_widget = BoolField(container, label, key, self._on_field_change)
         elif field_type == "region":
             field_widget = RegionField(container, label, key, self._on_field_change, self.app)
         elif field_type == "file":
             field_widget = FileField(
                 container, label, key, self._on_field_change,
                 filetypes=field.get("filetypes", [("所有文件", "*.*")]),
-                app=self.app,
-                width=field.get("width")
-            )
-        elif field_type == "folder":
-            field_widget = FolderField(
-                container, label, key, self._on_field_change,
                 app=self.app,
                 width=field.get("width")
             )
@@ -2673,7 +2473,7 @@ class PropertyPanel(ctk.CTkFrame):
         elif field_type == "offset":
             field_widget = OffsetField(container, label, key, self._on_field_change, self.app)
         elif field_type == "window_select":
-            field_widget = WindowSelectField(container, label, key, self._on_field_change, self.app, self._update_widget_value)
+            field_widget = WindowSelectField(container, label, key, self._on_field_change, self.app)
         elif field_type == "script_convert":
             field_widget = ScriptConvertField(container, label, key, self._on_field_change, self.app)
         elif field_type == "text_list":
@@ -2695,12 +2495,6 @@ class PropertyPanel(ctk.CTkFrame):
             self.on_change(self.current_node_id, key, value)
         
         self._update_dependent_fields_visibility(key)
-    
-    def _update_widget_value(self, key: str, value: Any):
-        if key in self.widgets:
-            widget = self.widgets[key]
-            if hasattr(widget, 'set_value'):
-                widget.set_value(value)
     
     def _update_single_field_visibility(self, key: str, field: Dict[str, Any]):
         hide_if = field.get("hide_if")
@@ -2763,13 +2557,6 @@ class PropertyPanel(ctk.CTkFrame):
             
             depend_field = hide_if.get("field")
             if depend_field != changed_key:
-                continue
-            
-            self._update_single_field_visibility(key, field)
-        
-        for key, field in self.field_schemas.items():
-            hide_if = field.get("hide_if")
-            if not hide_if:
                 continue
             
             self._update_single_field_visibility(key, field)

@@ -45,8 +45,6 @@ class OCRConditionNode(ConditionNode):
         self.language = LANGUAGE_MAP.get(language_display, "chi_sim")
         preprocess_display = self.config.get("preprocess_mode", "默认")
         self.preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
-        
-        self.search_direction = self.config.get("search_direction", "左上")
 
         self.position_key = self.config.get("position_key", "last_detection_position")
 
@@ -56,13 +54,9 @@ class OCRConditionNode(ConditionNode):
             if screenshot is None:
                 return False
 
-            from bt_utils.direction import SearchDirection
-            direction = SearchDirection.VALUE_MAP.get(self.search_direction, SearchDirection.TOP_LEFT)
-            
             found, position, all_text = OCRManager().recognize(
                 screenshot, self.keywords, self.language,
-                preprocess_mode=self.preprocess_mode, region=self.region,
-                search_direction=direction
+                preprocess_mode=self.preprocess_mode, region=self.region
             )
 
             if found:
@@ -86,7 +80,6 @@ class OCRConditionNode(ConditionNode):
         data["config"]["keywords"] = self.keywords
         data["config"]["language"] = LANGUAGE_REVERSE_MAP.get(self.language, self.language)
         data["config"]["preprocess_mode"] = PREPROCESS_MODE_REVERSE_MAP.get(self.preprocess_mode, "默认")
-        data["config"]["search_direction"] = self.search_direction
         data["config"]["position_key"] = self.position_key
         data["config"]["offset"] = list(self.offset)
         return data

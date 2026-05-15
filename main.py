@@ -5,9 +5,6 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from bt_utils.dpi_awareness import initialize_dpi_awareness
-initialize_dpi_awareness()
-
 def get_resource_path(relative_path):
     """获取资源文件的绝对路径，支持PyInstaller打包后的路径"""
     if hasattr(sys, '_MEIPASS'):
