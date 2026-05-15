@@ -195,7 +195,7 @@ jobs:
     name: Deploy to GitHub Releases
     runs-on: ubuntu-latest
     needs: [build-windows-standard, build-windows-DD]
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/autodoor_V')
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/debug' || startsWith(github.ref, 'refs/tags/autodoor_V')
     permissions:
       contents: write
       actions: read
