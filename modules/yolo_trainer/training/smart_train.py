@@ -198,11 +198,18 @@ class TrainingQualityAnalyzer:
 class AutoHPO:
     """自动超参数优化器"""
 
-    def __init__(self, config: SmartTrainingConfig):
+    def __init__(self, config: SmartTrainingConfig, model_dir: Optional[str] = None):
         self._config = config
+        self._model_dir = Path(model_dir) if model_dir else Path("models")
         self._trial_results: List[Dict] = []
         self._best_params: Optional[Dict] = None
         self._best_map: float = 0.0
+
+    def _resolve_model(self, model_name="yolov8n.pt"):
+        local_path = self._model_dir / model_name
+        if local_path.exists():
+            return str(local_path)
+        return model_name
 
     def search(self, dataset_yaml: str, epochs_per_trial: int = 10,
                progress_callback: Optional[Callable] = None) -> Dict:
@@ -231,7 +238,8 @@ class AutoHPO:
                 progress_callback(trial + 1, trials, params, None)
 
             try:
-                model = YOLO("yolov8n.pt")
+                model_path = self._resolve_model("yolov8n.pt")
+                model = YOLO(model_path)
                 results = model.train(
                     data=dataset_yaml,
                     epochs=epochs_per_trial,
@@ -317,7 +325,8 @@ class SmartTrainer:
     """
 
     def __init__(self, dataset_root: str, classes: List[str],
-                 model_size: str = "n", epochs: int = 100, batch_size: int = 16):
+                 model_size: str = "n", epochs: int = 100, batch_size: int = 16,
+                 model_dir: Optional[str] = None):
         self._dataset_root = Path(dataset_root)
         self._classes = classes
         self._model_size = model_size
@@ -325,8 +334,12 @@ class SmartTrainer:
         self._batch_size = batch_size
         self._smart_config = SmartTrainingConfig()
 
+        # 模型目录：优先使用传入的 model_dir，否则在 dataset_root 下创建 models/
+        self._model_dir = Path(model_dir) if model_dir else (self._dataset_root / "models")
+        self._model_dir.mkdir(parents=True, exist_ok=True)
+
         # 子模块
-        self._hpo = AutoHPO(self._smart_config)
+        self._hpo = AutoHPO(self._smart_config, model_dir=str(self._model_dir))
         self._quality_analyzer = TrainingQualityAnalyzer(str(self._dataset_root))
         self._dashboard: Optional['TrainingDashboard'] = None
 
@@ -343,6 +356,34 @@ class SmartTrainer:
     @property
     def dataset_yaml_path(self) -> str:
         return str(self._dataset_root / "data.yaml")
+
+    def _resolve_model_path(self, model_name):
+        # 解析模型文件路径：优先用本地下载好的，否则让 ultralytics 自动下载
+        local_path = self._model_dir / model_name
+        if local_path.exists():
+            return str(local_path)
+        return model_name
+
+    def _prepare_dataset(self):
+        # 自动创建 data.yaml（如果不存在）
+        yaml_path = self._dataset_root / "data.yaml"
+        if yaml_path.exists():
+            return True
+        for split in ['train', 'val', 'test']:
+            (self._dataset_root / "images" / split).mkdir(parents=True, exist_ok=True)
+            (self._dataset_root / "labels" / split).mkdir(parents=True, exist_ok=True)
+        lines = [
+            "path: " + str(self._dataset_root.absolute()),
+            "train: images/train",
+            "val: images/val",
+            "test: images/test",
+            "",
+            "names:"
+        ]
+        for i, cls_name in enumerate(self._classes):
+            lines.append("  %d: %s" % (i, cls_name))
+        yaml_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return True
 
     # ── 数据质量分析 ─────────────────────────────
 
@@ -382,6 +423,7 @@ class SmartTrainer:
             raise ImportError("请安装 ultralytics: pip install ultralytics")
 
         # Step 1: 数据质量检查
+        self._prepare_dataset()
         quality_report = self.analyze_data_quality()
         if quality_report["score"] < 30:
             raise RuntimeError(
@@ -405,12 +447,16 @@ class SmartTrainer:
 
         # Step 3: 加载模型（迁移学习）
         if self._smart_config.use_transfer_learning:
-            self._model = YOLO(f"yolov8{self._model_size}.pt")
+            model_name = "yolov8%s.pt" % self._model_size
+            model_path = self._resolve_model_path(model_name)
+            self._model = YOLO(model_path)
             # 冻结骨干网络层
             if self._smart_config.freeze_backbone:
                 self._freeze_layers(self._smart_config.freeze_layers)
         else:
-            self._model = YOLO(f"yolov8{self._model_size}.pt")
+            model_name = "yolov8%s.pt" % self._model_size
+            model_path = self._resolve_model_path(model_name)
+            self._model = YOLO(model_path)
 
         # Step 4: 训练
         self._total_epochs = self._epochs
@@ -478,7 +524,9 @@ class SmartTrainer:
 
         for size in sizes:
             try:
-                model = YOLO(f"yolov8{size}.pt")
+                model_name = "yolov8%s.pt" % size
+                model_path = self._resolve_model_path(model_name)
+                model = YOLO(model_path)
                 train_results = model.train(
                     data=self.dataset_yaml_path,
                     epochs=epochs,

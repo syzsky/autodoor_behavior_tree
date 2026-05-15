@@ -927,6 +927,7 @@ class YOLOTrainerTab:
                     model_size=model_size,
                     epochs=epochs,
                     batch_size=int(self._config.get("batch_size", 16)),
+                    model_dir=str(Path(save_dir) / "models"),
                 )
 
                 # 数据质检

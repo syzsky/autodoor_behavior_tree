@@ -509,7 +509,7 @@ class RuntimeSetup:
             "python": sys.version,
             "platform": sys.platform,
             "torch": torch_info,
-            "models": model_model_status,
+            "models": model_status,
             "model_dir": str(self._model_dir),
             "exe_dir": str(Path(sys.executable).parent) if getattr(sys, 'frozen', False) else str(Path(__file__).parent),
         }
