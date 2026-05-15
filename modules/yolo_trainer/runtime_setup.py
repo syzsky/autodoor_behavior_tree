@@ -42,6 +42,13 @@ REQUIRED_PACKAGES = [
     ("numpy",      "numpy",          "1.24"),
 ]
 
+# 重量级依赖：首次运行时自动 pip install（不打包进 exe 以减小体积）
+HEAVY_PACKAGES = [
+    ("torch",       "torch>=2.0",     None),   # CPU 版 ~200MB，CUDA 版 ~2GB
+    ("torchvision", "torchvision>=0.15", None),
+    ("ultralytics", "ultralytics>=8.2", None),  # 含 scipy 等依赖
+]
+
 OPTIONAL_PACKAGES = [
     ("matplotlib", "matplotlib",     "3.7"),
     ("tqdm",       "tqdm",           "4.65"),
@@ -445,12 +452,32 @@ class RuntimeSetup:
         else:
             self._report("检查", 50, "所有依赖已安装")
         
-        # Step 3: 检查 PyTorch
-        self._report("检查", 55, "检查 PyTorch...")
-        torch_info = self.check_torch()
-        if not torch_info["installed"]:
-            print("\n📦 安装 PyTorch (CPU 版)...")
-            self.install_package("torch>=2.0", timeout=300)
+        # Step 3: 检查并安装重量级依赖 (torch/torchvision/ultralytics)
+        self._report("检查", 55, "检查 PyTorch 环境...")
+        
+        # 3a: torch
+        try:
+            import torch
+            print(f"  ✅ torch {torch.__version__}")
+        except ImportError:
+            print("\n📦 安装 PyTorch CPU 版 (~200MB)...")
+            self.install_package("torch", timeout=600)
+        
+        # 3b: torchvision
+        try:
+            import torchvision
+            print(f"  ✅ torchvision {torchvision.__version__}")
+        except ImportError:
+            print("\n📦 安装 torchvision...")
+            self.install_package("torchvision", timeout=300)
+        
+        # 3c: ultralytics
+        try:
+            import ultralytics
+            print(f"  ✅ ultralytics {ultralytics.__version__}")
+        except ImportError:
+            print("\n📦 安装 ultralytics...")
+            self.install_package("ultralytics", timeout=300)
         
         # Step 4: 下载模型
         if auto_download_models:
