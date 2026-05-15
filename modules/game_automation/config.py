@@ -19,6 +19,8 @@ class TaskConfig:
     recycle_key: str = ""          # 回收快捷键
     start_hotkey: str = "F5"       # 启动挂机快捷键
     timeout: int = 300             # 任务超时秒数
+    teleport_button_image: str = ""  # 传送按钮截图模板路径
+    map_list_image: str = ""       # 地图列表截图模板路径
 
 
 @dataclass
@@ -51,6 +53,12 @@ class AutomationConfig:
     recycle_confirm_image: str = "" # 回收确认按钮截图模板
     potion_image: str = ""         # 药品图标截图模板
     shop_npc_image: str = ""       # 商店NPC截图模板
+    buy_button_image: str = ""     # 购买按钮截图模板
+    confirm_button_image: str = "" # 确认按钮截图模板
+    inventory_full_indicator: str = ""  # 背包满提示图标模板
+    home_hotkey: str = "V"         # 回城快捷键
+    hp_roi: list = None            # 血量检测区域 [x,y,w,h]
+    mp_roi: list = None            # 蓝量检测区域 [x,y,w,h]
 
     # 任务列表
     tasks: List[TaskConfig] = field(default_factory=list)

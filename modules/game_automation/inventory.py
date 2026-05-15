@@ -34,7 +34,8 @@ class InventoryManager:
 
     def auto_recycle(self, recycle_button_template,
                      confirm_template=None,
-                     inventory_key: str = "B") -> bool:
+                     inventory_key: str = "B",
+                     backpack_already_open: bool = False) -> bool:
         """
         自动回收背包
         
@@ -42,6 +43,7 @@ class InventoryManager:
             recycle_button_template: 回收按钮截图模板
             confirm_template: 确认按钮截图模板（可选）
             inventory_key: 打开背包快捷键
+            backpack_already_open: 背包是否已打开（跳过打开/关闭背包操作）
             
         Returns:
             是否成功回收
@@ -51,19 +53,22 @@ class InventoryManager:
         if now - self._last_recycle_time < self._recycle_cooldown:
             return False
 
-        # 打开背包
-        self._input.press_key(inventory_key)
-        time.sleep(0.5)
+        # 打开背包（如果未打开）
+        if not backpack_already_open:
+            self._input.press_key(inventory_key)
+            time.sleep(0.5)
 
         # 找回收按钮
         frame = self._detector.capture_frame()
         if frame is None:
-            self._input.press_key(inventory_key)  # 关闭背包
+            if not backpack_already_open:
+                self._input.press_key(inventory_key)  # 关闭背包
             return False
 
         result = self._detector.find_template(frame, recycle_button_template, threshold=0.7)
         if not result.found:
-            self._input.press_key(inventory_key)  # 关闭背包
+            if not backpack_already_open:
+                self._input.press_key(inventory_key)  # 关闭背包
             return False
 
         # 点击回收
@@ -80,7 +85,8 @@ class InventoryManager:
                     self._input.click(confirm_result.center_x, confirm_result.center_y)
                     time.sleep(0.5)
 
-        self._input.press_key(inventory_key)  # 关闭背包
+        if not backpack_already_open:
+            self._input.press_key(inventory_key)  # 关闭背包
         self._last_recycle_time = time.time()
         return True
 

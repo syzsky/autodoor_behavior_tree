@@ -349,58 +349,59 @@ class GameDetector:
         filled_pixels = cv2.countNonZero(mask)
         return filled_pixels / max(total_pixels, 1)
 
-    def detect_level(self, frame: Optional[np.ndarray] = None,
-                     roi: Optional[List[int]] = None) -> Optional[int]:
-        """
-        检测等级（OCR 数字识别）
-        
-        Args:
-            frame: 画面帧
-            roi: 等级显示区域
-            
-        Returns:
-            等级数字
-        """
+    def detect_level(self, frame=None, roi=None):
         try:
             import pytesseract
             frame = frame or self.capture_frame()
             if frame is None:
                 return None
-
             if roi:
                 x, y, w, h = roi
                 roi_frame = frame[y:y+h, x:x+w]
             else:
                 roi_frame = frame
-
             gray = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2GRAY)
             _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
             text = pytesseract.image_to_string(thresh, config='--psm 7 -c tessedit_char_whitelist=0123456789')
             return int(text.strip()) if text.strip().isdigit() else None
         except ImportError:
+            # 回退：尝试用模板匹配数字
+            return self._detect_level_by_template(frame, roi)
+        except Exception:
             return None
+
+    def _detect_level_by_template(self, frame=None, roi=None):
+        """用模板匹配方式检测等级（回退方案）"""
+        return None  # 需要用户提供数字模板
 
     # ── 背包检测 ─────────────────────────────────
 
     def detect_inventory_full(self, frame: Optional[np.ndarray] = None,
+                              full_indicator_template: Optional[np.ndarray] = None,
                               full_indicator_roi: Optional[List[int]] = None) -> bool:
         """
         检测背包是否满
         
         Args:
             frame: 画面帧
-            full_indicator_roi: 背包满的提示区域
+            full_indicator_template: 背包满提示图标模板（优先使用模板匹配）
+            full_indicator_roi: 背包满的提示区域（回退方案）
         """
-        if full_indicator_roi:
-            frame = frame or self.capture_frame()
-            if frame is None:
-                return False
+        frame = frame or self.capture_frame()
+        if frame is None:
+            return False
 
+        # 优先使用模板匹配
+        if full_indicator_template is not None:
+            result = self.find_template(frame, full_indicator_template, threshold=0.6)
+            return result.found
+
+        # 回退：使用ROI亮度检测
+        if full_indicator_roi:
             x, y, w, h = full_indicator_roi
             roi = frame[y:y+h, x:x+w]
-
-            # 检测是否有"背包已满"的文字或图标
-            # 简单实现：检测区域是否有亮色变化
+            if roi.size == 0:
+                return False
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             mean_brightness = np.mean(gray)
             return mean_brightness > 200  # 亮色提示

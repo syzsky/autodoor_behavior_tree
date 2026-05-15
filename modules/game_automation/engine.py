@@ -90,6 +90,7 @@ class AutomationEngine:
             "stuck_count": 0,
             "errors": 0,
         }
+        self._npc_retry_count = 0
 
     # ── 属性 ─────────────────────────────────────
 
@@ -230,6 +231,17 @@ class AutomationEngine:
                 if hasattr(self._detector._capture, 'bind_window'):
                     self._detector._capture.bind_window(window_title)
                     self._on_progress(5, f"✅ 窗口绑定成功: {window_title}")
+                    # 弹窗提示绑定成功
+                    try:
+                        import tkinter as tk
+                        from tkinter import messagebox
+                        _root = tk.Tk()
+                        _root.withdraw()
+                        _root.attributes('-topmost', True)
+                        messagebox.showinfo("绑定成功", f"窗口绑定成功: {window_title}")
+                        _root.destroy()
+                    except Exception:
+                        pass
                 else:
                     self._on_progress(5, "窗口已绑定")
             except Exception as e:
@@ -265,32 +277,32 @@ class AutomationEngine:
     def _do_find_npc(self):
         """3. 找传送员NPC"""
         self._on_progress(20, "🔍 寻找传送员NPC...")
-
         config = self._config
         current_task = self._get_current_task()
         if not current_task:
             self._change_state(AutomationState.ERROR)
             self._on_error("没有可执行的任务")
             return
-
         npc_image = current_task.npc_image or config.tasks[0].npc_image if config.tasks else ""
         if not npc_image:
             self._on_error("未设置NPC模板图片")
             return
-
         npc_template = cv2.imread(npc_image)
         if npc_template is None:
             self._on_error(f"NPC模板图片不存在: {npc_image}")
             return
-
-        # 找NPC并点击
         found = self._navigator.find_and_click_npc(npc_template)
         if found:
+            self._npc_retry_count = 0
             self._on_progress(25, f"✅ 找到{current_task.npc_name}并点击")
             self._change_state(AutomationState.TELEPORT)
         else:
-            # 尝试使用寻路走过去
-            self._on_error(f"未找到{current_task.npc_name}，尝试寻路")
+            self._npc_retry_count += 1
+            if self._npc_retry_count >= 5:
+                self._on_error(f"连续{self._npc_retry_count}次未找到NPC，停止重试")
+                self._npc_retry_count = 0
+                return
+            self._on_error(f"未找到{current_task.npc_name}(第{self._npc_retry_count}次)，尝试寻路")
             self._navigator.navigate_away_from_stuck(
                 self._detector.capture_frame() or np.zeros((100, 100, 3), dtype=np.uint8))
             self._change_state(AutomationState.FIND_NPC)
@@ -298,8 +310,42 @@ class AutomationEngine:
     def _do_teleport(self):
         """4. 点击传送"""
         self._on_progress(30, "🚀 传送中...")
-        time.sleep(2)  # 等待传送
-        self._change_state(AutomationState.VERIFY_MAP)
+        current_task = self._get_current_task()
+        if not current_task:
+            self._change_state(AutomationState.ERROR)
+            self._on_error("没有可执行的任务")
+            return
+        # 等待NPC对话框
+        time.sleep(1.5)
+        # 找"下图"或"传送"按钮
+        if current_task.teleport_button_image:
+            teleport_btn = cv2.imread(current_task.teleport_button_image)
+            if teleport_btn is not None:
+                frame = self._detector.capture_frame()
+                if frame is not None:
+                    result = self._detector.find_template(frame, teleport_btn, threshold=0.7)
+                    if result.found:
+                        self._navigator._input.click(result.center_x, result.center_y)
+                        self._on_progress(32, "✅ 已点击传送按钮")
+                        time.sleep(3)
+                        self._change_state(AutomationState.VERIFY_MAP)
+                        return
+        # 尝试用goto_map
+        if current_task.npc_image:
+            npc_template = cv2.imread(current_task.npc_image)
+            if npc_template is not None:
+                success = self._navigator.goto_map(
+                    current_task.target_map,
+                    npc_template,
+                    current_task.map_list_image,
+                    current_task.teleport_button_image,
+                )
+                if success:
+                    self._on_progress(32, "✅ 传送成功")
+                    time.sleep(2)
+                    self._change_state(AutomationState.VERIFY_MAP)
+                    return
+        self._on_error("传送失败")
 
     def _do_verify_map(self):
         """5. 地图一致性校验"""
@@ -361,12 +407,11 @@ class AutomationEngine:
             return
 
         # 7a. 检查背包是否满
-        if self._config.recycle_button_image:
-            recycle_template = cv2.imread(self._config.recycle_button_image)
-            if recycle_template is not None:
-                recycle_result = self._detector.find_template(
-                    frame, recycle_template, threshold=0.7)
-                if recycle_result.found:
+        if self._config.inventory_full_indicator:
+            full_indicator = cv2.imread(self._config.inventory_full_indicator)
+            if full_indicator is not None:
+                full_result = self._detector.find_template(frame, full_indicator, threshold=0.6)
+                if full_result.found:
                     self._on_progress(55, "📦 背包满，准备回收")
                     self._change_state(AutomationState.RECYCLE)
                     return
@@ -399,6 +444,24 @@ class AutomationEngine:
             self._stuck_start_time = now
 
         self._last_stuck_frame = frame.copy()
+
+        # 7e. 定期检测人物状态（每10秒）
+        if hasattr(self._config, 'hp_roi') and self._config.hp_roi:
+            hp = self._detector.detect_hp(frame, roi=self._config.hp_roi)
+            if hp < 0.2:  # 血量低于20%
+                self._on_progress(55, f"⚠️ 血量过低({hp:.0%})，注意安全")
+        # 7f. 定期检测地图是否变化（每30秒）
+        if hasattr(self._config, 'target_map_image') and self._config.target_map_image:
+            if int(now) % 30 < 2:  # 每30秒检查一次
+                current_task = self._get_current_task()
+                if current_task and current_task.target_map_image:
+                    map_template = cv2.imread(current_task.target_map_image)
+                    if map_template is not None:
+                        map_result = self._detector.find_template(frame, map_template, threshold=0.5)
+                        if not map_result.found:
+                            self._on_progress(55, "⚠️ 地图可能已变化，重新确认")
+                            self._change_state(AutomationState.VERIFY_MAP)
+                            return
 
         # 7d. 任务超时检查
         current_task = self._get_current_task()
@@ -454,26 +517,24 @@ class AutomationEngine:
         """10. 购买药品"""
         self._stats["potions_bought"] += 1
         self._on_progress(70, "💊 购买药品...")
-
-        if (self._config.potion_image and
-            self._config.shop_npc_image):
-
+        if (self._config.potion_image and self._config.shop_npc_image):
             potion_template = cv2.imread(self._config.potion_image)
             shop_npc = cv2.imread(self._config.shop_npc_image)
-
+            buy_btn = cv2.imread(self._config.buy_button_image) if self._config.buy_button_image else None
+            confirm_btn = cv2.imread(self._config.confirm_button_image) if self._config.confirm_button_image else None
             if potion_template is not None and shop_npc is not None:
                 success = self._inventory.check_and_refill_potions(
                     potion_template,
-                    potion_threshold=10,  # 买到10瓶
+                    potion_threshold=10,
                     shop_npc_template=shop_npc,
                     potion_shop_template=potion_template,
-                    buy_button_template=potion_template,
+                    buy_button_template=buy_btn or potion_template,
+                    confirm_template=confirm_btn,
                 )
                 if success:
                     self._on_progress(75, "✅ 药品购买完成")
                 else:
                     self._on_progress(75, "⚠️ 购买药品失败")
-
         self._change_state(AutomationState.GO_TO_MAP)
 
     def _do_goto_map(self):

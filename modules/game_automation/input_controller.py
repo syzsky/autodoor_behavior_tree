@@ -85,8 +85,11 @@ class InputController:
         key_lower = key.lower()
         if key_lower in key_map:
             vk_code = key_map[key_lower][0]
+        elif len(key_lower) == 1:
+            vk_code = ord(key_lower.upper())
         else:
-            vk_code = ord(key_lower[0]) if len(key_lower) == 1 else 0
+            # 多字符键名回退：尝试取首字符
+            vk_code = ord(key_lower[0].upper()) if key_lower else 0
 
         if self._backend == "win32":
             self._win32api.keybd_event(vk_code, 0, 0, 0)

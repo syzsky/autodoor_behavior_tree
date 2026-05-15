@@ -247,16 +247,17 @@ class GameNavigator:
         time.sleep(3)
         return True
 
-    def go_home(self, home_map_template, home_npc_template=None) -> bool:
+    def go_home(self, home_map_template, home_npc_template=None, home_hotkey: str = "V") -> bool:
         """
         回城（盟重省）
         
         Args:
             home_map_template: 盟重省地图模板（用于确认已回城）
             home_npc_template: 回城NPC模板（可选）
+            home_hotkey: 回城快捷键
         """
         # 尝试使用回城卷/技能
-        self._input.press_key("V")  # 假设V是回城快捷键
+        self._input.press_key(home_hotkey)
         time.sleep(3)
 
         # 检测是否回到盟重省
@@ -322,35 +323,73 @@ class GameNavigator:
 
     def navigate_away_from_stuck(self, frame: np.ndarray) -> bool:
         """
-        卡怪时随机走动
-        
-        Args:
-            frame: 当前画面帧
-            
-        Returns:
-            是否已移动
+        卡怪时使用A*寻路移动
         """
         h, w = frame.shape[:2]
+        # 获取玩家当前位置
+        current_pos = self._get_player_position()
+        if current_pos is None:
+            current_pos = (w // 2, h // 2)
+        # 目标：向未探索区域移动（屏幕边缘方向）
         import random
-        # 随机方向点击
-        target_x = random.randint(w // 4, 3 * w // 4)
-        target_y = random.randint(h // 4, 3 * h // 4)
-        self._input.click(target_x, target_y)
+        edge_margin = 100
+        targets = [
+            (edge_margin, edge_margin),           # 左上
+            (w - edge_margin, edge_margin),        # 右上
+            (edge_margin, h - edge_margin),        # 左下
+            (w - edge_margin, h - edge_margin),    # 右下
+            (w // 2, edge_margin),                 # 上中
+            (w // 2, h - edge_margin),             # 下中
+            (edge_margin, h // 2),                 # 左中
+            (w - edge_margin, h // 2),             # 右中
+        ]
+        target = random.choice(targets)
+        # 用A*寻路
+        path = self._astar.find_path(
+            start=current_pos,
+            end=target,
+            obstacles=[],
+            map_size=(w, h),
+        )
+        if path:
+            steps = min(len(path), 10)
+            for i in range(steps):
+                px, py = path[i]
+                self._input.click(px, py)
+                time.sleep(0.3)
+            return True
+        # 回退：直接点击目标
+        self._input.click(target[0], target[1])
         time.sleep(1)
         return True
 
     def _get_player_position(self) -> Optional[Tuple[int, int]]:
         """
         获取玩家当前位置
-        
-        注：实际游戏中需要从小地图或角色位置识别，
-        这里使用画面中心作为近似
+        通过检测小地图上的玩家标记（通常是亮点/箭头）来定位
         """
         frame = self._detector.capture_frame()
         if frame is None:
             return None
-
         h, w = frame.shape[:2]
+        # 小地图通常在右上角
+        minimap_roi = frame[int(h*0.05):int(h*0.25), int(w*0.75):int(w*0.98)]
+        if minimap_roi.size == 0:
+            return (w // 2, h // 2)
+        # 检测亮点（玩家标记通常是白色/亮色点）
+        gray = cv2.cvtColor(minimap_roi, cv2.COLOR_BGR2GRAY)
+        _, bright_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        # 找轮廓
+        contours, _ = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            # 取最大轮廓的中心
+            largest = max(contours, key=cv2.contourArea)
+            if cv2.contourArea(largest) > 5:  # 过滤噪声
+                M = cv2.moments(largest)
+                if M["m00"] > 0:
+                    mm_cx = int(M["m10"] / M["m00"]) + int(w * 0.75)
+                    mm_cy = int(M["m01"] / M["m00"]) + int(h * 0.05)
+                    return (mm_cx, mm_cy)
         return (w // 2, h // 2)
 
     # ── 地图一致性校验 ──────────────────────────
