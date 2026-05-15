@@ -76,6 +76,12 @@ class YOLOTrainerTab:
         self._visualizer = None
         self._collector = None
 
+        # 实时检测
+        self._detection_model = None   # YOLO 模型实例
+        self._detection_enabled = False
+        self._detect_frame_skip = 2    # 每 3 帧检测一次（性能优化）
+        self._detect_frame_counter = 0
+
         # 状态
         self._is_streaming = False
         self._is_collecting = False
@@ -225,6 +231,38 @@ class YOLOTrainerTab:
         ctk.CTkCheckBox(parent, text="十字准星", variable=self._crosshair_var,
                         command=self._toggle_crosshair).grid(
             row=row, column=0, columnspan=2, padx=10, sticky="w")
+        row += 1
+
+        # ── 🧠 实时检测 ──
+        detect_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        detect_frame.grid(row=row, column=0, columnspan=2, padx=10, pady=2, sticky="ew")
+
+        self._detect_var = ctk.BooleanVar(value=False)
+        self._detect_cb = ctk.CTkCheckBox(detect_frame, text="🧠 实时检测",
+                                          variable=self._detect_var,
+                                          command=self._toggle_detection,
+                                          state="disabled")
+        self._detect_cb.pack(side="left", padx=2)
+
+        self._detect_status_label = ctk.CTkLabel(detect_frame, text="未加载模型",
+                                                 text_color="gray", font=("", 10))
+        self._detect_status_label.pack(side="left", padx=5)
+        row += 1
+
+        # 模型路径
+        model_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        model_frame.grid(row=row, column=0, columnspan=2, padx=10, pady=2, sticky="ew")
+
+        self._model_path_entry = ctk.CTkEntry(model_frame, placeholder_text="模型路径或空(用yolov8n.pt)", width=180)
+        self._model_path_entry.pack(side="left", padx=2)
+
+        self._load_model_btn = ctk.CTkButton(model_frame, text="📂 加载",
+                                             command=self._load_detection_model,
+                                             width=50, height=28)
+        self._load_model_btn.pack(side="left", padx=2)
+
+        self._detect_fps_label = ctk.CTkLabel(parent, text="检测 FPS: -", font=("", 10))
+        self._detect_fps_label.grid(row=row, column=0, columnspan=2, padx=10)
         row += 1
 
         # FPS 和状态
@@ -504,8 +542,13 @@ class YOLOTrainerTab:
     def _stop_stream(self):
         """停止实时预览"""
         if self._live_view:
+            self._live_view.clear_overlay()
             self._live_view.stop()
             self._live_view = None
+
+        # 清理检测状态
+        self._detection_enabled = False
+        self._detect_var.set(False)
 
         self._is_streaming = False
         self._stream_start_btn.configure(state="normal")
@@ -515,7 +558,58 @@ class YOLOTrainerTab:
     def _on_stream_frame(self, frame):
         """流帧回调"""
         try:
+            # 🧠 实时检测
+            if self._detection_enabled and self._detection_model:
+                self._detect_frame_counter += 1
+                if self._detect_frame_counter >= self._detect_frame_skip:
+                    self._detect_frame_counter = 0
+                    # 在后台线程运行检测
+                    self._run_detection(frame)
+
             self._parent.after(0, lambda f=frame: self._update_preview(f))
+        except Exception:
+            pass
+
+    def _run_detection(self, frame):
+        """在帧上运行 YOLO 检测（后台线程）"""
+        try:
+            import time
+            t0 = time.time()
+            results = self._detection_model(frame, conf=0.5, verbose=False)
+            infer_time = time.time() - t0
+
+            # 转换结果为 overlay boxes
+            boxes = []
+            class_names = self._detection_model.names if hasattr(self._detection_model, 'names') else {}
+
+            for result in results:
+                if result.boxes is None:
+                    continue
+                h, w = result.orig_shape
+                for box in result.boxes:
+                    cls_id = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+                    boxes.append({
+                        "class_id": cls_id,
+                        "class_name": class_names.get(cls_id, f"cls{cls_id}"),
+                        "x_center": ((x1 + x2) / 2) / w,
+                        "y_center": ((y1 + y2) / 2) / h,
+                        "width": (x2 - x1) / w,
+                        "height": (y2 - y1) / h,
+                        "confidence": conf,
+                    })
+
+            # 更新 LiveView 叠加
+            if self._live_view:
+                self._live_view.set_overlay_boxes(boxes)
+
+            # 更新检测 FPS
+            detect_fps = 1.0 / max(infer_time, 0.001)
+            self._parent.after(0, lambda: self._detect_fps_label.configure(
+                text=f"检测 FPS: {detect_fps:.1f} | 目标: {len(boxes)}"))
+
         except Exception:
             pass
 
@@ -577,6 +671,41 @@ class YOLOTrainerTab:
         """切换十字准星"""
         if self._live_view:
             self._live_view._config.show_crosshair = self._crosshair_var.get()
+
+    # ── 🧠 实时检测 ─────────────────────────────
+
+    def _load_detection_model(self):
+        """加载 YOLO 检测模型"""
+        model_path = self._model_path_entry.get().strip()
+        try:
+            from ultralytics import YOLO
+            if model_path:
+                self._detection_model = YOLO(model_path)
+            else:
+                self._detection_model = YOLO("yolov8n.pt")  # 默认预训练
+
+            self._detect_cb.configure(state="normal")
+            self._detect_status_label.configure(
+                text=f"✅ {model_path or 'yolov8n.pt'}",
+                text_color="green")
+            self._update_status(self._window_status_label,
+                               f"模型已加载: {model_path or 'yolov8n.pt'}", "green")
+        except Exception as e:
+            self._detection_model = None
+            self._detect_cb.configure(state="disabled")
+            self._detect_status_label.configure(text=f"❌ {e}", text_color="red")
+            self._update_status(self._window_status_label, f"模型加载失败: {e}", "red")
+
+    def _toggle_detection(self):
+        """切换实时检测"""
+        self._detection_enabled = self._detect_var.get()
+        self._detect_frame_counter = 0
+        if self._detection_enabled:
+            self._detect_status_label.configure(text="🧠 检测中...", text_color="cyan")
+        else:
+            self._detect_status_label.configure(text="已暂停", text_color="gray")
+            if self._live_view:
+                self._live_view.clear_overlay()
 
     # ── 录制 ─────────────────────────────────────
 

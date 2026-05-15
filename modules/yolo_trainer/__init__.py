@@ -17,9 +17,8 @@ from .capture.window_capture import WindowCapture
 from .capture.screen_stream import ScreenStream
 from .capture.live_view import LiveView, ViewConfig
 from .training.trainer import YOLOTrainer
-from .training.smart_train import SmartTrainer, SmartTrainingConfig, ModelComparator, DataQualityAnalyzer
-from .annotation.auto_annotator import AutoAnnotator
-from .annotation.smart_labeler import SmartLabeler
+from .training.smart_train import SmartTrainer, SmartTrainingConfig, TrainingQualityAnalyzer
+from .annotation.smart_labeler import AnnotationPipeline, AnnotationQualityChecker
 
 # 运行时依赖自动安装
 from .runtime_setup import RuntimeSetup, quick_setup, ensure_model
@@ -34,11 +33,10 @@ __all__ = [
     "YOLOTrainer",
     "SmartTrainer",
     "SmartTrainingConfig",
-    "ModelComparator",
-    "DataQualityAnalyzer",
+    "TrainingQualityAnalyzer",
     # 标注
-    "AutoAnnotator",
-    "SmartLabeler",
+    "AnnotationPipeline",
+    "AnnotationQualityChecker",
     # 运行时安装
     "RuntimeSetup",
     "quick_setup",
