@@ -15,6 +15,28 @@ import threading
 import time
 from typing import Optional, List, Dict
 
+# ─── 运行时依赖自动检查 ─────────────────────────────
+# exe 启动时自动下载缺失的依赖和模型
+try:
+    from .runtime_setup import RuntimeSetup
+    _rt = RuntimeSetup()
+    _missing = _rt.check_packages()
+    if _missing:
+        import tkinter as tk
+        from tkinter import messagebox
+        # 显示自动安装提示
+        _root = tk.Tk()
+        _root.withdraw()
+        _root.attributes('-topmost', True)
+        pkg_names = [p[1] for p in _missing]
+        msg = f"首次运行需要安装以下依赖:\n\n{chr(10).join(pkg_names)}\n\n将自动下载安装..."
+        messagebox.showinfo("环境初始化", msg)
+        _root.destroy()
+        # 自动安装
+        _rt.check_and_install(auto_download_models=True)
+except Exception as e:
+    pass  # 静默失败，GUI 会显示错误
+
 try:
     import customtkinter as ctk
     from PIL import Image, ImageTk
