@@ -274,7 +274,7 @@ class BehaviorTreeApp(ctk.CTk):
             self.tab_frames['yolo'] = yolo_frame
             try:
                 self.yolo_trainer = YOLOTrainerTab(yolo_frame, self)
-                self.yolo_trainer.pack(fill='both', expand=True)
+                # YOLOTrainerTab 不是 widget，它自己把 UI 构建到 parent 里
             except Exception as e:
                 LogManager.debug_print(f"[WARN] YOLO 标签页初始化失败: {e}")
                 del self.tab_frames['yolo']
