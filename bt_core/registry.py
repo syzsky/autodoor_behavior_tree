@@ -87,3 +87,17 @@ def register_all_nodes():
     NodeRegistry.register("NumberConditionNode", NumberConditionNode)
     NodeRegistry.register("VariableConditionNode", VariableConditionNode)
     NodeRegistry.register("TextExtractNode", TextExtractNode)
+
+    # YOLO 行为树节点（可选）
+    try:
+        from modules.yolo_trainer.bt_nodes import (
+            YOLOCaptureNode, YOLOTrainNode, YOLOPredictNode, YOLOAutoAnnotateNode
+        )
+        NodeRegistry.register("YOLOCaptureNode", YOLOCaptureNode)
+        NodeRegistry.register("YOLOTrainNode", YOLOTrainNode)
+        NodeRegistry.register("YOLOPredictNode", YOLOPredictNode)
+        NodeRegistry.register("YOLOAutoAnnotateNode", YOLOAutoAnnotateNode)
+    except ImportError:
+        pass
+    except Exception:
+        pass

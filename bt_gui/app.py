@@ -9,6 +9,15 @@ from .settings_tab import SettingsTab
 from config.settings_manager import SettingsManager
 from bt_utils.log_manager import LogManager
 
+# YOLO 训练器标签页（可选导入，依赖缺失时静默降级）
+try:
+    from modules.yolo_trainer.gui_tab import YOLOTrainerTab
+    _YOLO_AVAILABLE = True
+except ImportError:
+    _YOLO_AVAILABLE = False
+except Exception:
+    _YOLO_AVAILABLE = False
+
 
 def _get_app_title() -> str:
     """获取应用标题，包含版本号"""
@@ -159,8 +168,10 @@ class BehaviorTreeApp(ctk.CTk):
         tab_config = [
             ('bt', '🌲 行为树编辑器'),
             ('script', '📝 脚本录制'),
-            ('settings', '⚙ 设置')
+            ('settings', '⚙ 设置'),
         ]
+        if _YOLO_AVAILABLE:
+            tab_config.append(('yolo', '🎯 YOLO训练'))
         
         for i, (tab_id, tab_text) in enumerate(tab_config):
             btn = ctk.CTkButton(
@@ -243,19 +254,30 @@ class BehaviorTreeApp(ctk.CTk):
         bt_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
         script_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
         settings_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
-        
+
         self.tab_frames['bt'] = bt_frame
         self.tab_frames['script'] = script_frame
         self.tab_frames['settings'] = settings_frame
-        
+
         self.behavior_tree = BehaviorTreeEditor(bt_frame, self)
         self.behavior_tree.pack(fill='both', expand=True)
-        
+
         self.script_editor = ScriptTab(script_frame, self)
         self.script_editor.pack(fill='both', expand=True)
-        
+
         self.settings = SettingsTab(settings_frame, self)
         self.settings.pack(fill='both', expand=True)
+
+        # YOLO 训练器标签页
+        if _YOLO_AVAILABLE:
+            yolo_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
+            self.tab_frames['yolo'] = yolo_frame
+            try:
+                self.yolo_trainer = YOLOTrainerTab(yolo_frame, self)
+                self.yolo_trainer.pack(fill='both', expand=True)
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] YOLO 标签页初始化失败: {e}")
+                del self.tab_frames['yolo']
         
         saved_settings = self._settings.get_all_settings()
         if saved_settings:
