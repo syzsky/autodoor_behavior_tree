@@ -1,0 +1,26 @@
+{
+  "version": "1.3.0.1",
+  "expire_date": "2029-05-07",
+  "force_update": false,
+  "build_type": "release",
+  "build_time": "2026-05-15 17:31:59",
+  "git_commit": "eea7b65",
+  "github": {
+    "owner": "wdhq4261761",
+    "repo": "autodoor_behavior_tree"
+  },
+  "update_links": {
+    "tool_intro": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
+    "download": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
+    "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink"
+  },
+  "app_info": {
+    "name": "AutoDoor Behavior Tree",
+    "name_cn": "AutoDoor 行为树系统"
+  },
+  "debug": {
+    "enable_logging": false,
+    "log_level": "INFO",
+    "enable_debug_mode": false
+  }
+}
