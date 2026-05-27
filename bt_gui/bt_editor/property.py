@@ -2737,7 +2737,6 @@ class PropertyPanel(ctk.CTkFrame):
         
         if self.on_change and self.current_node_id:
             self.on_change(self.current_node_id, key, value)
-        
         self._update_dependent_fields_visibility(key)
     
     def _update_widget_value(self, key: str, value: Any):
