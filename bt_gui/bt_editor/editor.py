@@ -1692,17 +1692,16 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         return self.canvas.get_tree_data()
 
     def get_start_node(self):
-        start_node = self.canvas.nodes.get("start_node")
-        if start_node is None:
-            return None
-        from bt_core.config import NodeConfig
-        config = NodeConfig(name=getattr(start_node, 'name', ''))
-        node_config = start_node.config if hasattr(start_node, 'config') else {}
-        for key, value in node_config.items():
-            config.set(key, value)
-        from bt_core.nodes import StartNode
-        node = StartNode(node_id="start_node", config=config)
-        return node
+        for node_id, node in self.canvas.nodes.items():
+            if node.node_type == "StartNode":
+                from bt_core.config import NodeConfig
+                config = NodeConfig(name=getattr(node, 'name', ''))
+                node_config = node.config if hasattr(node, 'config') else {}
+                for key, value in node_config.items():
+                    config.set(key, value)
+                from bt_core.nodes import StartNode
+                return StartNode(node_id=node_id, config=config)
+        return None
     
     def set_tree_data(self, data: Dict[str, Any]):
         self.canvas.load_tree(data)
@@ -1943,7 +1942,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         y = canvas_height * 0.2
         
         self.canvas.add_node(
-            node_id="start_node",
+            node_id="node_start",
             node_type="StartNode",
             x=x,
             y=y,
