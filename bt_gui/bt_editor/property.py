@@ -17,14 +17,14 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "language", "label": "语言", "type": "select", "options": ["简体中文", "English", "繁体中文"], "default": "简体中文"},
         {"key": "preprocess_mode", "label": "图像预处理", "type": "select", "options": ["默认", "复杂色彩", "自适应", "自动调优"], "default": "默认"},
         {"key": "search_direction", "label": "识别起点", "type": "select", "options": ["左上", "右上", "左下", "右下"], "default": "左上"},
-        {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "ImageConditionNode": [
         {"key": "region", "label": "检测区域", "type": "region"},
         {"key": "template_path", "label": "模板路径", "type": "screenshot", "width": 120, "filetypes": [("图像文件", "*.png *.jpg *.jpeg *.bmp"), ("所有文件", "*.*")]},
         {"key": "threshold", "label": "匹配阈值(%)", "type": "number", "min": 0, "max": 100, "default": 80},
-        {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "ColorConditionNode": [
@@ -32,12 +32,12 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "target_color", "label": "目标颜色", "type": "color"},
         {"key": "tolerance", "label": "容差", "type": "number", "min": 0, "max": 100, "default": 10},
         {"key": "min_pixels", "label": "最小像素数", "type": "number", "min": 1, "default": 1},
-        {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "NumberConditionNode": [
         {"key": "region", "label": "检测区域", "type": "region"},
-        {"key": "preprocess_mode", "label": "预处理模式", "type": "select", "options": ["普通文本", "艺术字"], "default": "普通文本"},
+        {"key": "preprocess_mode", "label": "图像预处理", "type": "select", "options": ["默认", "复杂色彩", "自适应", "自动调优"], "default": "默认"},
         {"key": "extract_mode", "label": "提取模式", "type": "select", "options": ["无规则", "x/y", "自定义"], "default": "无规则"},
         {"key": "extract_pattern", "label": "自定义模式", "type": "text", "hide_if": {"field": "extract_mode", "value": ["无规则", "x/y"]}},
         {"key": "compare_mode", "label": "比较模式", "type": "select", "options": ["<", "<=", ">", ">=", "==", "!="], "default": "=="},
@@ -45,7 +45,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "min_confidence", "label": "置信度阈值(%)", "type": "number", "min": 0, "max": 100, "default": 50},
         {"key": "search_direction", "label": "识别起点", "type": "select", "options": ["左上", "右上", "左下", "右下"], "default": "左上"},
         {"key": "value_key", "label": "值变量名", "type": "text", "default": "last_number_value"},
-        {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "VariableConditionNode": [
@@ -66,7 +66,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "duration_random", "label": "时长随机范围(±ms)", "type": "number", "min": 0, "default": 0, "hide_if": {"field": "action", "value": ["down", "up"]}},
         {"key": "position", "label": "位置", "type": "position"},
         {"key": "use_blackboard", "label": "点击最近检测点", "type": "bool", "default": False},
-        {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
         {"key": "click_count", "label": "点击次数(-1无限)", "type": "number", "min": -1, "max": 10, "default": 1},
         {"key": "click_interval", "label": "点击间隔(ms)", "type": "number", "default": 100},
         {"key": "click_interval_random", "label": "间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
@@ -74,7 +74,7 @@ NODE_CONFIG_SCHEMAS = {
     "MouseMoveNode": [
         {"key": "position", "label": "起点位置", "type": "position"},
         {"key": "use_blackboard", "label": "起点使用最近检测点", "type": "bool", "default": False},
-        {"key": "position_key", "label": "起点黑板变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "position_key", "label": "起点黑板变量名", "type": "text", "default": ""},
         {"key": "move_type", "label": "操作类型", "type": "select", "options": ["移动", "拖拽"], "default": "移动"},
         {"key": "drag_button", "label": "拖拽按键", "type": "select", "options": ["left", "right", "middle"], "default": "left", "hide_if": {"field": "move_type", "value": "移动"}},
         {"key": "relative", "label": "增量移动", "type": "bool", "default": False},
@@ -136,7 +136,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "save_all_text", "label": "保存全部文本", "type": "bool", "default": False},
         {"key": "all_text_key", "label": "全部文本变量名", "type": "text", "default": "all_ocr_text", "hide_if": {"field": "save_all_text", "value": False}},
         {"key": "save_position", "label": "保存位置", "type": "bool", "default": True},
-        {"key": "position_key", "label": "位置变量名", "type": "text", "default": "last_detection_position"},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
     "ParallelNode": [
@@ -160,6 +160,7 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "bind_window", "label": "绑定窗口", "type": "bool", "default": False},
         {"key": "window_title", "label": "窗口标题", "type": "window_select", "default": "", "hide_if": {"field": "bind_window", "value": False}},
         {"key": "window_pid", "label": "窗口PID", "type": "number", "default": 0, "hidden": True},
+        {"key": "window_hwnd", "label": "窗口句柄", "type": "number", "default": 0, "hidden": True},
     ],
     "SubtreeNode": [
         {"key": "subtree_path", "label": "子树项目文件夹", "type": "folder", "width": 150},
@@ -1721,7 +1722,7 @@ class WindowSelectField(FieldWidget):
     def __init__(self, master, label: str, key: str, on_change: Callable, app, update_other_field: Callable = None, **kwargs):
         self.app = app
         self._window_titles = []
-        self._window_hwnds = {}
+        self._window_hwnd_map = {}
         self._window_pids = {}
         self._update_other_field = update_other_field
         super().__init__(master, label, key, on_change, **kwargs)
@@ -1773,22 +1774,27 @@ class WindowSelectField(FieldWidget):
         self.var.set(choice)
         LogManager.debug_print(f"[DEBUG] WindowSelectField._on_window_selected: 设置后 var='{self.var.get()}'")
         self.on_change(self.key, choice)
+        if choice in self._window_hwnd_map:
+            hwnd = self._window_hwnd_map[choice]
+            if hwnd:
+                self.on_change("window_hwnd", hwnd)
+                self.on_change("bind_window", True)
+                if self._update_other_field:
+                    self._update_other_field("bind_window", True)
+                LogManager.debug_print(f"[DEBUG] WindowSelectField: 选择窗口 '{choice}', HWND={hwnd}, 已设置 bind_window=True")
         if choice in self._window_pids:
             pid = self._window_pids[choice]
             if pid:
                 self.on_change("window_pid", pid)
-                self.on_change("bind_window", True)
-                if self._update_other_field:
-                    self._update_other_field("bind_window", True)
-                LogManager.debug_print(f"[DEBUG] WindowSelectField: 选择窗口 '{choice}', PID={pid}, 已设置 bind_window=True")
         else:
-            LogManager.debug_print(f"[DEBUG] WindowSelectField: choice='{choice}' 不在 _window_pids 中")
+            LogManager.debug_print(f"[DEBUG] WindowSelectField: choice='{choice}' 不在映射中")
 
     def _clear_selection(self):
         LogManager.debug_print(f"[DEBUG] WindowSelectField._clear_selection: 清空前 var='{self.var.get()}'")
         self.var.set("")
         self.on_change(self.key, "")
         self.on_change("window_pid", 0)
+        self.on_change("window_hwnd", 0)
         LogManager.debug_print(f"[DEBUG] WindowSelectField: 清空窗口选择")
 
     def _refresh_window_list(self):
@@ -1798,13 +1804,25 @@ class WindowSelectField(FieldWidget):
         LogManager.debug_print(f"[DEBUG] WindowSelectField._refresh_window_list: 刷新前 var='{current_value}'")
         
         windows = WindowManager.enum_all_windows()
-        self._window_titles = [title for hwnd, title in windows]
-        self._window_hwnds = {title: hwnd for hwnd, title in windows}
+        
+        title_count = {}
+        self._window_titles = []
+        self._window_hwnd_map = {}
         self._window_pids = {}
+        
         for hwnd, title in windows:
             pid = WindowManager.get_window_pid(hwnd)
+            if title in title_count:
+                title_count[title] += 1
+                display_title = f"{title} (PID:{pid})"
+            else:
+                title_count[title] = 1
+                display_title = title
+            self._window_titles.append(display_title)
+            self._window_hwnd_map[display_title] = hwnd
             if pid:
-                self._window_pids[title] = pid
+                self._window_pids[display_title] = pid
+        
         LogManager.debug_print(f"[DEBUG] WindowSelectField._refresh_window_list: 窗口数量={len(self._window_titles)}")
         
         if hasattr(self, 'combobox'):

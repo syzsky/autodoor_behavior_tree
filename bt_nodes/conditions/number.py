@@ -2,6 +2,7 @@ from bt_core.nodes import ConditionNode
 from bt_core.config import NodeConfig
 from typing import Dict, Any, Tuple, Optional
 from bt_utils.ocr_manager import OCRManager
+from bt_nodes.conditions.common import LANGUAGE_MAP, PREPROCESS_MODE_MAP
 
 
 class NumberConditionNode(ConditionNode):
@@ -20,10 +21,9 @@ class NumberConditionNode(ConditionNode):
         self.search_direction = self.config.get("search_direction", "左上")
         
         language_display = self.config.get("language", "简体中文")
-        from bt_nodes.conditions.ocr import LANGUAGE_MAP
         self.language = LANGUAGE_MAP.get(language_display, "chi_sim")
         preprocess_display = self.config.get("preprocess_mode", "默认")
-        self.preprocess_mode = "game" if preprocess_display == "复杂色彩" else "normal"
+        self.preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
 
     def _check_condition(self, context) -> bool:
         try:
@@ -41,10 +41,9 @@ class NumberConditionNode(ConditionNode):
             direction = SearchDirection.VALUE_MAP.get(search_direction, SearchDirection.TOP_LEFT)
 
             language_display = self.config.get("language", "简体中文")
-            from bt_nodes.conditions.ocr import LANGUAGE_MAP
             language = LANGUAGE_MAP.get(language_display, "chi_sim")
             preprocess_display = self.config.get("preprocess_mode", "默认")
-            preprocess_mode = "game" if preprocess_display == "复杂色彩" else "normal"
+            preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
             extract_mode = self.config.get("extract_mode", "无规则")
             extract_pattern = self.config.get("extract_pattern", "")
             min_confidence = self.config.get_float("min_confidence", 50) / 100.0
@@ -90,16 +89,6 @@ class NumberConditionNode(ConditionNode):
             return False
 
     def _compare_value(self, value: float, comparison: str, target_value: float) -> bool:
-        """比较数值
-
-        Args:
-            value: 识别到的数值
-            comparison: 比较运算符
-            target_value: 目标值
-
-        Returns:
-            比较结果
-        """
         ops = {
             ">": lambda a, b: a > b,
             ">=": lambda a, b: a >= b,
@@ -110,5 +99,3 @@ class NumberConditionNode(ConditionNode):
         }
         op = ops.get(comparison, lambda a, b: False)
         return op(value, target_value)
-
-

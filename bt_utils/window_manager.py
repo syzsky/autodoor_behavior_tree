@@ -1,6 +1,6 @@
 import ctypes
 from ctypes import wintypes
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 
 user32 = ctypes.windll.user32
 
@@ -36,14 +36,6 @@ class WindowManager:
 
     @staticmethod
     def find_window_by_pid(pid: int) -> Optional[int]:
-        """通过进程ID查找窗口
-        
-        Args:
-            pid: 进程ID
-            
-        Returns:
-            Optional[int]: 窗口句柄，未找到返回 None
-        """
         results = []
 
         WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -68,15 +60,82 @@ class WindowManager:
         return None
 
     @staticmethod
-    def get_window_pid(hwnd: int) -> Optional[int]:
-        """获取窗口的进程ID
+    def find_main_window_by_pid(pid: int) -> Optional[int]:
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        results = []
+
+        def enum_windows_callback(hwnd, _):
+            if user32.IsWindowVisible(hwnd):
+                window_pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+                if window_pid.value == pid:
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buffer = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buffer, length + 1)
+                        if buffer.value:
+                            style = user32.GetWindowLongW(hwnd, -16)
+                            ex_style = user32.GetWindowLongW(hwnd, -20)
+                            
+                            WS_OVERLAPPEDWINDOW = 0x00CF0000
+                            WS_EX_TOOLWINDOW = 0x00000080
+                            WS_EX_APPWINDOW = 0x00040000
+                            
+                            is_main = bool(style & WS_OVERLAPPEDWINDOW)
+                            is_app_window = bool(ex_style & WS_EX_APPWINDOW)
+                            is_tool_window = bool(ex_style & WS_EX_TOOLWINDOW)
+                            
+                            rect = wintypes.RECT()
+                            user32.GetClientRect(hwnd, ctypes.byref(rect))
+                            area = max(0, (rect.right - rect.left)) * max(0, (rect.bottom - rect.top))
+                            
+                            results.append({
+                                'hwnd': hwnd,
+                                'area': area,
+                                'is_main': is_main,
+                                'is_app_window': is_app_window,
+                                'is_tool_window': is_tool_window,
+                                'title': buffer.value,
+                            })
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
         
-        Args:
-            hwnd: 窗口句柄
-            
-        Returns:
-            Optional[int]: 进程ID，获取失败返回 None
-        """
+        if not results:
+            return None
+        
+        results.sort(key=lambda x: (
+            not x['is_tool_window'],
+            x['is_app_window'],
+            x['is_main'],
+            x['area']
+        ), reverse=True)
+        
+        return results[0]['hwnd']
+
+    @staticmethod
+    def find_all_windows_by_pid(pid: int) -> List[int]:
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        results = []
+
+        def enum_windows_callback(hwnd, _):
+            if user32.IsWindowVisible(hwnd):
+                window_pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+                if window_pid.value == pid:
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buffer = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buffer, length + 1)
+                        if buffer.value:
+                            results.append(hwnd)
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
+        return results
+
+    @staticmethod
+    def get_window_pid(hwnd: int) -> Optional[int]:
         try:
             pid = wintypes.DWORD()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
@@ -86,18 +145,8 @@ class WindowManager:
 
     @staticmethod
     def find_window_smart(pid: Optional[int], title_keyword: str) -> Tuple[Optional[int], str]:
-        """智能查找窗口：优先PID，其次关键字
-        
-        Args:
-            pid: 进程ID（可选）
-            title_keyword: 窗口标题关键字
-            
-        Returns:
-            Tuple[Optional[int], str]: (窗口句柄, 查找方式说明)
-            查找方式说明: "pid" / "title" / "not_found"
-        """
         if pid:
-            hwnd = WindowManager.find_window_by_pid(pid)
+            hwnd = WindowManager.find_main_window_by_pid(pid)
             if hwnd:
                 return hwnd, "pid"
         
@@ -105,6 +154,23 @@ class WindowManager:
             hwnd = WindowManager.find_window_by_title(title_keyword)
             if hwnd:
                 return hwnd, "title"
+        
+        return None, "not_found"
+
+    @staticmethod
+    def find_window_smart_with_hwnd(hwnd: int, pid: Optional[int], title_keyword: str) -> Tuple[Optional[int], str]:
+        if hwnd and WindowManager.is_window_valid(hwnd):
+            return hwnd, "hwnd"
+        
+        if pid:
+            hwnd_found = WindowManager.find_main_window_by_pid(pid)
+            if hwnd_found:
+                return hwnd_found, "pid"
+        
+        if title_keyword:
+            hwnd_found = WindowManager.find_window_by_title(title_keyword)
+            if hwnd_found:
+                return hwnd_found, "title"
         
         return None, "not_found"
 

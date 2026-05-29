@@ -864,7 +864,8 @@ class ConditionNode(Node):
         except ImportError:
             default_position_key = "last_detection_position"
         
-        self.position_key = self.config.get("position_key", default_position_key)
+        position_key_value = self.config.get("position_key", "")
+        self.position_key = position_key_value if position_key_value else default_position_key
         
         # 坐标偏移参数 (向后兼容：支持旧的 offset_x/offset_y 格式)
         offset = self.config.get("offset", None)
@@ -981,7 +982,7 @@ class ConditionNode(Node):
                 default_position_key = get_default_position_key()
             except ImportError:
                 default_position_key = "last_detection_position"
-            position_key = self.config.get("position_key", default_position_key)
+            position_key = self.config.get("position_key", "") or default_position_key
             context.blackboard.set(position_key, final_position)
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
@@ -1303,10 +1304,12 @@ class StartNode(CompositeNode):
     def _bind_window_to_context(self, context: "ExecutionContext") -> None:
         from bt_utils.window_manager import WindowManager
 
+        window_hwnd = self.config.get_int("window_hwnd", 0)
         window_pid = self.config.get_int("window_pid", 0)
         window_title = self.config.get("window_title", "")
 
-        hwnd, find_method = WindowManager.find_window_smart(
+        hwnd, find_method = WindowManager.find_window_smart_with_hwnd(
+            hwnd=window_hwnd if window_hwnd > 0 else 0,
             pid=window_pid if window_pid > 0 else None,
             title_keyword=window_title
         )
@@ -1317,19 +1320,24 @@ class StartNode(CompositeNode):
             title = WindowManager.get_window_title(hwnd)
             actual_pid = WindowManager.get_window_pid(hwnd)
 
-            if find_method == "pid":
+            if find_method == "hwnd":
+                LogManager.debug_print(f"[DEBUG] StartNode 通过句柄绑定窗口: hwnd={hwnd}, title='{title}', rect={rect}")
+            elif find_method == "pid":
                 LogManager.debug_print(f"[DEBUG] StartNode 通过PID绑定窗口: pid={window_pid}, hwnd={hwnd}, title='{title}', rect={rect}")
             else:
                 LogManager.debug_print(f"[DEBUG] StartNode 通过标题绑定窗口: title='{window_title}', hwnd={hwnd}, actual_title='{title}', pid={actual_pid}, rect={rect}")
                 if actual_pid and actual_pid != window_pid:
                     LogManager.debug_print(f"[DEBUG] StartNode 提示: 窗口PID已变更 ({window_pid} -> {actual_pid})，建议重新选择窗口")
+
+            if window_hwnd != hwnd:
+                self.config.set("window_hwnd", hwnd)
         else:
             LogManager.instance().log_failure(
                 node_type="开始节点",
                 node_name=self.name,
-                reason=f"未找到窗口: pid={window_pid}, title='{window_title}'"
+                reason=f"未找到窗口: hwnd={window_hwnd}, pid={window_pid}, title='{window_title}'"
             )
-            LogManager.debug_print(f"[DEBUG] StartNode 未找到窗口: pid={window_pid}, title='{window_title}'")
+            LogManager.debug_print(f"[DEBUG] StartNode 未找到窗口: hwnd={window_hwnd}, pid={window_pid}, title='{window_title}'")
     
     def _reset_for_retry(self) -> None:
         """重试时重置状态（保留重试计数器）"""

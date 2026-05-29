@@ -74,7 +74,7 @@ class MouseClickNode(ActionNode):
 
     def _get_position(self, context) -> Optional[Tuple[int, int]]:
         if self.config.get_bool("use_blackboard", False):
-            position_key = self.config.get("position_key", _get_default_position_key())
+            position_key = self.config.get("position_key", "") or _get_default_position_key()
             bb_position = context.blackboard.get(position_key)
             if bb_position:
                 return bb_position
@@ -276,7 +276,7 @@ class MouseMoveNode(ActionNode):
 
     def _get_start_position(self, context) -> Optional[Tuple[int, int]]:
         if self.config.get_bool("use_blackboard", False):
-            position_key = self.config.get("position_key", _get_default_position_key())
+            position_key = self.config.get("position_key", "") or _get_default_position_key()
             bb_position = context.blackboard.get(position_key)
             if bb_position:
                 return bb_position

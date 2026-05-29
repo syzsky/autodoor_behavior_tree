@@ -3,16 +3,8 @@ from bt_core.config import NodeConfig
 from typing import Dict, Any, Tuple, Optional
 from bt_utils.log_manager import LogManager
 from bt_utils.ocr_manager import OCRManager
+from bt_nodes.conditions.common import LANGUAGE_MAP, PREPROCESS_MODE_MAP
 
-
-LANGUAGE_MAP = {
-    "English": "eng",
-    "简体中文": "chi_sim",
-    "繁体中文": "chi_tra",
-    "eng": "eng",
-    "chi_sim": "chi_sim",
-    "chi_tra": "chi_tra",
-}
 
 EXTRACT_MODE_MAP = {
     "全部": "all",
@@ -36,12 +28,18 @@ class TextExtractNode(ConditionNode):
         language_display = self.config.get("language", "简体中文")
         self.language = LANGUAGE_MAP.get(language_display, "chi_sim")
         preprocess_display = self.config.get("preprocess_mode", "默认")
-        self.preprocess_mode = "game" if preprocess_display == "复杂色彩" else "normal"
+        self.preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
         self.output_key = self.config.get("output_key", "last_extracted_text")
         self.save_all_text = self.config.get_bool("save_all_text", False)
         self.all_text_key = self.config.get("all_text_key", "all_ocr_text")
         self.save_position = self.config.get_bool("save_position", True)
-        self.position_key = self.config.get("position_key", "last_detection_position")
+        try:
+            from config.settings_manager import get_default_position_key
+            default_position_key = get_default_position_key()
+        except ImportError:
+            default_position_key = "last_detection_position"
+        position_key_value = self.config.get("position_key", "")
+        self.position_key = position_key_value if position_key_value else default_position_key
 
     def _check_condition(self, context) -> bool:
         try:
@@ -52,7 +50,7 @@ class TextExtractNode(ConditionNode):
             language_display = self.config.get("language", "简体中文")
             language = LANGUAGE_MAP.get(language_display, "chi_sim")
             preprocess_display = self.config.get("preprocess_mode", "默认")
-            preprocess_mode = "game" if preprocess_display == "复杂色彩" else "normal"
+            preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
 
             ocr_manager = OCRManager()
             all_text = ocr_manager.get_all_text(
@@ -84,7 +82,12 @@ class TextExtractNode(ConditionNode):
             if save_position and region:
                 center_x = (region[0] + region[2]) // 2
                 center_y = (region[1] + region[3]) // 2
-                position_key = self.config.get("position_key", "last_detection_position")
+                try:
+                    from config.settings_manager import get_default_position_key
+                    default_position_key = get_default_position_key()
+                except ImportError:
+                    default_position_key = "last_detection_position"
+                position_key = self.config.get("position_key", "") or default_position_key
                 context.blackboard.set(position_key, (center_x, center_y))
 
             if extracted_text:
