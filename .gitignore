@@ -47,6 +47,7 @@ backup/
 
 /examples/
 /md/
+/doc/01_架构文档.md
 
 bt_utils/build_info.json
 
