@@ -27,6 +27,7 @@ class BehaviorTreeApp(ctk.CTk):
         super().__init__()
         
         self._dark_colors = Theme.get_dark_colors()
+        self._keyfield_active = False
         
         self._settings = SettingsManager.get_instance()
         
@@ -349,9 +350,16 @@ class BehaviorTreeApp(ctk.CTk):
             self.bind(key, lambda e, cb=callback, k=key: self._handle_shortcut(e, cb, k))
     
     def _handle_shortcut(self, event, callback, key_name):
+        if key_name in ("<Delete>", "<BackSpace>"):
+            if self._keyfield_active:
+                return "break"
+        
         if callable(callback):
             callback()
         return "break"
+    
+    def set_keyfield_active(self, active: bool):
+        self._keyfield_active = active
     
     def _undo(self):
         if hasattr(self.behavior_tree, 'undo'):

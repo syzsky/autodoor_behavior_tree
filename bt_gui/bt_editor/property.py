@@ -1298,6 +1298,13 @@ class KeyField(FieldWidget):
         self._listening = True
         self.btn.configure(text="取消", fg_color=self._dark_colors['warning'])
         
+        try:
+            toplevel = self.winfo_toplevel()
+            if hasattr(toplevel, 'set_keyfield_active'):
+                toplevel.set_keyfield_active(True)
+        except Exception:
+            pass
+        
         from pynput import keyboard
         from bt_utils.key_name_resolver import resolve_key_name
         
@@ -1336,6 +1343,13 @@ class KeyField(FieldWidget):
         if self._timeout_id:
             self.after_cancel(self._timeout_id)
             self._timeout_id = None
+        
+        try:
+            toplevel = self.winfo_toplevel()
+            if hasattr(toplevel, 'set_keyfield_active'):
+                toplevel.set_keyfield_active(False)
+        except Exception:
+            pass
         
         try:
             if self.winfo_exists():
