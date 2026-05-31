@@ -804,7 +804,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         elif self.canvas.selected_node:
             self._clipboard_data = self.canvas._copy_selected_nodes_to_clipboard()
     
-    def _paste_selected(self):
+    def _paste_selected(self, paste_x: float = None, paste_y: float = None):
         if not self._clipboard_data:
             return
         
@@ -818,7 +818,11 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if not nodes_data:
             return
         
-        paste_offset_x, paste_offset_y = self._calculate_paste_offset(relative_positions)
+        if paste_x is not None and paste_y is not None:
+            paste_offset_x, paste_offset_y = self._calculate_paste_offset_at(
+                relative_positions, paste_x, paste_y)
+        else:
+            paste_offset_x, paste_offset_y = self._calculate_paste_offset(relative_positions)
         
         if len(nodes_data) == 1:
             node_data = nodes_data[0]
@@ -951,6 +955,19 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             
             offset_x += offset_increment
             offset_y += offset_increment
+        
+        return offset_x, offset_y
+    
+    def _calculate_paste_offset_at(self, relative_positions: Dict[str, tuple] = None,
+                                    target_x: float = 0, target_y: float = 0) -> tuple:
+        offset_x = target_x
+        offset_y = target_y
+        
+        if relative_positions:
+            min_rel_x = min(rel_x for rel_x, _ in relative_positions.values()) if relative_positions else 0
+            min_rel_y = min(rel_y for _, rel_y in relative_positions.values()) if relative_positions else 0
+            offset_x = target_x - min_rel_x
+            offset_y = target_y - min_rel_y
         
         return offset_x, offset_y
     

@@ -70,6 +70,7 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         self._right_pan_start_offset = (0, 0)
         self._right_pan_moved = False
         self._right_pan_threshold = 5
+        self._right_click_canvas_pos = None
         
         self._selecting = False
         self._selection_start = (0, 0)
@@ -436,6 +437,10 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         self._right_pan_start = (event.x, event.y)
         self._right_pan_start_offset = (self.pan_x, self.pan_y)
         self._right_pan_moved = False
+        self._right_click_canvas_pos = (
+            (self.canvas.canvasx(event.x) - self.pan_x) / self.zoom,
+            (self.canvas.canvasy(event.y) - self.pan_y) / self.zoom
+        )
     
     def _on_right_drag(self, event):
         if not self._right_panning:
@@ -484,9 +489,33 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
                 menu.add_command(label="删除连线", command=self.remove_selected_connection)
         elif self.selected_connection:
             menu.add_command(label="删除连线", command=self.remove_selected_connection)
+        else:
+            editor = self._get_editor()
+            if editor and editor._clipboard_data:
+                paste_pos = getattr(self, '_right_click_canvas_pos', None)
+                menu.add_command(label="粘贴节点", 
+                               command=lambda: self._paste_at_position(paste_pos))
         
         if menu.index("end") is not None:
             menu.post(event.x_root, event.y_root)
+    
+    def _get_editor(self):
+        try:
+            app = self.canvas.winfo_toplevel()
+            if hasattr(app, 'behavior_tree'):
+                return app.behavior_tree
+        except Exception:
+            pass
+        return None
+    
+    def _paste_at_position(self, pos=None):
+        editor = self._get_editor()
+        if not editor or not editor._clipboard_data:
+            return
+        if pos:
+            editor._paste_selected(paste_x=pos[0], paste_y=pos[1])
+        else:
+            editor._paste_selected()
     
     def _on_double_click(self, event):
         x = (self.canvas.canvasx(event.x) - self.pan_x) / self.zoom
@@ -631,6 +660,8 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         if node_id in self.nodes:
             node = self.nodes[node_id]
             node.reset_status()
+            if isinstance(node, SubtreeNodeItem) and node._expanded:
+                node._collapse_preview()
             self.canvas.delete(node.node_id)
             del self.nodes[node_id]
             
