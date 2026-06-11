@@ -134,9 +134,9 @@ class GuiTabManager(MultiTreeManager):
         if self.on_tab_status_changed:
             self.on_tab_status_changed(tab_id, running)
     
-    def start_tab(self, tab_id: str) -> bool:
+    def start_tab(self, tab_id: str, skip_sound: bool = False) -> bool:
         if self.on_tab_start_request:
-            return self.on_tab_start_request(tab_id)
+            return self.on_tab_start_request(tab_id, skip_sound=skip_sound)
         
         instance = self._trees.get(tab_id)
         if not instance or instance.status == "running":
@@ -146,9 +146,9 @@ class GuiTabManager(MultiTreeManager):
         self.update_tab_status(tab_id, True)
         return True
     
-    def stop_tab(self, tab_id: str) -> bool:
+    def stop_tab(self, tab_id: str, skip_sound: bool = False) -> bool:
         if self.on_tab_stop_request:
-            return self.on_tab_stop_request(tab_id)
+            return self.on_tab_stop_request(tab_id, skip_sound=skip_sound)
         
         instance = self._trees.get(tab_id)
         if not instance or instance.status != "running":

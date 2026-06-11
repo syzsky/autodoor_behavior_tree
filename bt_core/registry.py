@@ -64,7 +64,9 @@ def register_all_nodes():
     from bt_nodes.actions.code import CodeNode
     from bt_nodes.actions.alarm import AlarmNode
     from bt_nodes.actions.text_input import TextInputNode
-    
+    from bt_nodes.actions.start_tree import StartTreeNode
+    from bt_nodes.actions.stop_tree import StopTreeNode
+
     NodeRegistry.register("KeyPressNode", KeyPressNode)
     NodeRegistry.register("MouseClickNode", MouseClickNode)
     NodeRegistry.register("MouseMoveNode", MouseMoveNode)
@@ -75,6 +77,8 @@ def register_all_nodes():
     NodeRegistry.register("CodeNode", CodeNode)
     NodeRegistry.register("AlarmNode", AlarmNode)
     NodeRegistry.register("TextInputNode", TextInputNode)
+    NodeRegistry.register("StartTreeNode", StartTreeNode)
+    NodeRegistry.register("StopTreeNode", StopTreeNode)
     
     from bt_nodes.conditions.ocr import OCRConditionNode
     from bt_nodes.conditions.image import ImageConditionNode

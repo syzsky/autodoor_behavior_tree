@@ -45,6 +45,9 @@ class ExecutionContext:
         # 帧级截图缓存：同一tick内相同region只截图一次
         self._screenshot_cache: dict = {}
         self._screenshot_cache_tick: int = -1
+        # Tab管理器引用（用于启动/停止节点访问其他行为树）
+        self._tab_manager = None
+        self._current_tab_id: Optional[str] = None
     
     def set_stats_collector(self, collector):
         """设置统计收集器
@@ -53,7 +56,25 @@ class ExecutionContext:
             collector: 统计收集器实例
         """
         self._stats_collector = collector
-    
+
+    def set_tab_manager(self, tab_manager, tab_id: str = None):
+        """设置Tab管理器和当前Tab ID
+
+        Args:
+            tab_manager: GuiTabManager 实例
+            tab_id: 当前 Tab ID
+        """
+        self._tab_manager = tab_manager
+        self._current_tab_id = tab_id
+
+    def get_tab_manager(self):
+        """获取Tab管理器"""
+        return self._tab_manager
+
+    def get_current_tab_id(self) -> Optional[str]:
+        """获取当前Tab ID"""
+        return self._current_tab_id
+
     def push_subtree(self, subtree_path: str) -> None:
         """进入子树时压栈
 

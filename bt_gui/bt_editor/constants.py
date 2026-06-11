@@ -21,6 +21,8 @@ NODE_CATEGORY_MAP = {
     "ScriptNode": "action",
     "CodeNode": "action",
     "TextInputNode": "action",
+    "StartTreeNode": "action",
+    "StopTreeNode": "action",
 }
 
 NODE_DISPLAY_NAMES = {
@@ -46,6 +48,8 @@ NODE_DISPLAY_NAMES = {
     "ScriptNode": "脚本",
     "CodeNode": "代码",
     "TextInputNode": "文本输入",
+    "StartTreeNode": "启动树",
+    "StopTreeNode": "停止树",
 }
 
 NODE_DESCRIPTIONS = {
@@ -71,11 +75,13 @@ NODE_DESCRIPTIONS = {
     "CodeNode": "执行外部代码文件",
     "ScriptNode": "执行Txt脚本文件",
     "TextInputNode": "向目标位置输入文本",
+    "StartTreeNode": "启动其他已加载的行为树",
+    "StopTreeNode": "停止当前或其他行为树",
 }
 
 COMPOSITE_NODES = ["SequenceNode", "SelectorNode", "ParallelNode", "RandomNode", "SubtreeNode"]
 CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode"]
-ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode"]
+ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode", "StartTreeNode", "StopTreeNode"]
 
 ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES
 
@@ -131,6 +137,8 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("CodeNode", "代码", "执行外部代码文件"),
                 ("ScriptNode", "脚本", "执行Txt脚本文件"),
                 ("TextInputNode", "文本输入", "向目标位置输入文本"),
+                ("StartTreeNode", "启动树", "启动其他已加载的行为树"),
+                ("StopTreeNode", "停止树", "停止当前或其他行为树"),
             ]
         },
     }

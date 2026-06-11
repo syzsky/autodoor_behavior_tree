@@ -227,6 +227,16 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "volume", "label": "音量(0-100,空用全局)", "type": "number", "min": 0, "max": 100, "default": 70},
         {"key": "wait_complete", "label": "等待播放完成", "type": "bool", "default": True},
     ],
+    "StartTreeNode": [
+        {"key": "target_tree", "label": "目标行为树", "type": "tree_select", "default": ""},
+        {"key": "sound_path", "label": "启动音效", "type": "file", "width": 120, "filetypes": [("音频文件", "*.mp3 *.wav *.ogg"), ("所有文件", "*.*")]},
+        {"key": "volume", "label": "音量(0-100)", "type": "number", "min": 0, "max": 100, "default": 70},
+    ],
+    "StopTreeNode": [
+        {"key": "target_tree", "label": "目标行为树", "type": "tree_select", "default": ""},
+        {"key": "sound_path", "label": "停止音效", "type": "file", "width": 120, "filetypes": [("音频文件", "*.mp3 *.wav *.ogg"), ("所有文件", "*.*")]},
+        {"key": "volume", "label": "音量(0-100)", "type": "number", "min": 0, "max": 100, "default": 70},
+    ],
     "TextInputNode": [
         {"key": "input_mode", "label": "输入模式", "type": "select", "options": ["文本提取值", "预设文本", "文件"], "default": "文本提取值"},
         {"key": "preset_texts", "label": "预设文本(每行一条)", "type": "text_list", "hide_if": {"field": "input_mode", "value": ["文本提取值", "文件"]}},
@@ -485,6 +495,96 @@ class SelectField(FieldWidget):
     def get_value(self) -> Any:
         current = self.var.get()
         return self._reverse_names.get(current, current)
+
+
+class TreeSelectField(FieldWidget):
+    """行为树选择字段 — 动态获取已加载的 Tab 列表"""
+
+    def __init__(self, master, label: str, key: str, on_change: Callable, default: str = "", **kwargs):
+        self._default = default or ""
+        self._tree_names = []
+        self._display_options = []
+        super().__init__(master, label, key, on_change, **kwargs)
+        # super().__init__ 之后 self.master 才可用
+        self._tree_names = self._get_available_trees()
+        self._display_options = list(self._tree_names)
+        self._create_widget()
+
+    def _create_widget(self):
+        input_frame = ctk.CTkFrame(self, fg_color="transparent")
+        input_frame.pack(fill="x")
+
+        self.var = tk.StringVar(value=self._default)
+
+        # 刷新按钮
+        self.refresh_btn = ctk.CTkButton(
+            input_frame,
+            text="刷新",
+            font=Theme.get_font('sm'),
+            width=50,
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['info'],
+            hover_color=self._dark_colors['info_hover'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            command=self._on_refresh
+        )
+        self.refresh_btn.pack(side="right", padx=(Theme.DIMENSIONS['spacing_xs'], 0))
+
+        # 下拉框
+        self.menu = ctk.CTkOptionMenu(
+            input_frame,
+            variable=self.var,
+            values=self._display_options,
+            font=Theme.get_font('sm'),
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            button_color=self._dark_colors['border'],
+            button_hover_color=self._dark_colors['node_selected'],
+            text_color=self._dark_colors['text_primary'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            command=lambda choice: self.on_change(self.key, choice)
+        )
+        self.menu.pack(side="left", fill="x", expand=True)
+
+    def _on_refresh(self):
+        """点击刷新按钮时刷新选项列表"""
+        self.refresh_options()
+
+    def _get_available_trees(self) -> list:
+        """获取当前已加载的行为树名称列表"""
+        try:
+            # 向上遍历找到 PropertyPanel 实例，通过其 app 获取 editor
+            widget = self.master
+            while widget:
+                if isinstance(widget, PropertyPanel):
+                    app = getattr(widget, 'app', None)
+                    if app and hasattr(app, 'behavior_tree'):
+                        tab_manager = app.behavior_tree.tab_manager
+                        if tab_manager:
+                            return [inst.name for inst in tab_manager._trees.values()]
+                    break
+                widget = widget.master if hasattr(widget, 'master') else None
+        except Exception:
+            pass
+        return []
+
+    def refresh_options(self):
+        """刷新下拉选项"""
+        current_value = self.var.get() if hasattr(self, 'var') else ""
+        self._tree_names = self._get_available_trees()
+        self._display_options = list(self._tree_names)
+        self.menu.configure(values=self._display_options)
+        # 恢复之前选中的值
+        if current_value and current_value in self._display_options:
+            self.var.set(current_value)
+
+    def set_value(self, value: Any):
+        val = str(value) if value else ""
+        if val in self._display_options:
+            self.var.set(val)
+
+    def get_value(self) -> Any:
+        return self.var.get()
 
 
 class BoolField(FieldWidget):
@@ -2700,6 +2800,10 @@ class PropertyPanel(ctk.CTkFrame):
             if key in ("name", "enabled"):
                 continue  # 基本信息已单独处理
 
+            # TreeSelectField 需要刷新选项列表
+            if isinstance(widget, TreeSelectField):
+                widget.refresh_options()
+
             value = config_data.get(key)
             if key in self._hidden_values:
                 self._hidden_values[key] = value
@@ -3210,6 +3314,11 @@ class PropertyPanel(ctk.CTkFrame):
             field_widget = TextListField(container, label, key, self._on_field_change)
         elif field_type == "variable_select":
             field_widget = VariableSelectField(container, label, key, self._on_field_change)
+        elif field_type == "tree_select":
+            field_widget = TreeSelectField(container, label, key, self._on_field_change, default=field.get("default", ""))
+            # 创建后刷新选项，确保获取最新的 Tab 列表
+            if isinstance(field_widget, TreeSelectField):
+                field_widget.refresh_options()
         
         if field_widget:
             display_value = value if value is not None else field.get("default")

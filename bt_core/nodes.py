@@ -1534,6 +1534,14 @@ class SubtreeNode(CompositeNode):
             )
             return NodeStatus.FAILURE
 
+        # 同步父上下文的时间信息到子树上下文
+        # 子树上下文在 _create_subtree_context 中创建时 elapsed_time=0.0，
+        # 而 Engine 只更新根上下文的 elapsed_time，
+        # 如果不同步，子树内依赖 elapsed_time 的逻辑（如 childinterval、timeout）会失效
+        if self._subtree_context is not None:
+            self._subtree_context.elapsed_time = context.elapsed_time
+            self._subtree_context.tick_count = context.tick_count
+
         context.push_subtree(self._loaded_path)
 
         try:

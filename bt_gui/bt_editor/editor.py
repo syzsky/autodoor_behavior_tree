@@ -149,7 +149,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self.toolbar.set_project_path(None)
             self.toolbar.set_running(False)
     
-    def _handle_tab_run(self, tab_id: str) -> bool:
+    def _handle_tab_run(self, tab_id: str, skip_sound: bool = False) -> bool:
         instance = self.tab_manager.get_tab(tab_id)
         if not instance or instance.is_running:
             return False
@@ -179,7 +179,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         engine._on_status_change = lambda status, node_status=None: self._on_tab_engine_status_change(tab_id, status, node_status)
         
         context = ExecutionContext(project_root=instance.project_root)
-        context._on_node_status = self._on_node_status
+        context._on_node_status = lambda node_id, status, tid=tab_id: self._on_node_status(node_id, status, tid)
+        context.set_tab_manager(self.tab_manager, tab_id)
         
         instance.engine = engine
         instance.context = context
@@ -187,10 +188,11 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         engine.start(context)
         self.tab_manager.update_tab_status(tab_id, True)
         
-        self._play_start_sound()
+        if not skip_sound:
+            self._play_start_sound()
         return True
     
-    def _handle_tab_stop(self, tab_id: str) -> bool:
+    def _handle_tab_stop(self, tab_id: str, skip_sound: bool = False) -> bool:
         instance = self.tab_manager.get_tab(tab_id)
         if not instance or not instance.is_running:
             return False
@@ -216,7 +218,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             instance.canvas.after(100, lambda: instance.canvas.clear_all_node_status() if instance.canvas else None)
             instance.canvas.after(200, lambda: self._restore_canvas_focus_for_tab(tab_id))
         
-        self._play_stop_sound()
+        if not skip_sound:
+            self._play_stop_sound()
         return True
     
     def _restore_canvas_focus_for_tab(self, tab_id: str):
@@ -1658,7 +1661,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         except Exception:
             pass
 
-    def _on_node_status(self, node_id: str, status: str):
+    def _on_node_status(self, node_id: str, status: str, tab_id: str = None):
         from .node_item import NodeExecutionStatus
         status_map = {
             "running": NodeExecutionStatus.RUNNING,
@@ -1669,11 +1672,15 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         }
         node_status = status_map.get(status, NodeExecutionStatus.IDLE)
         
-        if self.canvas and node_id in self.canvas.nodes:
-            self.canvas.set_node_status(node_id, node_status)
+        # 如果指定了 tab_id，只更新对应 tab 的画布
+        if tab_id:
+            instance = self.tab_manager.get_tab(tab_id)
+            if instance and instance.canvas and node_id in instance.canvas.nodes:
+                instance.canvas.set_node_status(node_id, node_status)
             return
         
-        for tab_id, instance in self.tab_manager._trees.items():
+        # 兼容旧调用：未指定 tab_id 时遍历所有 tab 查找
+        for tid, instance in self.tab_manager._trees.items():
             if instance.canvas and node_id in instance.canvas.nodes:
                 instance.canvas.set_node_status(node_id, node_status)
                 return
