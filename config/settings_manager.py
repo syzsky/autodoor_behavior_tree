@@ -98,7 +98,12 @@ class SettingsManager:
         "shortcuts": {
             "start": "F10",
             "stop": "F12",
-            "record": "F11"
+            "record": "F11",
+            "tab_shortcuts": [
+                {"hotkey": "F1"},
+                {"hotkey": "F2"},
+                {"hotkey": "F3"}
+            ]
         },
         "behavior_tree": {
             "tick_interval": 50,

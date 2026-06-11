@@ -529,6 +529,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._start_shortcut = start_key
         self._stop_shortcut = stop_key
         self._record_shortcut = record_key
+        self._tab_shortcut_keys = []  # 单树快捷键注册列表
         
         def start_callback():
             LogManager.debug_print(f"[DEBUG] F10 pressed, _is_running={self._is_running}")
@@ -541,6 +542,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._hotkey_manager.register(start_key, start_callback)
         self._hotkey_manager.register(stop_key, stop_callback)
         self._hotkey_manager.register(record_key, self._toggle_recording)
+        
+        # 注册单树快捷键
+        self._register_tab_shortcuts()
         
         self._hotkey_manager.start()
     
@@ -570,6 +574,70 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if record_key:
             self._hotkey_manager.register(record_key, self._toggle_recording)
             self._record_shortcut = record_key
+    
+    def _register_tab_shortcuts(self):
+        """从设置中注册单树快捷键"""
+        # 先注销已有的单树快捷键
+        for key in self._tab_shortcut_keys:
+            self._hotkey_manager.unregister(key)
+        self._tab_shortcut_keys.clear()
+        
+        try:
+            from config.settings_manager import SettingsManager
+            settings_manager = SettingsManager.get_instance()
+            tab_shortcuts = settings_manager.get("shortcuts.tab_shortcuts", [])
+            
+            for ts in tab_shortcuts:
+                hotkey = ts.get("hotkey", "").strip()
+                if not hotkey:
+                    continue
+                tab_name = ts.get("tab_name", "").strip()
+                # 使用闭包绑定 tab_name
+                callback = lambda tn=tab_name: self._toggle_tab(tn)
+                self._hotkey_manager.register(hotkey, callback)
+                self._tab_shortcut_keys.append(hotkey)
+        except Exception:
+            pass
+    
+    def update_tab_shortcuts(self, tab_shortcuts: list):
+        """更新单树快捷键绑定（由设置页面调用）"""
+        # 先注销已有的单树快捷键
+        for key in self._tab_shortcut_keys:
+            self._hotkey_manager.unregister(key)
+        self._tab_shortcut_keys.clear()
+        
+        for ts in tab_shortcuts:
+            hotkey = ts.get("hotkey", "").strip()
+            if not hotkey:
+                continue
+            tab_name = ts.get("tab_name", "").strip()
+            callback = lambda tn=tab_name: self._toggle_tab(tn)
+            self._hotkey_manager.register(hotkey, callback)
+            self._tab_shortcut_keys.append(hotkey)
+    
+    def _toggle_tab(self, tab_name: str):
+        """切换指定行为树的运行/停止状态"""
+        if not tab_name:
+            return
+        
+        # 按 tab_name 查找对应的 tab_id
+        target_tab_id = None
+        for tid, instance in self.tab_manager._trees.items():
+            if instance.name == tab_name:
+                target_tab_id = tid
+                break
+        
+        if not target_tab_id:
+            return
+        
+        instance = self.tab_manager.get_tab(target_tab_id)
+        if not instance:
+            return
+        
+        if instance.is_running:
+            self._handle_tab_stop(target_tab_id)
+        else:
+            self._handle_tab_run(target_tab_id)
     
     def _on_node_add_from_palette(self, node_type: str):
         self._node_counter += 1

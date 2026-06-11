@@ -516,19 +516,19 @@ class TreeSelectField(FieldWidget):
 
         self.var = tk.StringVar(value=self._default)
 
-        # 刷新按钮
-        self.refresh_btn = ctk.CTkButton(
+        # 清空按钮
+        self.clear_btn = ctk.CTkButton(
             input_frame,
-            text="刷新",
+            text="清空",
             font=Theme.get_font('sm'),
             width=50,
             height=Theme.DIMENSIONS['input_height'],
             fg_color=self._dark_colors['info'],
             hover_color=self._dark_colors['info_hover'],
             corner_radius=Theme.DIMENSIONS['button_corner_radius'],
-            command=self._on_refresh
+            command=self._on_clear
         )
-        self.refresh_btn.pack(side="right", padx=(Theme.DIMENSIONS['spacing_xs'], 0))
+        self.clear_btn.pack(side="right", padx=(Theme.DIMENSIONS['spacing_xs'], 0))
 
         # 下拉框
         self.menu = ctk.CTkOptionMenu(
@@ -546,9 +546,19 @@ class TreeSelectField(FieldWidget):
         )
         self.menu.pack(side="left", fill="x", expand=True)
 
-    def _on_refresh(self):
-        """点击刷新按钮时刷新选项列表"""
-        self.refresh_options()
+        # 通过内部 Menu 的 postcommand 在菜单弹出前刷新选项列表
+        try:
+            internal_menu = self.menu._dropdown_menu
+            if internal_menu:
+                internal_menu.configure(postcommand=lambda: self.refresh_options())
+        except Exception:
+            # 回退方案：绑定点击事件刷新
+            self.menu.bind("<ButtonPress-1>", lambda e: self.refresh_options())
+
+    def _on_clear(self):
+        """点击清空按钮时清空当前选择"""
+        self.var.set("")
+        self.on_change(self.key, "")
 
     def _get_available_trees(self) -> list:
         """获取当前已加载的行为树名称列表"""
@@ -574,9 +584,8 @@ class TreeSelectField(FieldWidget):
         self._tree_names = self._get_available_trees()
         self._display_options = list(self._tree_names)
         self.menu.configure(values=self._display_options)
-        # 恢复之前选中的值
-        if current_value and current_value in self._display_options:
-            self.var.set(current_value)
+        # 始终恢复之前选中的值（包括空值），防止 CTkOptionMenu 自动选择第一项
+        self.var.set(current_value)
 
     def set_value(self, value: Any):
         val = str(value) if value else ""

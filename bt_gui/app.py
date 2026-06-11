@@ -460,6 +460,7 @@ class BehaviorTreeApp(ctk.CTk):
                 self._settings.set("shortcuts.start", shortcuts.get("start", "F10"), auto_save=False)
                 self._settings.set("shortcuts.stop", shortcuts.get("stop", "F12"), auto_save=False)
                 self._settings.set("shortcuts.record", shortcuts.get("record", "F11"), auto_save=False)
+                self._settings.set("shortcuts.tab_shortcuts", shortcuts.get("tab_shortcuts", []), auto_save=False)
         
         if hasattr(self, 'behavior_tree') and self.behavior_tree:
             if hasattr(self.behavior_tree, 'tab_manager'):

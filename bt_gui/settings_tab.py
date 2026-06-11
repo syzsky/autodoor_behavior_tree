@@ -217,6 +217,48 @@ class SettingsTab(ctk.CTkFrame):
             btn.pack(side="left")
         
         ctk.CTkFrame(shortcut_frame, height=6, fg_color="transparent").pack()
+        
+        # ── 单树快捷键设置 ──
+        create_divider(shortcut_frame)
+        
+        tab_shortcut_header = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        tab_shortcut_header.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_sm'], 0))
+        create_section_title(tab_shortcut_header, "单树快捷键", level=2).pack(side="left")
+        
+        tab_shortcut_desc = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        tab_shortcut_desc.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'])
+        ctk.CTkLabel(
+            tab_shortcut_desc, text="为每个行为树绑定独立的启动/停止快捷键（同一快捷键切换运行状态）",
+            font=Theme.get_font("xs"), text_color=self._dark_colors['text_muted']
+        ).pack(side="left")
+        
+        # 单树快捷键列表容器
+        self._tab_shortcut_rows = []
+        self._tab_shortcut_container = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        self._tab_shortcut_container.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'])
+        
+        # 加载已有的单树快捷键配置
+        from config.settings_manager import SettingsManager
+        settings_manager = SettingsManager.get_instance()
+        tab_shortcuts = settings_manager.get("shortcuts.tab_shortcuts", [
+            {"hotkey": "F1"}, {"hotkey": "F2"}, {"hotkey": "F3"}
+        ])
+        for ts in tab_shortcuts:
+            self._add_tab_shortcut_row(ts.get("hotkey", ""), ts.get("tab_name", ""))
+        
+        # 添加按钮
+        add_btn_row = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        add_btn_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_xs'], Theme.DIMENSIONS['spacing_md']))
+        
+        AnimatedButton(
+            add_btn_row, text="+ 添加快捷键", font=Theme.get_font("xs"),
+            width=100, height=26,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=Theme.COLORS['primary'], hover_color=Theme.COLORS['primary_hover'],
+            command=self._add_tab_shortcut_row
+        ).pack(side="left")
+        
+        ctk.CTkFrame(shortcut_frame, height=6, fg_color="transparent").pack()
     
     def _create_input_method_section(self, parent):
         from bt_utils.input_manager import InputControllerManager
@@ -539,30 +581,185 @@ class SettingsTab(ctk.CTkFrame):
     def _start_key_listening(self, entry, btn):
         btn.configure(text="请按键...", fg_color=Theme.COLORS['warning'])
         
+        # 暂停全局热键，避免捕获按键时触发已有快捷键
+        from bt_utils.global_hotkey import GlobalHotkeyManager
+        hotkey_mgr = GlobalHotkeyManager.get_instance()
+        was_running = hotkey_mgr.is_running()
+        if was_running:
+            hotkey_mgr.stop()
+        
         from pynput import keyboard
         from bt_utils.key_name_resolver import resolve_key_name
         
+        _pressed_modifiers = set()
+        
+        # 修饰键名称集合（包含 resolve_key_name 返回的各种变体）
+        _modifier_names = {
+            'ctrl', 'ctrl_l', 'ctrl_r', 'ctrlleft', 'ctrlright',
+            'alt', 'alt_l', 'alt_r', 'altleft', 'altright',
+            'shift', 'shift_l', 'shift_r', 'shiftleft', 'shiftright',
+            'cmd', 'cmd_l', 'cmd_r', 'win', 'win_l', 'win_r'
+        }
+        
+        def _normalize_modifier(name):
+            """将修饰键变体统一为标准名"""
+            if name in ('ctrl', 'ctrl_l', 'ctrl_r', 'ctrlleft', 'ctrlright'):
+                return 'ctrl'
+            elif name in ('alt', 'alt_l', 'alt_r', 'altleft', 'altright'):
+                return 'alt'
+            elif name in ('shift', 'shift_l', 'shift_r', 'shiftleft', 'shiftright'):
+                return 'shift'
+            elif name in ('cmd', 'cmd_l', 'cmd_r', 'win', 'win_l', 'win_r'):
+                return 'cmd'
+            return None
+        
         def on_press(key):
             key_name = resolve_key_name(key)
-            if key_name:
-                display_name = key_name.upper() if len(key_name) > 1 else key_name
-                try:
-                    self.after(0, lambda: self._apply_settings_captured_key(entry, btn, display_name))
-                except Exception:
-                    pass
-                return False
+            if not key_name:
+                return
+            
+            # 修饰键只记录，不停止监听
+            if key_name in _modifier_names:
+                mod = _normalize_modifier(key_name)
+                if mod:
+                    _pressed_modifiers.add(mod)
+                return
+            
+            # 非修饰键：组合修饰键形成组合键名
+            parts = sorted(_pressed_modifiers) + [key_name]
+            display_name = "+".join(p.upper() if len(p) > 1 else p for p in parts)
+            try:
+                self.after(0, lambda: self._apply_settings_captured_key(entry, btn, display_name))
+            except Exception:
+                pass
+            return False
         
-        self._settings_listener = keyboard.Listener(on_press=on_press)
+        def on_release(key):
+            key_name = resolve_key_name(key)
+            if key_name and key_name in _modifier_names:
+                mod = _normalize_modifier(key_name)
+                if mod:
+                    _pressed_modifiers.discard(mod)
+        
+        self._settings_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         self._settings_listener.start()
         
         def reset_listening():
             self._stop_settings_listener()
+            # 恢复全局热键
+            if was_running:
+                hotkey_mgr.start()
             try:
                 btn.configure(text="修改", fg_color=Theme.COLORS['primary'])
             except Exception:
                 pass
         
         self._settings_timeout = self.after(10000, reset_listening)
+    
+    def _add_tab_shortcut_row(self, hotkey: str = "", tab_name: str = ""):
+        """添加一行单树快捷键配置"""
+        row_frame = ctk.CTkFrame(self._tab_shortcut_container, fg_color="transparent")
+        row_frame.pack(fill="x", pady=2)
+        
+        # 快捷键输入框
+        hotkey_var = tk.StringVar(value=hotkey)
+        hotkey_entry = ctk.CTkEntry(
+            row_frame, textvariable=hotkey_var,
+            width=80, height=24, state="disabled",
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary']
+        )
+        hotkey_entry.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        
+        # 修改快捷键按钮
+        capture_btn = AnimatedButton(
+            row_frame, text="修改", font=Theme.get_font("xs"),
+            width=40, height=24,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=Theme.COLORS['primary'], hover_color=Theme.COLORS['primary_hover']
+        )
+        capture_btn.configure(command=lambda e=hotkey_entry, b=capture_btn: self._start_key_listening(e, b))
+        capture_btn.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_sm']))
+        
+        # 目标行为树下拉框
+        tree_names = self._get_available_tree_names()
+        if tab_name and tab_name not in tree_names:
+            tree_names.insert(0, tab_name)
+        
+        tree_var = tk.StringVar(value=tab_name)
+        tree_var.trace_add("write", lambda *args: self._update_editor_shortcuts())
+        tree_combo = ctk.CTkOptionMenu(
+            row_frame, variable=tree_var, values=tree_names,
+            width=150, height=24,
+            font=Theme.get_font("xs"),
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+            button_color=Theme.COLORS['primary'],
+            button_hover_color=Theme.COLORS['primary_hover']
+        )
+        tree_combo.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        
+        # 通过内部 Menu 的 postcommand 在菜单弹出前刷新选项
+        try:
+            internal_menu = tree_combo._dropdown_menu
+            if internal_menu:
+                internal_menu.configure(postcommand=lambda c=tree_combo: self._refresh_tree_combo(c))
+        except Exception:
+            # 回退方案：绑定点击事件刷新
+            tree_combo.bind("<ButtonPress-1>", lambda e, c=tree_combo: self._refresh_tree_combo(c))
+        
+        # 清空按钮
+        clear_btn = AnimatedButton(
+            row_frame, text="清空", font=Theme.get_font("xs"),
+            width=36, height=24,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            hover_color=self._dark_colors['bg_elevated']
+        )
+        clear_btn.configure(command=lambda v=tree_var: v.set(""))
+        clear_btn.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        
+        # 删除按钮
+        remove_btn = AnimatedButton(
+            row_frame, text="×", font=Theme.get_font("xs"),
+            width=24, height=24,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            hover_color=Theme.COLORS['error']
+        )
+        remove_btn.configure(command=lambda f=row_frame: self._remove_tab_shortcut_row(f))
+        remove_btn.pack(side="left")
+        
+        self._tab_shortcut_rows.append({
+            "frame": row_frame,
+            "hotkey_var": hotkey_var,
+            "tree_var": tree_var,
+            "tree_combo": tree_combo
+        })
+    
+    def _remove_tab_shortcut_row(self, frame):
+        """删除一行单树快捷键配置"""
+        self._tab_shortcut_rows = [r for r in self._tab_shortcut_rows if r["frame"] != frame]
+        frame.destroy()
+        self._update_editor_shortcuts()
+    
+    def _get_available_tree_names(self) -> list:
+        """获取当前已加载的行为树名称列表"""
+        try:
+            if hasattr(self.app, 'behavior_tree') and hasattr(self.app.behavior_tree, 'tab_manager'):
+                tab_manager = self.app.behavior_tree.tab_manager
+                return [inst.name for inst in tab_manager._trees.values()]
+        except Exception:
+            pass
+        return []
+    
+    def _refresh_tree_combo(self, combo):
+        """刷新行为树下拉框选项"""
+        tree_names = self._get_available_tree_names()
+        current = combo.get()
+        combo.configure(values=tree_names)
+        # 始终恢复之前选中的值（包括空值），防止 CTkOptionMenu 自动选择第一项
+        combo.set(current)
     
     def _apply_settings_captured_key(self, entry, btn, key_name):
         entry.configure(state="normal")
@@ -573,6 +770,11 @@ class SettingsTab(ctk.CTkFrame):
         btn.configure(text="修改", fg_color=Theme.COLORS['primary'])
         
         self._stop_settings_listener()
+        
+        # 恢复全局热键
+        from bt_utils.global_hotkey import GlobalHotkeyManager
+        hotkey_mgr = GlobalHotkeyManager.get_instance()
+        hotkey_mgr.start()
         self._update_editor_shortcuts()
     
     def _stop_settings_listener(self):
@@ -596,16 +798,40 @@ class SettingsTab(ctk.CTkFrame):
             record_key = self.record_hotkey_var.get()
             
             settings_manager = SettingsManager.get_instance()
-            settings_manager.set("shortcuts.start", start_key, auto_save=True)
-            settings_manager.set("shortcuts.stop", stop_key, auto_save=True)
-            settings_manager.set("shortcuts.record", record_key, auto_save=True)
+            settings_manager.set("shortcuts.start", start_key, auto_save=False)
+            settings_manager.set("shortcuts.stop", stop_key, auto_save=False)
+            settings_manager.set("shortcuts.record", record_key, auto_save=False)
+            
+            # 保存单树快捷键
+            tab_shortcuts = []
+            for row in self._tab_shortcut_rows:
+                hotkey = row["hotkey_var"].get().strip()
+                tab_name = row["tree_var"].get().strip()
+                entry = {"hotkey": hotkey}
+                if tab_name:
+                    entry["tab_name"] = tab_name
+                tab_shortcuts.append(entry)
+            settings_manager.set("shortcuts.tab_shortcuts", tab_shortcuts, auto_save=True)
             
             if hasattr(self.app, 'behavior_tree') and hasattr(self.app.behavior_tree, 'update_run_shortcuts'):
                 self.app.behavior_tree.update_run_shortcuts(start_key, stop_key, record_key)
+            
+            # 更新单树快捷键绑定
+            if hasattr(self.app, 'behavior_tree') and hasattr(self.app.behavior_tree, 'update_tab_shortcuts'):
+                self.app.behavior_tree.update_tab_shortcuts(tab_shortcuts)
         except Exception:
             pass
     
     def get_settings(self):
+        tab_shortcuts = []
+        for row in self._tab_shortcut_rows:
+            hotkey = row["hotkey_var"].get().strip()
+            tab_name = row["tree_var"].get().strip()
+            entry = {"hotkey": hotkey}
+            if tab_name:
+                entry["tab_name"] = tab_name
+            tab_shortcuts.append(entry)
+        
         return {
             "alarm_sound_path": self.alarm_sound_path.get(),
             "alarm_volume": self.alarm_volume.get(),
@@ -613,7 +839,8 @@ class SettingsTab(ctk.CTkFrame):
             "shortcuts": {
                 "start": self.start_shortcut_var.get(),
                 "stop": self.stop_shortcut_var.get(),
-                "record": self.record_hotkey_var.get()
+                "record": self.record_hotkey_var.get(),
+                "tab_shortcuts": tab_shortcuts
             },
             "keyboard_method": self._current_keyboard_method,
             "mouse_method": self._current_mouse_method,
@@ -656,6 +883,14 @@ class SettingsTab(ctk.CTkFrame):
                 self.stop_shortcut_var.set(shortcuts["stop"])
             if "record" in shortcuts:
                 self.record_hotkey_var.set(shortcuts["record"])
+            if "tab_shortcuts" in shortcuts:
+                # 清除现有行
+                for row in self._tab_shortcut_rows:
+                    row["frame"].destroy()
+                self._tab_shortcut_rows.clear()
+                # 加载配置
+                for ts in shortcuts["tab_shortcuts"]:
+                    self._add_tab_shortcut_row(ts.get("hotkey", ""), ts.get("tab_name", ""))
         
         if "input" in settings:
             input_settings = settings["input"]
