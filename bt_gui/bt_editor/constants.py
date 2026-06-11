@@ -11,6 +11,7 @@ NODE_CATEGORY_MAP = {
     "NumberConditionNode": "condition",
     "VariableConditionNode": "condition",
     "TextExtractNode": "condition",
+    "YOLOConditionNode": "condition",
     "KeyPressNode": "action",
     "MouseClickNode": "action",
     "MouseMoveNode": "action",
@@ -36,6 +37,7 @@ NODE_DISPLAY_NAMES = {
     "NumberConditionNode": "数字比较",
     "VariableConditionNode": "变量判断",
     "TextExtractNode": "文本提取",
+    "YOLOConditionNode": "YOLO检测",
     "KeyPressNode": "按键",
     "MouseClickNode": "点击",
     "MouseMoveNode": "移动",
@@ -61,6 +63,7 @@ NODE_DESCRIPTIONS = {
     "NumberConditionNode": "比较数值大小",
     "VariableConditionNode": "判断变量值",
     "TextExtractNode": "从指定区域提取文本",
+    "YOLOConditionNode": "使用YOLO模型检测目标（人/物等）",
     "KeyPressNode": "模拟键盘按键",
     "MouseClickNode": "模拟鼠标点击",
     "MouseMoveNode": "移动鼠标位置",
@@ -74,7 +77,7 @@ NODE_DESCRIPTIONS = {
 }
 
 COMPOSITE_NODES = ["SequenceNode", "SelectorNode", "ParallelNode", "RandomNode", "SubtreeNode"]
-CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode"]
+CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode", "YOLOConditionNode"]
 ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode"]
 
 ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES
@@ -115,6 +118,7 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("NumberConditionNode", "数字比较", "比较数值大小"),
                 ("VariableConditionNode", "变量判断", "判断变量值"),
                 ("TextExtractNode", "文本提取", "从指定区域提取文本"),
+                ("YOLOConditionNode", "YOLO检测", "使用YOLO模型检测目标"),
             ]
         },
         "动作节点": {

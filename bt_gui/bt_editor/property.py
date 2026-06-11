@@ -65,6 +65,22 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
         {"key": "offset", "label": "坐标偏移", "type": "offset"},
     ],
+    "YOLOConditionNode": [
+        {"key": "region_mode", "label": "区域选择方式", "type": "select", "options": ["fixed", "dynamic"], "display_names": {"fixed": "固定区域检测", "dynamic": "动态区域检测"}, "default": "fixed"},
+        {"key": "region", "label": "检测区域", "type": "region", "hide_if": {"field": "region_mode", "value": "dynamic"}},
+        {"key": "region_use_last_pos", "label": "锚点设置最近检测点", "type": "bool", "default": True, "hide_if": {"field": "region_mode", "value": "fixed"}},
+        {"key": "region_anchor", "label": "位置变量名", "type": "text", "default": "", "hide_if": {"field": "region_mode", "value": "fixed"}},
+        {"key": "region_offset", "label": "区域偏移量", "type": "region_offset", "default": [-50, -50, 50, 50], "hide_if": {"field": "region_mode", "value": "fixed"}},
+        {"key": "model_path", "label": "模型文件", "type": "screenshot", "width": 120, "filetypes": [("YOLO模型", "*.pt"), ("所有文件", "*.*")]},
+        {"key": "class_names", "label": "目标类别(名称)", "type": "text", "default": ""},
+        {"key": "classes", "label": "目标类别(ID)", "type": "text", "default": ""},
+        {"key": "confidence", "label": "置信度阈值(%)", "type": "number", "min": 0, "max": 100, "default": 50},
+        {"key": "match_mode", "label": "匹配模式", "type": "select", "options": ["any", "count"], "display_names": {"any": "任一目标", "count": "数量条件"}, "default": "any"},
+        {"key": "min_count", "label": "最小目标数", "type": "number", "min": 1, "default": 1, "hide_if": {"field": "match_mode", "value": "any"}},
+        {"key": "position_key", "label": "位置变量名", "type": "text", "default": ""},
+        {"key": "position_key_all", "label": "全部位置变量名", "type": "text", "default": ""},
+        {"key": "offset", "label": "坐标偏移", "type": "offset"},
+    ],
     "VariableConditionNode": {
         "variable_name": {
             "type": "text",

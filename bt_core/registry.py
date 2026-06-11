@@ -82,6 +82,7 @@ def register_all_nodes():
     from bt_nodes.conditions.number import NumberConditionNode
     from bt_nodes.conditions.variable import VariableConditionNode
     from bt_nodes.conditions.text_extract import TextExtractNode
+    from bt_nodes.conditions.yolo import YOLOConditionNode
     
     NodeRegistry.register("OCRConditionNode", OCRConditionNode)
     NodeRegistry.register("ImageConditionNode", ImageConditionNode)
@@ -89,3 +90,4 @@ def register_all_nodes():
     NodeRegistry.register("NumberConditionNode", NumberConditionNode)
     NodeRegistry.register("VariableConditionNode", VariableConditionNode)
     NodeRegistry.register("TextExtractNode", TextExtractNode)
+    NodeRegistry.register("YOLOConditionNode", YOLOConditionNode)
