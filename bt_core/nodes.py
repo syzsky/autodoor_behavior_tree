@@ -1226,7 +1226,32 @@ class ActionNode(Node):
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
         bound_window = context.get_bound_window()
 
+        # 后台模式：跳过窗口切换，直接执行动作
         if bound_window and not self.SKIP_WINDOW_SWITCH:
+            # 检查是否为后台输入模式
+            is_bg_mode = False
+            try:
+                manager = context._get_input_manager()
+                is_bg_mode = (manager.get_keyboard_method() == "bg" or manager.get_mouse_method() == "bg")
+            except Exception:
+                pass
+
+            if is_bg_mode:
+                # 后台模式不需要切换窗口
+                if not self._children_running:
+                    LogManager.debug_print(f"[DEBUG] ActionNode '{self.name}' 后台模式，跳过窗口切换")
+                    status = self._execute_action(context)
+                    self.status = status
+
+                    if status == NodeStatus.SUCCESS and self.children:
+                        context.notify_node_status(self.node_id, "success")
+                        self._children_running = True
+                        return self._execute_children(context)
+
+                    return status
+                else:
+                    return self._execute_children(context)
+
             if self._children_running:
                 return self._execute_children(context)
             
@@ -1508,6 +1533,14 @@ class SubtreeNode(CompositeNode):
                 reason="子树加载失败"
             )
             return NodeStatus.FAILURE
+
+        # 同步父上下文的时间信息到子树上下文
+        # 子树上下文在 _create_subtree_context 中创建时 elapsed_time=0.0，
+        # 而 Engine 只更新根上下文的 elapsed_time，
+        # 如果不同步，子树内依赖 elapsed_time 的逻辑（如 childinterval、timeout）会失效
+        if self._subtree_context is not None:
+            self._subtree_context.elapsed_time = context.elapsed_time
+            self._subtree_context.tick_count = context.tick_count
 
         context.push_subtree(self._loaded_path)
 

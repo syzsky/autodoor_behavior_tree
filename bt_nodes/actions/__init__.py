@@ -7,6 +7,8 @@ from .script import ScriptNode
 from .code import CodeNode
 from .alarm import AlarmNode
 from .text_input import TextInputNode
+from .start_tree import StartTreeNode
+from .stop_tree import StopTreeNode
 
 from bt_core.registry import NodeRegistry
 
@@ -20,6 +22,8 @@ NodeRegistry.register("ScriptNode", ScriptNode)
 NodeRegistry.register("CodeNode", CodeNode)
 NodeRegistry.register("AlarmNode", AlarmNode)
 NodeRegistry.register("TextInputNode", TextInputNode)
+NodeRegistry.register("StartTreeNode", StartTreeNode)
+NodeRegistry.register("StopTreeNode", StopTreeNode)
 
 __all__ = [
     "KeyPressNode",
@@ -32,4 +36,6 @@ __all__ = [
     "CodeNode",
     "AlarmNode",
     "TextInputNode",
+    "StartTreeNode",
+    "StopTreeNode",
 ]

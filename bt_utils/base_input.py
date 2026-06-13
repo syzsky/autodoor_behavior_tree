@@ -1,109 +1,87 @@
 from abc import ABC, abstractmethod
-from typing import Tuple
+from enum import Enum
+from typing import Tuple, Optional
 
 
-class BaseInputController(ABC):
-    """输入控制器基类
+class InputLevel(Enum):
+    """输入模拟层级"""
+    APPLICATION = "application"
+    DRIVER = "driver"
+    BACKGROUND = "background"
 
-    定义输入控制器的标准接口。
-    所有输入控制器实现必须继承此类。
-    """
+
+class BaseKeyboardController(ABC):
+    """键盘输入控制器基类"""
+
+    @classmethod
+    @abstractmethod
+    def get_input_level(cls) -> InputLevel:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def is_driver_available(cls) -> bool:
+        pass
 
     @abstractmethod
     def key_press(self, key: str, action: str = "press", duration: int = 0) -> None:
-        """按键操作
-
-        Args:
-            key: 按键名称
-            action: 动作类型 (press/down/up)
-            duration: 按住时长（毫秒）
-        """
         pass
 
     @abstractmethod
     def key_down(self, key: str) -> None:
-        """按下按键
-
-        Args:
-            key: 按键名称
-        """
         pass
 
     @abstractmethod
     def key_up(self, key: str) -> None:
-        """释放按键
-
-        Args:
-            key: 按键名称
-        """
         pass
+
+    @classmethod
+    def is_simulating(cls) -> bool:
+        return False
+
+    @classmethod
+    def release_all_keys(cls) -> None:
+        """释放所有按下的按键"""
+        pass
+
+    def get_name(self) -> str:
+        return self.__class__.__name__
+
+    def set_target_window(self, hwnd: int) -> None:
+        pass
+
+    def get_target_window(self) -> Optional[int]:
+        return None
+
+
+class BaseMouseController(ABC):
+    """鼠标输入控制器基类"""
 
     @abstractmethod
     def mouse_click(self, button: str = "left", position: Tuple[int, int] = None,
                    action: str = "press", duration: int = 0) -> None:
-        """鼠标点击
-
-        Args:
-            button: 鼠标按钮 (left/right/middle)
-            position: 点击位置 (x, y)
-            action: 动作类型 (press/down/up)
-            duration: 按住时长（毫秒）
-        """
         pass
 
     @abstractmethod
     def mouse_down(self, button: str = "left") -> None:
-        """按下鼠标
-
-        Args:
-            button: 鼠标按钮
-        """
         pass
 
     @abstractmethod
     def mouse_up(self, button: str = "left") -> None:
-        """释放鼠标
-
-        Args:
-            button: 鼠标按钮
-        """
         pass
 
     @abstractmethod
     def mouse_move(self, position: Tuple[int, int], relative: bool = False) -> None:
-        """移动鼠标
-
-        Args:
-            position: 目标位置 (x, y)
-            relative: 是否相对移动
-        """
         pass
 
     @abstractmethod
     def mouse_scroll(self, amount: int, position: Tuple[int, int] = None) -> None:
-        """鼠标滚轮
-
-        Args:
-            amount: 滚动量
-            position: 滚动位置
-        """
         pass
 
     def move_to(self, x: int, y: int) -> None:
-        """移动鼠标到指定位置
-
-        Args:
-            x: X坐标
-            y: Y坐标
-        """
         self.mouse_move((x, y), relative=False)
 
     def get_position(self) -> Tuple[int, int]:
-        """获取当前鼠标位置
-
-        Returns:
-            当前鼠标位置 (x, y)
-        """
         try:
             import pyautogui
             return pyautogui.position()
@@ -111,23 +89,25 @@ class BaseInputController(ABC):
             return (0, 0)
 
     @classmethod
-    def is_simulating(cls) -> bool:
-        """检查当前是否正在执行模拟操作
+    def release_all_mouse(cls) -> None:
+        """释放所有按下的鼠标按钮"""
+        pass
 
-        Returns:
-            是否正在执行模拟操作
-        """
-        return False
+    def get_name(self) -> str:
+        return self.__class__.__name__
+
+    def set_target_window(self, hwnd: int) -> None:
+        pass
+
+    def get_target_window(self) -> Optional[int]:
+        return None
+
+
+class BaseInputController(BaseKeyboardController, BaseMouseController):
+    """组合基类：同时实现键盘和鼠标（向后兼容）"""
 
     @classmethod
     def release_all(cls) -> None:
         """释放所有按下的按键和鼠标按钮"""
-        pass
-
-    def get_name(self) -> str:
-        """获取控制器名称
-
-        Returns:
-            控制器名称
-        """
-        return self.__class__.__name__
+        cls.release_all_keys()
+        cls.release_all_mouse()

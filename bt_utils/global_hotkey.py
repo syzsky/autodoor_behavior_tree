@@ -35,6 +35,7 @@ class GlobalHotkeyManager:
         self._running = False
         self._last_trigger_time: Dict[str, float] = {}
         self._debounce_interval = 0.1
+        self._pressed_modifiers: set = set()  # 当前按下的修饰键
     
     @classmethod
     def get_instance(cls) -> "GlobalHotkeyManager":
@@ -73,6 +74,7 @@ class GlobalHotkeyManager:
                 self._listener.stop()
                 self._listener = None
             self._last_trigger_time.clear()
+            self._pressed_modifiers.clear()
     
     def register(self, key_name: str, callback: Callable):
         """注册热键
@@ -147,6 +149,27 @@ class GlobalHotkeyManager:
         
         return "+".join(sorted(normalized_parts))
     
+    # 修饰键名称集合（包含 resolve_key_name 返回的各种变体）
+    _MODIFIER_NAMES = {
+        'ctrl', 'ctrl_l', 'ctrl_r', 'ctrlleft', 'ctrlright',
+        'alt', 'alt_l', 'alt_r', 'altleft', 'altright',
+        'shift', 'shift_l', 'shift_r', 'shiftleft', 'shiftright',
+        'cmd', 'cmd_l', 'cmd_r', 'win', 'win_l', 'win_r'
+    }
+    
+    @staticmethod
+    def _normalize_modifier(name: str) -> str:
+        """将修饰键变体统一为标准名"""
+        if name in ('ctrl', 'ctrl_l', 'ctrl_r', 'ctrlleft', 'ctrlright'):
+            return 'ctrl'
+        elif name in ('alt', 'alt_l', 'alt_r', 'altleft', 'altright'):
+            return 'alt'
+        elif name in ('shift', 'shift_l', 'shift_r', 'shiftleft', 'shiftright'):
+            return 'shift'
+        elif name in ('cmd', 'cmd_l', 'cmd_r', 'win', 'win_l', 'win_r'):
+            return 'cmd'
+        return ""
+    
     def _on_press(self, key):
         """按键按下事件处理"""
         try:
@@ -156,13 +179,25 @@ class GlobalHotkeyManager:
             
             key_name = self._get_key_name(key)
             if key_name:
-                self._check_hotkey(key_name)
+                if key_name in self._MODIFIER_NAMES:
+                    mod = self._normalize_modifier(key_name)
+                    if mod:
+                        self._pressed_modifiers.add(mod)
+                else:
+                    self._check_hotkey(key_name)
         except Exception:
             pass
     
     def _on_release(self, key):
         """按键释放事件处理"""
-        pass
+        try:
+            key_name = self._get_key_name(key)
+            if key_name and key_name in self._MODIFIER_NAMES:
+                mod = self._normalize_modifier(key_name)
+                if mod:
+                    self._pressed_modifiers.discard(mod)
+        except Exception:
+            pass
     
     def _get_key_name(self, key) -> str:
         key_name = resolve_key_name(key)
@@ -182,20 +217,34 @@ class GlobalHotkeyManager:
     def _check_hotkey(self, key_name: str):
         """检查是否触发了注册的热键
         
+        支持组合键：将当前按下的修饰键与非修饰键组合，形成如 "shift+f10" 的组合键名
+        
         Args:
-            key_name: 按键名称
+            key_name: 按键名称（非修饰键）
         """
+        # 构建组合键名：修饰键 + 当前键
+        combo_parts = list(self._pressed_modifiers) + [key_name]
+        combo_key = "+".join(sorted(combo_parts))
+        
+        # 有修饰键时只匹配组合键，无修饰键时只匹配单键，避免 Shift+F9 同时触发 F9
+        if self._pressed_modifiers:
+            candidates = [combo_key]
+        else:
+            candidates = [key_name]
+        
         callback = None
         with self._lock:
-            if key_name in self._hotkeys:
-                current_time = time.time()
-                last_time = self._last_trigger_time.get(key_name, 0)
-                
-                if current_time - last_time < self._debounce_interval:
-                    return
-                
-                self._last_trigger_time[key_name] = current_time
-                callback = self._hotkeys[key_name]
+            for candidate in candidates:
+                if candidate in self._hotkeys:
+                    current_time = time.time()
+                    last_time = self._last_trigger_time.get(candidate, 0)
+                    
+                    if current_time - last_time < self._debounce_interval:
+                        return
+                    
+                    self._last_trigger_time[candidate] = current_time
+                    callback = self._hotkeys[candidate]
+                    break
         
         if callback:
             try:

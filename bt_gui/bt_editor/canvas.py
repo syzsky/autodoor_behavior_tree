@@ -1597,10 +1597,17 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         
         root_id = None
         all_children = {c for _, c in self.connections}
-        for node_id in self.nodes:
-            if node_id not in all_children:
+        # 优先选择 StartNode 类型的节点作为根节点
+        for node_id, node in self.nodes.items():
+            if node_id not in all_children and node.node_type == "StartNode":
                 root_id = node_id
                 break
+        # 如果没有找到 StartNode，回退到第一个非子节点
+        if root_id is None:
+            for node_id in self.nodes:
+                if node_id not in all_children:
+                    root_id = node_id
+                    break
         
         return {
             "version": "2.0",

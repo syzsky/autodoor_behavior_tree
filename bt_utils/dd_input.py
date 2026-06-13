@@ -8,7 +8,7 @@ import ctypes
 import time
 from typing import Optional, Tuple
 
-from .base_input import BaseInputController
+from .base_input import BaseInputController, InputLevel
 
 
 VK_CODE_MAP = {
@@ -114,6 +114,25 @@ class DDVirtualInput(BaseInputController):
     
     _stop_requested = False  # 类变量：全局停止标志
     
+    @classmethod
+    def get_input_level(cls) -> InputLevel:
+        return InputLevel.DRIVER
+    
+    @classmethod
+    def is_driver_available(cls) -> bool:
+        """检测DD64.dll是否可用（类方法，无需实例化）"""
+        possible_paths = []
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        if getattr(sys, 'frozen', False):
+            base_path = sys._MEIPASS
+        possible_paths.extend([
+            os.path.join(os.path.dirname(base_path), "drivers", "DD64.dll"),
+            os.path.join(base_path, "..", "drivers", "DD64.dll"),
+            os.path.join(base_path, "drivers", "DD64.dll"),
+            os.path.join(base_path, "DD64.dll"),
+        ])
+        return any(os.path.exists(p) for p in possible_paths)
+    
     def __init__(self, app=None, dll_path: str = None):
         self._dd_dll = None
         self._available = False
@@ -146,35 +165,118 @@ class DDVirtualInput(BaseInputController):
     def _load_dd_dll(self) -> bool:
         """加载DD虚拟键盘DLL"""
         possible_paths = []
-        
+
         if self._dll_path:
             possible_paths.append(self._dll_path)
-        
+
         base_path = os.path.dirname(os.path.abspath(__file__))
-        
+
         if getattr(sys, 'frozen', False):
             base_path = sys._MEIPASS
-        
+
         possible_paths.extend([
-            os.path.join(base_path, "DD64.dll"),
-            os.path.join(base_path, "drivers", "DD64.dll"),
-            os.path.join(base_path, "..", "drivers", "DD64.dll"),
             os.path.join(os.path.dirname(base_path), "drivers", "DD64.dll"),
+            os.path.join(base_path, "..", "drivers", "DD64.dll"),
+            os.path.join(base_path, "drivers", "DD64.dll"),
+            os.path.join(base_path, "DD64.dll"),
         ])
-        
+
         for path in possible_paths:
             if os.path.exists(path):
                 try:
-                    self._dd_dll = ctypes.windll.LoadLibrary(path)
-                    result = self._dd_dll.DD_btn(0)
+                    self._dd_dll = ctypes.cdll.LoadLibrary(path)
+                    self._setup_dd_api()
+                    # DD64.dll 在初始化失败时会弹出 MessageBox 阻塞进程
+                    # 临时禁用 MessageBox，防止 DLL 弹窗导致应用无法启动
+                    result = self._init_dd_with_silent()
+                    self._log(f"DD_btn(0) init result={result}, dll={path}")
                     if result == 1:
                         self._available = True
                         self._dll_path = path
+                        # 检查管理员权限
+                        self._check_admin()
                         return True
-                except Exception:
+                    else:
+                        self._log(f"DD_btn(0) 返回 {result}，驱动可能未正确安装")
+                        # 初始化失败，释放 DLL 避免资源泄漏
+                        try:
+                            ctypes.windll.kernel32.FreeLibrary(self._dd_dll._handle)
+                        except Exception:
+                            pass
+                        self._dd_dll = None
+                except Exception as e:
+                    self._log(f"加载 {path} 失败: {e}")
+                    self._dd_dll = None
                     continue
-        
+
         return False
+
+    def _setup_dd_api(self):
+        """设置 DD DLL 函数的参数和返回类型"""
+        if not self._dd_dll:
+            return
+        try:
+            # DD_btn(int) -> int
+            self._dd_dll.DD_btn.argtypes = [ctypes.c_int]
+            self._dd_dll.DD_btn.restype = ctypes.c_int
+            # DD_mov(int, int) -> int
+            self._dd_dll.DD_mov.argtypes = [ctypes.c_int, ctypes.c_int]
+            self._dd_dll.DD_mov.restype = ctypes.c_int
+            # DD_movR(int, int) -> int
+            self._dd_dll.DD_movR.argtypes = [ctypes.c_int, ctypes.c_int]
+            self._dd_dll.DD_movR.restype = ctypes.c_int
+            # DD_key(int, int) -> int
+            self._dd_dll.DD_key.argtypes = [ctypes.c_int, ctypes.c_int]
+            self._dd_dll.DD_key.restype = ctypes.c_int
+            # DD_todc(int) -> int
+            self._dd_dll.DD_todc.argtypes = [ctypes.c_int]
+            self._dd_dll.DD_todc.restype = ctypes.c_int
+            # DD_whl(int) -> int
+            self._dd_dll.DD_whl.argtypes = [ctypes.c_int]
+            self._dd_dll.DD_whl.restype = ctypes.c_int
+        except Exception as e:
+            self._log(f"设置 DD API 类型失败: {e}")
+
+    def _init_dd_with_silent(self) -> int:
+        """在子线程中初始化 DD，避免 DLL 弹窗阻塞主线程
+
+        DD64.dll 在驱动启动失败时会调用 MessageBoxA 弹出
+        "DD start error.驱动启动错误." 的错误对话框，
+        这会阻塞调用线程。在子线程中调用可避免阻塞主线程。
+        """
+        if not self._dd_dll:
+            return 0
+
+        import threading
+
+        init_result = [0]
+        init_done = threading.Event()
+
+        def do_init():
+            try:
+                init_result[0] = self._dd_dll.DD_btn(0)
+            except Exception:
+                init_result[0] = 0
+            finally:
+                init_done.set()
+
+        t = threading.Thread(target=do_init, daemon=True)
+        t.start()
+        # 等待初始化完成（不阻塞主线程，弹窗由用户手动关闭）
+        init_done.wait()
+        return init_result[0]
+
+    def _check_admin(self):
+        """检查是否以管理员权限运行"""
+        try:
+            import ctypes as _ct
+            is_admin = _ct.windll.shell32.IsUserAnAdmin() != 0
+            if not is_admin:
+                self._log("⚠ 未以管理员身份运行，DD驱动操作可能失败")
+            else:
+                self._log("已以管理员身份运行")
+        except Exception:
+            pass
     
     def get_name(self) -> str:
         return "DD虚拟键盘"
@@ -189,7 +291,8 @@ class DDVirtualInput(BaseInputController):
     
     def _log(self, message: str):
         """日志输出"""
-        pass
+        from .log_manager import LogManager
+        LogManager.debug_print(f"[DD] {message}")
     
     def _get_dd_code(self, key: str) -> int:
         """
@@ -280,11 +383,14 @@ class DDVirtualInput(BaseInputController):
                    action: str = "press", duration: int = 0) -> None:
         """鼠标点击"""
         if not self._available or not self._dd_dll:
+            self._log(f"mouse_click SKIP: engine not available")
             return
-        
+
+        self._log(f"mouse_click: button={button}, position={position}, action={action}, duration={duration}")
+
         if position:
             self.mouse_move(position, relative=False)
-        
+
         if action == "press":
             self.mouse_down(button)
             if duration > 0:
@@ -299,40 +405,45 @@ class DDVirtualInput(BaseInputController):
         """按下鼠标"""
         if not self._available or not self._dd_dll:
             return
-        
+
         btn_map = {'left': 1, 'right': 4, 'middle': 16}
         btn_code = btn_map.get(button, 1)
-        
+
         try:
-            self._dd_dll.DD_btn(btn_code)
-        except Exception:
-            pass
-    
+            result = self._dd_dll.DD_btn(btn_code)
+            self._log(f"mouse_down: button={button}, btn_code={btn_code}, result={result}")
+        except Exception as e:
+            self._log(f"mouse_down ERROR: button={button}, {e}")
+
     def mouse_up(self, button: str = "left") -> None:
         """释放鼠标"""
         if not self._available or not self._dd_dll:
             return
-        
+
         btn_map = {'left': 2, 'right': 8, 'middle': 32}
         btn_code = btn_map.get(button, 2)
-        
+
         try:
-            self._dd_dll.DD_btn(btn_code)
-        except Exception:
-            pass
+            result = self._dd_dll.DD_btn(btn_code)
+            self._log(f"mouse_up: button={button}, btn_code={btn_code}, result={result}")
+        except Exception as e:
+            self._log(f"mouse_up ERROR: button={button}, {e}")
     
     def mouse_move(self, position: Tuple[int, int], relative: bool = False) -> None:
         """移动鼠标"""
         if not self._available or not self._dd_dll:
+            self._log(f"mouse_move SKIP: engine not available")
             return
-        
+
         try:
             if relative:
-                self._dd_dll.DD_movR(position[0], position[1])
+                result = self._dd_dll.DD_movR(position[0], position[1])
+                self._log(f"mouse_move: relative=({position[0]}, {position[1]}), result={result}")
             else:
-                self._dd_dll.DD_mov(position[0], position[1])
-        except Exception:
-            pass
+                result = self._dd_dll.DD_mov(position[0], position[1])
+                self._log(f"mouse_move: absolute=({position[0]}, {position[1]}), result={result}")
+        except Exception as e:
+            self._log(f"mouse_move ERROR: {e}")
     
     def mouse_scroll(self, amount: int, position: Tuple[int, int] = None) -> None:
         """鼠标滚轮

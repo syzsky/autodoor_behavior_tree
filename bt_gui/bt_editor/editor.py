@@ -149,7 +149,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self.toolbar.set_project_path(None)
             self.toolbar.set_running(False)
     
-    def _handle_tab_run(self, tab_id: str) -> bool:
+    def _handle_tab_run(self, tab_id: str, skip_sound: bool = False) -> bool:
         instance = self.tab_manager.get_tab(tab_id)
         if not instance or instance.is_running:
             return False
@@ -179,7 +179,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         engine._on_status_change = lambda status, node_status=None: self._on_tab_engine_status_change(tab_id, status, node_status)
         
         context = ExecutionContext(project_root=instance.project_root)
-        context._on_node_status = self._on_node_status
+        context._on_node_status = lambda node_id, status, tid=tab_id: self._on_node_status(node_id, status, tid)
+        context.set_tab_manager(self.tab_manager, tab_id)
         
         instance.engine = engine
         instance.context = context
@@ -187,10 +188,11 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         engine.start(context)
         self.tab_manager.update_tab_status(tab_id, True)
         
-        self._play_start_sound()
+        if not skip_sound:
+            self._play_start_sound()
         return True
     
-    def _handle_tab_stop(self, tab_id: str) -> bool:
+    def _handle_tab_stop(self, tab_id: str, skip_sound: bool = False) -> bool:
         instance = self.tab_manager.get_tab(tab_id)
         if not instance or not instance.is_running:
             return False
@@ -216,7 +218,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             instance.canvas.after(100, lambda: instance.canvas.clear_all_node_status() if instance.canvas else None)
             instance.canvas.after(200, lambda: self._restore_canvas_focus_for_tab(tab_id))
         
-        self._play_stop_sound()
+        if not skip_sound:
+            self._play_stop_sound()
         return True
     
     def _restore_canvas_focus_for_tab(self, tab_id: str):
@@ -526,6 +529,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._start_shortcut = start_key
         self._stop_shortcut = stop_key
         self._record_shortcut = record_key
+        self._tab_shortcut_keys = []  # 单树快捷键注册列表
         
         def start_callback():
             LogManager.debug_print(f"[DEBUG] F10 pressed, _is_running={self._is_running}")
@@ -538,6 +542,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._hotkey_manager.register(start_key, start_callback)
         self._hotkey_manager.register(stop_key, stop_callback)
         self._hotkey_manager.register(record_key, self._toggle_recording)
+        
+        # 注册单树快捷键
+        self._register_tab_shortcuts()
         
         self._hotkey_manager.start()
     
@@ -567,6 +574,70 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if record_key:
             self._hotkey_manager.register(record_key, self._toggle_recording)
             self._record_shortcut = record_key
+    
+    def _register_tab_shortcuts(self):
+        """从设置中注册单树快捷键"""
+        # 先注销已有的单树快捷键
+        for key in self._tab_shortcut_keys:
+            self._hotkey_manager.unregister(key)
+        self._tab_shortcut_keys.clear()
+        
+        try:
+            from config.settings_manager import SettingsManager
+            settings_manager = SettingsManager.get_instance()
+            tab_shortcuts = settings_manager.get("shortcuts.tab_shortcuts", [])
+            
+            for ts in tab_shortcuts:
+                hotkey = ts.get("hotkey", "").strip()
+                if not hotkey:
+                    continue
+                tab_name = ts.get("tab_name", "").strip()
+                # 使用闭包绑定 tab_name
+                callback = lambda tn=tab_name: self._toggle_tab(tn)
+                self._hotkey_manager.register(hotkey, callback)
+                self._tab_shortcut_keys.append(hotkey)
+        except Exception:
+            pass
+    
+    def update_tab_shortcuts(self, tab_shortcuts: list):
+        """更新单树快捷键绑定（由设置页面调用）"""
+        # 先注销已有的单树快捷键
+        for key in self._tab_shortcut_keys:
+            self._hotkey_manager.unregister(key)
+        self._tab_shortcut_keys.clear()
+        
+        for ts in tab_shortcuts:
+            hotkey = ts.get("hotkey", "").strip()
+            if not hotkey:
+                continue
+            tab_name = ts.get("tab_name", "").strip()
+            callback = lambda tn=tab_name: self._toggle_tab(tn)
+            self._hotkey_manager.register(hotkey, callback)
+            self._tab_shortcut_keys.append(hotkey)
+    
+    def _toggle_tab(self, tab_name: str):
+        """切换指定行为树的运行/停止状态"""
+        if not tab_name:
+            return
+        
+        # 按 tab_name 查找对应的 tab_id
+        target_tab_id = None
+        for tid, instance in self.tab_manager._trees.items():
+            if instance.name == tab_name:
+                target_tab_id = tid
+                break
+        
+        if not target_tab_id:
+            return
+        
+        instance = self.tab_manager.get_tab(target_tab_id)
+        if not instance:
+            return
+        
+        if instance.is_running:
+            self._handle_tab_stop(target_tab_id)
+        else:
+            self._handle_tab_run(target_tab_id)
     
     def _on_node_add_from_palette(self, node_type: str):
         self._node_counter += 1
@@ -1658,7 +1729,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         except Exception:
             pass
 
-    def _on_node_status(self, node_id: str, status: str):
+    def _on_node_status(self, node_id: str, status: str, tab_id: str = None):
         from .node_item import NodeExecutionStatus
         status_map = {
             "running": NodeExecutionStatus.RUNNING,
@@ -1669,11 +1740,15 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         }
         node_status = status_map.get(status, NodeExecutionStatus.IDLE)
         
-        if self.canvas and node_id in self.canvas.nodes:
-            self.canvas.set_node_status(node_id, node_status)
+        # 如果指定了 tab_id，只更新对应 tab 的画布
+        if tab_id:
+            instance = self.tab_manager.get_tab(tab_id)
+            if instance and instance.canvas and node_id in instance.canvas.nodes:
+                instance.canvas.set_node_status(node_id, node_status)
             return
         
-        for tab_id, instance in self.tab_manager._trees.items():
+        # 兼容旧调用：未指定 tab_id 时遍历所有 tab 查找
+        for tid, instance in self.tab_manager._trees.items():
             if instance.canvas and node_id in instance.canvas.nodes:
                 instance.canvas.set_node_status(node_id, node_status)
                 return

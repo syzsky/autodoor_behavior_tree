@@ -4,6 +4,7 @@ import re
 import time
 
 from .blackboard import Blackboard
+from bt_utils.log_manager import LogManager
 
 if TYPE_CHECKING:
     pass
@@ -33,7 +34,6 @@ class ExecutionContext:
         self._is_paused = False
         self._on_node_status: Optional[Callable] = None
         self._screenshot_manager = None
-        self._input_controller = None
         self._ocr_manager = None
         self._alarm_player = None
         self._path_resolver = None
@@ -45,6 +45,9 @@ class ExecutionContext:
         # 帧级截图缓存：同一tick内相同region只截图一次
         self._screenshot_cache: dict = {}
         self._screenshot_cache_tick: int = -1
+        # Tab管理器引用（用于启动/停止节点访问其他行为树）
+        self._tab_manager = None
+        self._current_tab_id: Optional[str] = None
     
     def set_stats_collector(self, collector):
         """设置统计收集器
@@ -53,7 +56,25 @@ class ExecutionContext:
             collector: 统计收集器实例
         """
         self._stats_collector = collector
-    
+
+    def set_tab_manager(self, tab_manager, tab_id: str = None):
+        """设置Tab管理器和当前Tab ID
+
+        Args:
+            tab_manager: GuiTabManager 实例
+            tab_id: 当前 Tab ID
+        """
+        self._tab_manager = tab_manager
+        self._current_tab_id = tab_id
+
+    def get_tab_manager(self):
+        """获取Tab管理器"""
+        return self._tab_manager
+
+    def get_current_tab_id(self) -> Optional[str]:
+        """获取当前Tab ID"""
+        return self._current_tab_id
+
     def push_subtree(self, subtree_path: str) -> None:
         """进入子树时压栈
 
@@ -192,85 +213,105 @@ class ExecutionContext:
         self._screenshot_cache[cache_key] = screenshot
         return screenshot
 
+    def _get_input_manager(self):
+        """获取 InputControllerManager 单例"""
+        from bt_utils.input_manager import InputControllerManager
+        return InputControllerManager()
+
     def execute_key_press(self, key: str, action: str = "press", duration: int = 0) -> None:
-        """执行按键操作
+        """执行按键操作"""
+        manager = self._get_input_manager()
+        kwargs = {}
+        if manager.get_keyboard_method() == "bg" and self._bound_window:
+            kwargs["hwnd"] = self._bound_window
+        engine = manager.get_keyboard_engine(**kwargs)
+        if engine:
+            engine.key_press(key, action, duration)
 
-        Args:
-            key: 按键名称
-            action: 动作类型 (press/down/up)
-            duration: 按住时长（毫秒）
-        """
-        if self._input_controller is None:
-            from bt_utils.input_controller_factory import InputController
-            self._input_controller = InputController()
-
-        self._input_controller.key_press(key, action, duration)
-        # 动作可能改变屏幕内容，清空截图缓存
         self._screenshot_cache.clear()
 
     def execute_mouse_click(self, button: str = "left", position: tuple = None,
-                           action: str = "press", duration: int = 0) -> None:
-        """执行鼠标点击（全局自动坐标转换）
+                           action: str = "press", duration: int = 0,
+                           x_float: int = 0, y_float: int = 0) -> None:
+        """执行鼠标点击（全局自动坐标转换）"""
+        manager = self._get_input_manager()
+        mouse_method = manager.get_mouse_method()
+        original_position = position
 
-        Args:
-            button: 鼠标按钮 (left/right/middle)
-            position: 点击位置 (x, y) - 窗口相对坐标或屏幕绝对坐标
-            action: 动作类型 (press/down/up)
-            duration: 按住时长（毫秒）
-        """
-        if self._input_controller is None:
-            from bt_utils.input_controller_factory import InputController
-            self._input_controller = InputController()
+        if position:
+            if mouse_method == "bg" and self._bound_window:
+                LogManager.debug_print(f"[CTX] mouse_click: 后台模式，坐标不转换 pos={position}")
+            elif self._bound_window:
+                position = self.convert_to_screen_coords(position)
+                LogManager.debug_print(f"[CTX] mouse_click: 坐标转换 {original_position} → {position}")
 
-        if position and self._bound_window:
-            position = self.convert_to_screen_coords(position)
+            if x_float > 0 or y_float > 0:
+                from bt_utils.helpers import get_random_value
+                px = get_random_value(position[0], x_float, min_value=0)
+                py = get_random_value(position[1], y_float, min_value=0)
+                position = (px, py)
+                LogManager.debug_print(f"[CTX] mouse_click: 浮动后 pos={position}")
 
-        self._input_controller.mouse_click(button, position, action, duration)
-        # 动作可能改变屏幕内容，清空截图缓存
+        kwargs = {}
+        if mouse_method == "bg" and self._bound_window:
+            kwargs["hwnd"] = self._bound_window
+
+        engine = manager.get_mouse_engine(**kwargs)
+        LogManager.debug_print(f"[CTX] mouse_click: method={mouse_method}, engine={type(engine).__name__ if engine else None}, button={button}, pos={position}, action={action}")
+        if engine:
+            engine.mouse_click(button, position, action, duration)
+
         self._screenshot_cache.clear()
 
-    def execute_mouse_move(self, position: tuple, relative: bool = False) -> None:
-        """执行鼠标移动（全局自动坐标转换）
+    def execute_mouse_move(self, position: tuple, relative: bool = False,
+                           x_float: int = 0, y_float: int = 0) -> None:
+        """执行鼠标移动（全局自动坐标转换）"""
+        manager = self._get_input_manager()
+        mouse_method = manager.get_mouse_method()
+        original_position = position
 
-        Args:
-            position: 目标位置 (x, y) - 窗口相对坐标或屏幕绝对坐标
-            relative: 是否相对移动
-        """
-        if self._input_controller is None:
-            from bt_utils.input_controller_factory import InputController
-            self._input_controller = InputController()
+        if position:
+            if mouse_method == "bg" and self._bound_window and not relative:
+                LogManager.debug_print(f"[CTX] mouse_move: 后台模式，坐标不转换 pos={position}")
+            elif self._bound_window and not relative:
+                position = self.convert_to_screen_coords(position)
+                LogManager.debug_print(f"[CTX] mouse_move: 坐标转换 {original_position} → {position}")
 
-        if position and self._bound_window and not relative:
-            position = self.convert_to_screen_coords(position)
+            if x_float > 0 or y_float > 0:
+                from bt_utils.helpers import get_random_value
+                px = get_random_value(position[0], x_float, min_value=0)
+                py = get_random_value(position[1], y_float, min_value=0)
+                position = (px, py)
+                LogManager.debug_print(f"[CTX] mouse_move: 浮动后 pos={position}")
 
-        self._input_controller.mouse_move(position, relative)
-        # 鼠标移动可能触发悬停效果，清空截图缓存
+        kwargs = {}
+        if mouse_method == "bg" and self._bound_window:
+            kwargs["hwnd"] = self._bound_window
+
+        engine = manager.get_mouse_engine(**kwargs)
+        LogManager.debug_print(f"[CTX] mouse_move: method={mouse_method}, engine={type(engine).__name__ if engine else None}, pos={position}, relative={relative}")
+        if engine:
+            engine.mouse_move(position, relative)
+
         self._screenshot_cache.clear()
 
     def get_mouse_position(self) -> Optional[Tuple[int, int]]:
-        """获取当前鼠标位置
-
-        Returns:
-            当前鼠标位置 (x, y)，如果无法获取则返回 None
-        """
-        if self._input_controller is None:
-            from bt_utils.input_controller_factory import InputController
-            self._input_controller = InputController()
-
-        return self._input_controller.get_position()
+        """获取当前鼠标位置"""
+        manager = self._get_input_manager()
+        engine = manager.get_mouse_engine()
+        if engine:
+            return engine.get_position()
+        return None
 
     def execute_mouse_scroll(self, amount: int, position: tuple = None) -> None:
-        """执行鼠标滚轮滚动
-
-        Args:
-            amount: 滚动量（正数向上，负数向下）
-            position: 滚动位置 (x, y)
-        """
-        if self._input_controller is None:
-            from bt_utils.input_controller_factory import InputController
-            self._input_controller = InputController()
-
-        self._input_controller.mouse_scroll(amount, position)
+        """执行鼠标滚轮滚动"""
+        manager = self._get_input_manager()
+        kwargs = {}
+        if manager.get_mouse_method() == "bg" and self._bound_window:
+            kwargs["hwnd"] = self._bound_window
+        engine = manager.get_mouse_engine(**kwargs)
+        if engine:
+            engine.mouse_scroll(amount, position)
 
     def perform_ocr(self, image, keywords: str, language: str = "eng", 
                     region: Tuple[int, int, int, int] = None) -> tuple:

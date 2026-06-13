@@ -37,6 +37,8 @@ class MouseClickNode(ActionNode):
         self.click_interval = self.config.get_int("click_interval", 100)
         self.duration_random = self.config.get_int("duration_random", 0)
         self.click_interval_random = self.config.get_int("click_interval_random", 0)
+        self.x_float = self.config.get_int("x_float", 0)
+        self.y_float = self.config.get_int("y_float", 0)
         self._current_click = 0
         self._last_click_time: Optional[float] = None
         self._actual_interval: Optional[int] = None
@@ -115,7 +117,8 @@ class MouseClickNode(ActionNode):
 
             if self._actual_duration is None:
                 self._actual_duration = get_random_duration(duration, duration_random)
-            context.execute_mouse_click(button, position, action, self._actual_duration)
+            context.execute_mouse_click(button, position, action, self._actual_duration,
+                                        x_float=self.x_float, y_float=self.y_float)
 
             if action == "down":
                 self._button_pressed = True
@@ -164,7 +167,8 @@ class MouseClickNode(ActionNode):
 
         if self._actual_duration is None:
             self._actual_duration = get_random_duration(duration, duration_random)
-        context.execute_mouse_click(button, position, action, self._actual_duration)
+        context.execute_mouse_click(button, position, action, self._actual_duration,
+                                    x_float=self.x_float, y_float=self.y_float)
 
         if action == "down":
             self._button_pressed = True
@@ -218,6 +222,8 @@ class MouseClickNode(ActionNode):
         node.click_interval = config.get_int("click_interval", 100)
         node.duration_random = config.get_int("duration_random", 0)
         node.click_interval_random = config.get_int("click_interval_random", 0)
+        node.x_float = config.get_int("x_float", 0)
+        node.y_float = config.get_int("y_float", 0)
         return node
 
 
@@ -247,6 +253,8 @@ class MouseMoveNode(ActionNode):
         self.move_duration_random = self.config.get_int("move_duration_random", 0)
         self.drag_duration = self.config.get_int("drag_duration", 0)
         self.drag_duration_random = self.config.get_int("drag_duration_random", 0)
+        self.x_float = self.config.get_int("x_float", 0)
+        self.y_float = self.config.get_int("y_float", 0)
 
     def _execute_action(self, context) -> NodeStatus:
         try:
@@ -310,7 +318,8 @@ class MouseMoveNode(ActionNode):
 
     def _execute_move(self, context, start_pos: Tuple[int, int], end_pos: Optional[Tuple[int, int]]) -> NodeStatus:
         if not end_pos:
-            context.execute_mouse_move(start_pos, relative=False)
+            context.execute_mouse_move(start_pos, relative=False,
+                                       x_float=self.x_float, y_float=self.y_float)
             LogManager.instance().log_success(
                 node_type="鼠标移动节点",
                 node_name=self.name
@@ -321,7 +330,8 @@ class MouseMoveNode(ActionNode):
         move_duration_random = self.config.get_int("move_duration_random", 0)
         actual_duration = get_random_duration(move_duration, move_duration_random)
         
-        context.execute_mouse_move(start_pos, relative=False)
+        context.execute_mouse_move(start_pos, relative=False,
+                                   x_float=self.x_float, y_float=self.y_float)
         time.sleep(0.01)
         
         if actual_duration > 0:
@@ -342,14 +352,16 @@ class MouseMoveNode(ActionNode):
                 t = self._smoothstep(progress)
                 current_x = int(start_pos[0] + dx * t)
                 current_y = int(start_pos[1] + dy * t)
-                context.execute_mouse_move((current_x, current_y), relative=False)
+                context.execute_mouse_move((current_x, current_y), relative=False,
+                                           x_float=self.x_float, y_float=self.y_float)
                 
                 if progress >= 1.0:
                     break
                 
                 time.sleep(total_duration_sec / steps)
         else:
-            context.execute_mouse_move(end_pos, relative=False)
+            context.execute_mouse_move(end_pos, relative=False,
+                                       x_float=self.x_float, y_float=self.y_float)
         
         LogManager.instance().log_success(
             node_type="鼠标移动节点",
@@ -377,7 +389,8 @@ class MouseMoveNode(ActionNode):
             move_duration_random if move_duration_random > 0 else drag_duration_random
         )
 
-        context.execute_mouse_move(start_pos, relative=False)
+        context.execute_mouse_move(start_pos, relative=False,
+                                   x_float=self.x_float, y_float=self.y_float)
         time.sleep(0.02)
 
         context.execute_mouse_click(drag_button, start_pos, "down", 0)
@@ -402,14 +415,16 @@ class MouseMoveNode(ActionNode):
                 t = self._smoothstep(progress)
                 current_x = int(start_pos[0] + dx * t)
                 current_y = int(start_pos[1] + dy * t)
-                context.execute_mouse_move((current_x, current_y), relative=False)
+                context.execute_mouse_move((current_x, current_y), relative=False,
+                                           x_float=self.x_float, y_float=self.y_float)
                 
                 if progress >= 1.0:
                     break
                 
                 time.sleep(total_duration_sec / steps)
         else:
-            context.execute_mouse_move(end_pos, relative=False)
+            context.execute_mouse_move(end_pos, relative=False,
+                                       x_float=self.x_float, y_float=self.y_float)
         
         time.sleep(0.02)
         context.execute_mouse_click(drag_button, end_pos, "up", 0)
@@ -445,4 +460,6 @@ class MouseMoveNode(ActionNode):
         node.move_duration_random = config.get_int("move_duration_random", 0)
         node.drag_duration = config.get_int("drag_duration", 0)
         node.drag_duration_random = config.get_int("drag_duration_random", 0)
+        node.x_float = config.get_int("x_float", 0)
+        node.y_float = config.get_int("y_float", 0)
         return node

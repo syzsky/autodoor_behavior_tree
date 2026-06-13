@@ -55,6 +55,7 @@ data_files = [
     (os.path.join(project_root, 'config/settings.json'), 'config'),
     (os.path.join(project_root, 'bt_utils/build_info.json'), 'bt_utils'),
     (os.path.join(project_root, 'drivers/DD64.dll'), 'drivers'),
+    (os.path.join(project_root, 'drivers/IbInputSimulator.dll'), 'drivers'),
 ] + collect_data_files('rapidocr')
 
 for pkg in ['bt_core', 'bt_gui', 'bt_nodes', 'bt_utils', 'config']:
@@ -128,12 +129,15 @@ a = Analysis(
         'bt_utils',
         'bt_utils.alarm',
         'bt_utils.base_input',
+        'bt_utils.bg_input',
         'bt_utils.dd_input',
+        'bt_utils.ib_input',
         'bt_utils.image_processor',
-        'bt_utils.input_controller',
         'bt_utils.input_controller_factory',
+        'bt_utils.input_manager',
         'bt_utils.log_manager',
         'bt_utils.ocr_manager',
+        'bt_utils.proxies',
         'bt_utils.recorder',
         'bt_utils.screenshot',
         'bt_utils.script_executor',

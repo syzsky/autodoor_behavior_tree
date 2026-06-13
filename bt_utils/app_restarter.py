@@ -20,12 +20,43 @@ def is_dd_available() -> bool:
     if getattr(sys, 'frozen', False):
         base_path = sys._MEIPASS
     possible_paths.extend([
-        os.path.join(base_path, "DD64.dll"),
-        os.path.join(base_path, "drivers", "DD64.dll"),
-        os.path.join(base_path, "..", "drivers", "DD64.dll"),
         os.path.join(os.path.dirname(base_path), "drivers", "DD64.dll"),
+        os.path.join(base_path, "..", "drivers", "DD64.dll"),
+        os.path.join(base_path, "drivers", "DD64.dll"),
+        os.path.join(base_path, "DD64.dll"),
     ])
     return any(os.path.exists(p) for p in possible_paths)
+
+
+def is_ib_available() -> bool:
+    """检测 IbInputSimulator.dll 是否存在"""
+    possible_paths = []
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    possible_paths.extend([
+        os.path.join(os.path.dirname(base_path), "drivers", "IbInputSimulator.dll"),
+        os.path.join(base_path, "..", "drivers", "IbInputSimulator.dll"),
+        os.path.join(base_path, "drivers", "IbInputSimulator.dll"),
+        os.path.join(base_path, "IbInputSimulator.dll"),
+    ])
+    return any(os.path.exists(p) for p in possible_paths)
+
+
+def get_recommended_method() -> str:
+    """根据可用驱动推荐最优引擎
+
+    优先级：ib > dd > pyautogui
+    后台模式需要用户主动选择，不在自动推荐范围内。
+
+    Returns:
+        推荐的输入方式 key
+    """
+    if is_ib_available():
+        return "ib"
+    if is_dd_available():
+        return "dd"
+    return "pyautogui"
 
 
 def _get_restart_command():

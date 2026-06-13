@@ -37,8 +37,8 @@ class SettingsTab(ctk.CTkFrame):
         
         from config.settings_manager import SettingsManager
         settings = SettingsManager()
-        self.input_method_var = tk.StringVar(value=settings.get("input.method", "pyautogui"))
-        self._current_input_method = settings.get("input.method", "pyautogui")
+        self._current_keyboard_method = settings.get("input.keyboard_method", "pyautogui")
+        self._current_mouse_method = settings.get("input.mouse_method", "pyautogui")
     
     def _get_default_project_path(self) -> str:
         """获取默认项目保存路径
@@ -217,125 +217,341 @@ class SettingsTab(ctk.CTkFrame):
             btn.pack(side="left")
         
         ctk.CTkFrame(shortcut_frame, height=6, fg_color="transparent").pack()
+        
+        # ── 单树快捷键设置 ──
+        create_divider(shortcut_frame)
+        
+        tab_shortcut_header = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        tab_shortcut_header.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_sm'], 0))
+        create_section_title(tab_shortcut_header, "单树快捷键", level=2).pack(side="left")
+        
+        tab_shortcut_desc = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        tab_shortcut_desc.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'])
+        ctk.CTkLabel(
+            tab_shortcut_desc, text="为每个行为树绑定独立的启动/停止快捷键（同一快捷键切换运行状态）",
+            font=Theme.get_font("xs"), text_color=self._dark_colors['text_muted']
+        ).pack(side="left")
+        
+        # 单树快捷键列表容器
+        self._tab_shortcut_rows = []
+        self._tab_shortcut_container = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        self._tab_shortcut_container.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'])
+        
+        # 加载已有的单树快捷键配置
+        from config.settings_manager import SettingsManager
+        settings_manager = SettingsManager.get_instance()
+        tab_shortcuts = settings_manager.get("shortcuts.tab_shortcuts", [
+            {"hotkey": "F1"}, {"hotkey": "F2"}, {"hotkey": "F3"}
+        ])
+        for ts in tab_shortcuts:
+            self._add_tab_shortcut_row(ts.get("hotkey", ""), ts.get("tab_name", ""))
+        
+        # 添加按钮
+        add_btn_row = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+        add_btn_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_xs'], Theme.DIMENSIONS['spacing_md']))
+        
+        AnimatedButton(
+            add_btn_row, text="+ 添加快捷键", font=Theme.get_font("xs"),
+            width=100, height=26,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=Theme.COLORS['primary'], hover_color=Theme.COLORS['primary_hover'],
+            command=self._add_tab_shortcut_row
+        ).pack(side="left")
+        
+        ctk.CTkFrame(shortcut_frame, height=6, fg_color="transparent").pack()
     
     def _create_input_method_section(self, parent):
-        from bt_utils.app_restarter import is_dd_available, is_admin
-        
+        from bt_utils.input_manager import InputControllerManager
+        from bt_utils.base_input import InputLevel
+        from bt_utils.app_restarter import is_admin
+
+        manager = InputControllerManager()
+        available_methods = manager.get_available_methods()
+
         input_frame = CardFrame(parent)
         input_frame.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
-        
+
         input_header = ctk.CTkFrame(input_frame, fg_color="transparent")
         input_header.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_md'], Theme.DIMENSIONS['spacing_sm']))
         create_section_title(input_header, "输入方式", level=1).pack(side="left")
-        
+
         create_divider(input_frame)
-        
-        dd_available = is_dd_available()
-        
-        method_row = ctk.CTkFrame(input_frame, fg_color="transparent")
-        method_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_sm'])
-        
-        self.pyautogui_radio = ctk.CTkRadioButton(
-            method_row,
-            text="PyAutoGUI（标准模式）",
-            variable=self.input_method_var,
-            value="pyautogui",
+
+        # 构建选项和映射
+        self._method_key_to_label = {}
+        self._method_label_to_key = {}
+        method_options = []
+
+        for method_key, method_info in available_methods.items():
+            label = method_info['name']
+            if not method_info["available"]:
+                label += "（不可用）"
+            self._method_key_to_label[method_key] = label
+            self._method_label_to_key[label] = method_key
+            method_options.append(label)
+
+        # ── 键盘引擎 ComboBox ──
+        kb_row = ctk.CTkFrame(input_frame, fg_color="transparent")
+        kb_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_sm'])
+
+        ctk.CTkLabel(kb_row, text="键盘引擎:", font=Theme.get_font("sm"), text_color=self._dark_colors['text_secondary']).pack(side="left")
+
+        current_kb_label = self._method_key_to_label.get(self._current_keyboard_method, method_options[0])
+        self._kb_combo_var = tk.StringVar(value=current_kb_label)
+
+        self.keyboard_method_combo = ctk.CTkComboBox(
+            kb_row,
+            values=method_options,
+            variable=self._kb_combo_var,
+            command=self._on_keyboard_method_changed,
             font=Theme.get_font("sm"),
-            fg_color=Theme.COLORS['primary'],
-            hover_color=Theme.COLORS['primary_hover'],
-            command=self._on_input_method_changed
+            width=300,
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+            button_color=Theme.COLORS['primary'],
+            button_hover_color=Theme.COLORS['primary_hover'],
         )
-        self.pyautogui_radio.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_md']))
-        
-        self.dd_radio = ctk.CTkRadioButton(
-            method_row,
-            text="DD虚拟键盘（驱动级）",
-            variable=self.input_method_var,
-            value="dd",
+        self.keyboard_method_combo.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        # ── 鼠标引擎 ComboBox ──
+        ms_row = ctk.CTkFrame(input_frame, fg_color="transparent")
+        ms_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_sm'])
+
+        ctk.CTkLabel(ms_row, text="鼠标引擎:", font=Theme.get_font("sm"), text_color=self._dark_colors['text_secondary']).pack(side="left")
+
+        current_ms_label = self._method_key_to_label.get(self._current_mouse_method, method_options[0])
+        self._ms_combo_var = tk.StringVar(value=current_ms_label)
+
+        self.mouse_method_combo = ctk.CTkComboBox(
+            ms_row,
+            values=method_options,
+            variable=self._ms_combo_var,
+            command=self._on_mouse_method_changed,
             font=Theme.get_font("sm"),
-            fg_color=Theme.COLORS['primary'],
-            hover_color=Theme.COLORS['primary_hover'],
-            command=self._on_input_method_changed
+            width=300,
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+            button_color=Theme.COLORS['primary'],
+            button_hover_color=Theme.COLORS['primary_hover'],
         )
-        self.dd_radio.pack(side="left")
-        
-        if not dd_available:
-            self.dd_radio.configure(state="disabled")
-        
-        desc_row = ctk.CTkFrame(input_frame, fg_color="transparent")
-        desc_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(0, Theme.DIMENSIONS['spacing_sm']))
-        
-        ctk.CTkLabel(
-            desc_row,
-            text="PyAutoGUI: 基于软件模拟，兼容性好，无需管理员权限",
-            font=Theme.get_font("xs"),
-            text_color=self._dark_colors['text_secondary']
-        ).pack(anchor="w")
-        
-        dd_desc = "DD虚拟键盘: 驱动级模拟，绕过部分输入检测，需管理员权限"
-        if not dd_available:
-            dd_desc += "（DD64.dll 未找到）"
-        ctk.CTkLabel(
-            desc_row,
-            text=dd_desc,
-            font=Theme.get_font("xs"),
-            text_color=self._dark_colors['warning'] if not dd_available else self._dark_colors['text_secondary']
-        ).pack(anchor="w")
-        
+        self.mouse_method_combo.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        # ── IB 子驱动选项（键盘或鼠标任一选择 IB 时显示） ──
+        self._ib_sub_frame = ctk.CTkFrame(input_frame, fg_color="transparent")
+
+        ib_sub_row = ctk.CTkFrame(self._ib_sub_frame, fg_color="transparent")
+        ib_sub_row.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'])
+
+        ctk.CTkLabel(ib_sub_row, text="IB驱动模式:", font=Theme.get_font("sm"),
+                     text_color=self._dark_colors['text_secondary']).pack(side="left")
+
+        ib_mode_labels = {
+            "any_driver": "自动检测",
+            "logitech": "Logitech LGS",
+            "logitech_ghub_new": "Logitech G HUB (新版)",
+            "razer": "Razer Synapse",
+            "mou_class": "MouClassInputInjection",
+            "send_input": "SendInput",
+        }
+
+        # 检测本机已安装的驱动
+        try:
+            from bt_utils.ib_input import detect_ib_driver_status
+            driver_status = detect_ib_driver_status()
+        except Exception:
+            driver_status = {}
+
+        ib_mode_options = []
+        self._ib_mode_label_to_key = {}
+        for mode_key, mode_label in ib_mode_labels.items():
+            status = driver_status.get(mode_key, {})
+            installed = status.get("installed", None)
+            if installed is True:
+                display = f"{mode_label}（已安装）"
+            elif installed is False:
+                display = f"{mode_label}（未安装）"
+            else:
+                display = mode_label
+            ib_mode_options.append(display)
+            self._ib_mode_label_to_key[display] = mode_key
+
+        from config.settings_manager import SettingsManager
+        current_ib_mode = SettingsManager.get_instance().get("input.ib_send_mode", "any_driver")
+        current_ib_label = ib_mode_labels.get(current_ib_mode, "自动检测")
+        for opt in ib_mode_options:
+            if opt.startswith(current_ib_label):
+                current_ib_label = opt
+                break
+
+        self._ib_mode_var = tk.StringVar(value=current_ib_label)
+
+        self._ib_mode_combo = ctk.CTkComboBox(
+            ib_sub_row,
+            values=ib_mode_options,
+            variable=self._ib_mode_var,
+            command=self._on_ib_mode_changed,
+            font=Theme.get_font("sm"),
+            width=260,
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+            button_color=Theme.COLORS['primary'],
+            button_hover_color=Theme.COLORS['primary_hover'],
+        )
+        self._ib_mode_combo.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        # IB PID 输入（仅 MCII 模式需要）
+        self._ib_pid_frame = ctk.CTkFrame(input_frame, fg_color="transparent")
+
+        ib_pid_row = ctk.CTkFrame(self._ib_pid_frame, fg_color="transparent")
+        ib_pid_row.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'])
+
+        ctk.CTkLabel(ib_pid_row, text="目标进程PID:", font=Theme.get_font("sm"),
+                     text_color=self._dark_colors['text_secondary']).pack(side="left")
+
+        current_pid = SettingsManager.get_instance().get("input.ib_target_pid", 0)
+        self._ib_pid_var = tk.StringVar(value=str(current_pid))
+
+        self._ib_pid_entry = ctk.CTkEntry(
+            ib_pid_row,
+            textvariable=self._ib_pid_var,
+            width=80,
+            height=24,
+            font=Theme.get_font("sm"),
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        )
+        self._ib_pid_entry.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        ctk.CTkLabel(ib_pid_row, text="（仅MCII模式需要）", font=Theme.get_font("xs"),
+                     text_color=self._dark_colors['text_secondary']).pack(side="left", padx=(Theme.DIMENSIONS['spacing_xs'], 0))
+
+        # 根据当前引擎决定是否显示子选项
+        self._update_ib_sub_frame_visibility()
+
+        # 状态信息
         status_row = ctk.CTkFrame(input_frame, fg_color="transparent")
         status_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(0, Theme.DIMENSIONS['spacing_sm']))
-        
-        current_method = self._current_input_method
+
+        kb_name = available_methods.get(self._current_keyboard_method, {}).get("name", self._current_keyboard_method)
+        ms_name = available_methods.get(self._current_mouse_method, {}).get("name", self._current_mouse_method)
         admin_status = "管理员" if is_admin() else "普通用户"
-        status_text = f"当前状态: {'DD虚拟键盘' if current_method == 'dd' else 'PyAutoGUI'} 已加载 ({admin_status})"
-        ctk.CTkLabel(
+        status_text = f"当前状态: 键盘={kb_name}, 鼠标={ms_name} ({admin_status})"
+        self._status_label = ctk.CTkLabel(
             status_row,
             text=status_text,
             font=Theme.get_font("xs"),
             text_color=self._dark_colors['primary']
-        ).pack(anchor="w")
-        
+        )
+        self._status_label.pack(anchor="w")
+
+        # 警告
         warn_row = ctk.CTkFrame(input_frame, fg_color="transparent")
         warn_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(0, Theme.DIMENSIONS['spacing_md']))
-        
+
         ctk.CTkLabel(
             warn_row,
             text="⚠ 切换输入方式后需要重启应用才能生效",
             font=Theme.get_font("xs"),
             text_color=self._dark_colors['warning']
         ).pack(anchor="w")
-    
-    def _on_input_method_changed(self):
-        new_method = self.input_method_var.get()
-        
-        if new_method == self._current_input_method:
+
+    def _update_ib_sub_frame_visibility(self):
+        """根据键盘/鼠标引擎是否选择 IB 来决定 IB 子选项的显示"""
+        show_ib = (self._current_keyboard_method == "ib" or self._current_mouse_method == "ib")
+        if show_ib:
+            self._ib_sub_frame.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(0, Theme.DIMENSIONS['spacing_sm']))
+            current_ib_mode_key = self._ib_mode_label_to_key.get(self._ib_mode_var.get(), "any_driver")
+            if current_ib_mode_key == "mou_class":
+                self._ib_pid_frame.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(0, Theme.DIMENSIONS['spacing_sm']))
+            else:
+                self._ib_pid_frame.pack_forget()
+        else:
+            self._ib_sub_frame.pack_forget()
+            self._ib_pid_frame.pack_forget()
+
+    def _on_ib_mode_changed(self, choice=None):
+        """IB 子驱动模式切换"""
+        mode_key = self._ib_mode_label_to_key.get(choice, "any_driver")
+
+        # 保存到设置
+        from config.settings_manager import SettingsManager
+        SettingsManager.get_instance().set("input.ib_send_mode", mode_key, auto_save=True)
+
+        # MCII 模式显示 PID 输入
+        if mode_key == "mou_class":
+            self._ib_pid_frame.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(0, Theme.DIMENSIONS['spacing_sm']))
+        else:
+            self._ib_pid_frame.pack_forget()
+
+    def _on_keyboard_method_changed(self, choice=None):
+        """键盘引擎切换"""
+        new_method = self._method_label_to_key.get(choice, self._current_keyboard_method)
+        if new_method == self._current_keyboard_method:
             return
-        
-        if new_method == "dd":
+        self._handle_method_change("keyboard", new_method)
+
+    def _on_mouse_method_changed(self, choice=None):
+        """鼠标引擎切换"""
+        new_method = self._method_label_to_key.get(choice, self._current_mouse_method)
+        if new_method == self._current_mouse_method:
+            return
+        self._handle_method_change("mouse", new_method)
+
+    def _handle_method_change(self, which: str, new_method: str):
+        """处理引擎切换逻辑"""
+        from bt_utils.input_manager import InputControllerManager
+
+        manager = InputControllerManager()
+        methods = manager.get_available_methods()
+        method_info = methods.get(new_method, {})
+
+        if method_info.get("requires_admin", False):
             result = messagebox.askyesno(
                 "切换输入方式",
-                "DD虚拟键盘需要管理员权限才能正常工作。\n"
+                f"{method_info.get('name', new_method)}需要管理员权限才能正常工作。\n"
                 "切换后应用将以管理员身份重新启动。\n\n"
                 "是否立即重启？",
                 icon='warning'
             )
             if result:
-                if hasattr(self.app, '_restart_with_method'):
-                    self.app._restart_with_method("dd", as_admin=True)
+                self._save_ib_pid()
+                if hasattr(self.app, '_restart_with_methods'):
+                    kb = new_method if which == "keyboard" else self._current_keyboard_method
+                    ms = new_method if which == "mouse" else self._current_mouse_method
+                    self.app._restart_with_methods(kb, ms, as_admin=True)
             else:
-                self.input_method_var.set(self._current_input_method)
+                if which == "keyboard":
+                    self._kb_combo_var.set(self._method_key_to_label.get(self._current_keyboard_method, ""))
+                else:
+                    self._ms_combo_var.set(self._method_key_to_label.get(self._current_mouse_method, ""))
         else:
             result = messagebox.askyesno(
                 "切换输入方式",
-                "切换到 PyAutoGUI 模式后，应用将重新启动。\n\n"
+                f"切换到 {method_info.get('name', new_method)}后，应用将重新启动。\n\n"
                 "是否立即重启？",
                 icon='question'
             )
             if result:
-                if hasattr(self.app, '_restart_with_method'):
-                    self.app._restart_with_method("pyautogui", as_admin=False)
+                self._save_ib_pid()
+                if hasattr(self.app, '_restart_with_methods'):
+                    kb = new_method if which == "keyboard" else self._current_keyboard_method
+                    ms = new_method if which == "mouse" else self._current_mouse_method
+                    self.app._restart_with_methods(kb, ms, as_admin=False)
             else:
-                self.input_method_var.set(self._current_input_method)
+                if which == "keyboard":
+                    self._kb_combo_var.set(self._method_key_to_label.get(self._current_keyboard_method, ""))
+                else:
+                    self._ms_combo_var.set(self._method_key_to_label.get(self._current_mouse_method, ""))
+
+    def _save_ib_pid(self):
+        """保存 IB 目标进程 PID"""
+        try:
+            pid_str = self._ib_pid_var.get()
+            pid = int(pid_str) if pid_str.isdigit() else 0
+            from config.settings_manager import SettingsManager
+            SettingsManager.get_instance().set("input.ib_target_pid", pid, auto_save=True)
+        except Exception:
+            pass
     
     def _browse_project_path(self):
         folder_path = filedialog.askdirectory(
@@ -365,30 +581,185 @@ class SettingsTab(ctk.CTkFrame):
     def _start_key_listening(self, entry, btn):
         btn.configure(text="请按键...", fg_color=Theme.COLORS['warning'])
         
+        # 暂停全局热键，避免捕获按键时触发已有快捷键
+        from bt_utils.global_hotkey import GlobalHotkeyManager
+        hotkey_mgr = GlobalHotkeyManager.get_instance()
+        was_running = hotkey_mgr.is_running()
+        if was_running:
+            hotkey_mgr.stop()
+        
         from pynput import keyboard
         from bt_utils.key_name_resolver import resolve_key_name
         
+        _pressed_modifiers = set()
+        
+        # 修饰键名称集合（包含 resolve_key_name 返回的各种变体）
+        _modifier_names = {
+            'ctrl', 'ctrl_l', 'ctrl_r', 'ctrlleft', 'ctrlright',
+            'alt', 'alt_l', 'alt_r', 'altleft', 'altright',
+            'shift', 'shift_l', 'shift_r', 'shiftleft', 'shiftright',
+            'cmd', 'cmd_l', 'cmd_r', 'win', 'win_l', 'win_r'
+        }
+        
+        def _normalize_modifier(name):
+            """将修饰键变体统一为标准名"""
+            if name in ('ctrl', 'ctrl_l', 'ctrl_r', 'ctrlleft', 'ctrlright'):
+                return 'ctrl'
+            elif name in ('alt', 'alt_l', 'alt_r', 'altleft', 'altright'):
+                return 'alt'
+            elif name in ('shift', 'shift_l', 'shift_r', 'shiftleft', 'shiftright'):
+                return 'shift'
+            elif name in ('cmd', 'cmd_l', 'cmd_r', 'win', 'win_l', 'win_r'):
+                return 'cmd'
+            return None
+        
         def on_press(key):
             key_name = resolve_key_name(key)
-            if key_name:
-                display_name = key_name.upper() if len(key_name) > 1 else key_name
-                try:
-                    self.after(0, lambda: self._apply_settings_captured_key(entry, btn, display_name))
-                except Exception:
-                    pass
-                return False
+            if not key_name:
+                return
+            
+            # 修饰键只记录，不停止监听
+            if key_name in _modifier_names:
+                mod = _normalize_modifier(key_name)
+                if mod:
+                    _pressed_modifiers.add(mod)
+                return
+            
+            # 非修饰键：组合修饰键形成组合键名
+            parts = sorted(_pressed_modifiers) + [key_name]
+            display_name = "+".join(p.upper() if len(p) > 1 else p for p in parts)
+            try:
+                self.after(0, lambda: self._apply_settings_captured_key(entry, btn, display_name))
+            except Exception:
+                pass
+            return False
         
-        self._settings_listener = keyboard.Listener(on_press=on_press)
+        def on_release(key):
+            key_name = resolve_key_name(key)
+            if key_name and key_name in _modifier_names:
+                mod = _normalize_modifier(key_name)
+                if mod:
+                    _pressed_modifiers.discard(mod)
+        
+        self._settings_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         self._settings_listener.start()
         
         def reset_listening():
             self._stop_settings_listener()
+            # 恢复全局热键
+            if was_running:
+                hotkey_mgr.start()
             try:
                 btn.configure(text="修改", fg_color=Theme.COLORS['primary'])
             except Exception:
                 pass
         
         self._settings_timeout = self.after(10000, reset_listening)
+    
+    def _add_tab_shortcut_row(self, hotkey: str = "", tab_name: str = ""):
+        """添加一行单树快捷键配置"""
+        row_frame = ctk.CTkFrame(self._tab_shortcut_container, fg_color="transparent")
+        row_frame.pack(fill="x", pady=2)
+        
+        # 快捷键输入框
+        hotkey_var = tk.StringVar(value=hotkey)
+        hotkey_entry = ctk.CTkEntry(
+            row_frame, textvariable=hotkey_var,
+            width=80, height=24, state="disabled",
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary']
+        )
+        hotkey_entry.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        
+        # 修改快捷键按钮
+        capture_btn = AnimatedButton(
+            row_frame, text="修改", font=Theme.get_font("xs"),
+            width=40, height=24,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=Theme.COLORS['primary'], hover_color=Theme.COLORS['primary_hover']
+        )
+        capture_btn.configure(command=lambda e=hotkey_entry, b=capture_btn: self._start_key_listening(e, b))
+        capture_btn.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_sm']))
+        
+        # 目标行为树下拉框
+        tree_names = self._get_available_tree_names()
+        if tab_name and tab_name not in tree_names:
+            tree_names.insert(0, tab_name)
+        
+        tree_var = tk.StringVar(value=tab_name)
+        tree_var.trace_add("write", lambda *args: self._update_editor_shortcuts())
+        tree_combo = ctk.CTkOptionMenu(
+            row_frame, variable=tree_var, values=tree_names,
+            width=150, height=24,
+            font=Theme.get_font("xs"),
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+            button_color=Theme.COLORS['primary'],
+            button_hover_color=Theme.COLORS['primary_hover']
+        )
+        tree_combo.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        
+        # 通过内部 Menu 的 postcommand 在菜单弹出前刷新选项
+        try:
+            internal_menu = tree_combo._dropdown_menu
+            if internal_menu:
+                internal_menu.configure(postcommand=lambda c=tree_combo: self._refresh_tree_combo(c))
+        except Exception:
+            # 回退方案：绑定点击事件刷新
+            tree_combo.bind("<ButtonPress-1>", lambda e, c=tree_combo: self._refresh_tree_combo(c))
+        
+        # 清空按钮
+        clear_btn = AnimatedButton(
+            row_frame, text="清空", font=Theme.get_font("xs"),
+            width=36, height=24,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            hover_color=self._dark_colors['bg_elevated']
+        )
+        clear_btn.configure(command=lambda v=tree_var: v.set(""))
+        clear_btn.pack(side="left", padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        
+        # 删除按钮
+        remove_btn = AnimatedButton(
+            row_frame, text="×", font=Theme.get_font("xs"),
+            width=24, height=24,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            hover_color=Theme.COLORS['error']
+        )
+        remove_btn.configure(command=lambda f=row_frame: self._remove_tab_shortcut_row(f))
+        remove_btn.pack(side="left")
+        
+        self._tab_shortcut_rows.append({
+            "frame": row_frame,
+            "hotkey_var": hotkey_var,
+            "tree_var": tree_var,
+            "tree_combo": tree_combo
+        })
+    
+    def _remove_tab_shortcut_row(self, frame):
+        """删除一行单树快捷键配置"""
+        self._tab_shortcut_rows = [r for r in self._tab_shortcut_rows if r["frame"] != frame]
+        frame.destroy()
+        self._update_editor_shortcuts()
+    
+    def _get_available_tree_names(self) -> list:
+        """获取当前已加载的行为树名称列表"""
+        try:
+            if hasattr(self.app, 'behavior_tree') and hasattr(self.app.behavior_tree, 'tab_manager'):
+                tab_manager = self.app.behavior_tree.tab_manager
+                return [inst.name for inst in tab_manager._trees.values()]
+        except Exception:
+            pass
+        return []
+    
+    def _refresh_tree_combo(self, combo):
+        """刷新行为树下拉框选项"""
+        tree_names = self._get_available_tree_names()
+        current = combo.get()
+        combo.configure(values=tree_names)
+        # 始终恢复之前选中的值（包括空值），防止 CTkOptionMenu 自动选择第一项
+        combo.set(current)
     
     def _apply_settings_captured_key(self, entry, btn, key_name):
         entry.configure(state="normal")
@@ -399,6 +770,11 @@ class SettingsTab(ctk.CTkFrame):
         btn.configure(text="修改", fg_color=Theme.COLORS['primary'])
         
         self._stop_settings_listener()
+        
+        # 恢复全局热键
+        from bt_utils.global_hotkey import GlobalHotkeyManager
+        hotkey_mgr = GlobalHotkeyManager.get_instance()
+        hotkey_mgr.start()
         self._update_editor_shortcuts()
     
     def _stop_settings_listener(self):
@@ -422,16 +798,40 @@ class SettingsTab(ctk.CTkFrame):
             record_key = self.record_hotkey_var.get()
             
             settings_manager = SettingsManager.get_instance()
-            settings_manager.set("shortcuts.start", start_key, auto_save=True)
-            settings_manager.set("shortcuts.stop", stop_key, auto_save=True)
-            settings_manager.set("shortcuts.record", record_key, auto_save=True)
+            settings_manager.set("shortcuts.start", start_key, auto_save=False)
+            settings_manager.set("shortcuts.stop", stop_key, auto_save=False)
+            settings_manager.set("shortcuts.record", record_key, auto_save=False)
+            
+            # 保存单树快捷键
+            tab_shortcuts = []
+            for row in self._tab_shortcut_rows:
+                hotkey = row["hotkey_var"].get().strip()
+                tab_name = row["tree_var"].get().strip()
+                entry = {"hotkey": hotkey}
+                if tab_name:
+                    entry["tab_name"] = tab_name
+                tab_shortcuts.append(entry)
+            settings_manager.set("shortcuts.tab_shortcuts", tab_shortcuts, auto_save=True)
             
             if hasattr(self.app, 'behavior_tree') and hasattr(self.app.behavior_tree, 'update_run_shortcuts'):
                 self.app.behavior_tree.update_run_shortcuts(start_key, stop_key, record_key)
+            
+            # 更新单树快捷键绑定
+            if hasattr(self.app, 'behavior_tree') and hasattr(self.app.behavior_tree, 'update_tab_shortcuts'):
+                self.app.behavior_tree.update_tab_shortcuts(tab_shortcuts)
         except Exception:
             pass
     
     def get_settings(self):
+        tab_shortcuts = []
+        for row in self._tab_shortcut_rows:
+            hotkey = row["hotkey_var"].get().strip()
+            tab_name = row["tree_var"].get().strip()
+            entry = {"hotkey": hotkey}
+            if tab_name:
+                entry["tab_name"] = tab_name
+            tab_shortcuts.append(entry)
+        
         return {
             "alarm_sound_path": self.alarm_sound_path.get(),
             "alarm_volume": self.alarm_volume.get(),
@@ -439,9 +839,11 @@ class SettingsTab(ctk.CTkFrame):
             "shortcuts": {
                 "start": self.start_shortcut_var.get(),
                 "stop": self.stop_shortcut_var.get(),
-                "record": self.record_hotkey_var.get()
+                "record": self.record_hotkey_var.get(),
+                "tab_shortcuts": tab_shortcuts
             },
-            "input_method": self.input_method_var.get(),
+            "keyboard_method": self._current_keyboard_method,
+            "mouse_method": self._current_mouse_method,
         }
     
     def load_settings(self, settings):
@@ -481,9 +883,26 @@ class SettingsTab(ctk.CTkFrame):
                 self.stop_shortcut_var.set(shortcuts["stop"])
             if "record" in shortcuts:
                 self.record_hotkey_var.set(shortcuts["record"])
+            if "tab_shortcuts" in shortcuts:
+                # 清除现有行
+                for row in self._tab_shortcut_rows:
+                    row["frame"].destroy()
+                self._tab_shortcut_rows.clear()
+                # 加载配置
+                for ts in shortcuts["tab_shortcuts"]:
+                    self._add_tab_shortcut_row(ts.get("hotkey", ""), ts.get("tab_name", ""))
         
         if "input" in settings:
             input_settings = settings["input"]
-            if "method" in input_settings:
-                self.input_method_var.set(input_settings["method"])
-                self._current_input_method = input_settings["method"]
+            if "keyboard_method" in input_settings:
+                self._current_keyboard_method = input_settings["keyboard_method"]
+                if hasattr(self, '_kb_combo_var') and hasattr(self, '_method_key_to_label'):
+                    label = self._method_key_to_label.get(input_settings["keyboard_method"], "")
+                    if label:
+                        self._kb_combo_var.set(label)
+            if "mouse_method" in input_settings:
+                self._current_mouse_method = input_settings["mouse_method"]
+                if hasattr(self, '_ms_combo_var') and hasattr(self, '_method_key_to_label'):
+                    label = self._method_key_to_label.get(input_settings["mouse_method"], "")
+                    if label:
+                        self._ms_combo_var.set(label)

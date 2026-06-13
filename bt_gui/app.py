@@ -460,6 +460,7 @@ class BehaviorTreeApp(ctk.CTk):
                 self._settings.set("shortcuts.start", shortcuts.get("start", "F10"), auto_save=False)
                 self._settings.set("shortcuts.stop", shortcuts.get("stop", "F12"), auto_save=False)
                 self._settings.set("shortcuts.record", shortcuts.get("record", "F11"), auto_save=False)
+                self._settings.set("shortcuts.tab_shortcuts", shortcuts.get("tab_shortcuts", []), auto_save=False)
         
         if hasattr(self, 'behavior_tree') and self.behavior_tree:
             if hasattr(self.behavior_tree, 'tab_manager'):
@@ -477,9 +478,9 @@ class BehaviorTreeApp(ctk.CTk):
                 if active_tab:
                     self._settings.set_active_tab_id(active_tab.tab_id)
     
-    def _restart_with_method(self, method: str, as_admin: bool) -> bool:
+    def _restart_with_methods(self, keyboard_method: str, mouse_method: str, as_admin: bool) -> bool:
         from bt_utils.app_restarter import restart_app
-        
+
         if hasattr(self, 'behavior_tree') and self.behavior_tree:
             engine = getattr(self.behavior_tree, 'engine', None)
             if engine and getattr(engine, 'is_running', lambda: False)():
@@ -488,18 +489,20 @@ class BehaviorTreeApp(ctk.CTk):
                     "行为树正在运行中，请先停止运行再切换输入方式。"
                 )
                 return False
-        
-        self._settings.set("input.method", method)
+
+        self._settings.set("input.keyboard_method", keyboard_method)
+        self._settings.set("input.mouse_method", mouse_method)
         self._save_state()
         self._settings.save_settings()
-        
+
         success = restart_app(as_admin=as_admin)
-        
+
         if success:
             self.destroy()
             sys.exit(0)
         else:
-            self._settings.set("input.method", "pyautogui")
+            self._settings.set("input.keyboard_method", "pyautogui")
+            self._settings.set("input.mouse_method", "pyautogui")
             messagebox.showwarning(
                 "重启失败",
                 "无法以管理员身份重启应用，输入方式已恢复为 PyAutoGUI。"

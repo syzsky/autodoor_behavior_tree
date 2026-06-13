@@ -134,6 +134,8 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "click_count", "label": "点击次数(-1无限)", "type": "number", "min": -1, "max": 10, "default": 1},
         {"key": "click_interval", "label": "点击间隔(ms)", "type": "number", "default": 100},
         {"key": "click_interval_random", "label": "间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "x_float", "label": "X坐标随机范围(±px)", "type": "number", "min": 0, "default": 0},
+        {"key": "y_float", "label": "Y坐标随机范围(±px)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseMoveNode": [
         {"key": "position", "label": "起点位置", "type": "position"},
@@ -148,6 +150,8 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "position_key_end", "label": "终点黑板变量名", "type": "text", "default": "", "hide_if": {"field": "relative", "value": True}},
         {"key": "move_duration", "label": "移动时长(ms)", "type": "number", "default": 0},
         {"key": "move_duration_random", "label": "移动时长随机范围(±ms)", "type": "number", "min": 0, "default": 0},
+        {"key": "x_float", "label": "X坐标随机范围(±px)", "type": "number", "min": 0, "default": 0},
+        {"key": "y_float", "label": "Y坐标随机范围(±px)", "type": "number", "min": 0, "default": 0},
     ],
     "MouseScrollNode": [
         {"key": "distance", "label": "滚动距离", "type": "number", "default": 5},
@@ -222,6 +226,16 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "sound_path", "label": "音频文件", "type": "file", "width": 120, "filetypes": [("所有文件", "*.*")]},
         {"key": "volume", "label": "音量(0-100,空用全局)", "type": "number", "min": 0, "max": 100, "default": 70},
         {"key": "wait_complete", "label": "等待播放完成", "type": "bool", "default": True},
+    ],
+    "StartTreeNode": [
+        {"key": "target_tree", "label": "目标行为树", "type": "tree_select", "default": ""},
+        {"key": "sound_path", "label": "启动音效", "type": "file", "width": 120, "filetypes": [("音频文件", "*.mp3 *.wav *.ogg"), ("所有文件", "*.*")]},
+        {"key": "volume", "label": "音量(0-100)", "type": "number", "min": 0, "max": 100, "default": 70},
+    ],
+    "StopTreeNode": [
+        {"key": "target_tree", "label": "目标行为树", "type": "tree_select", "default": ""},
+        {"key": "sound_path", "label": "停止音效", "type": "file", "width": 120, "filetypes": [("音频文件", "*.mp3 *.wav *.ogg"), ("所有文件", "*.*")]},
+        {"key": "volume", "label": "音量(0-100)", "type": "number", "min": 0, "max": 100, "default": 70},
     ],
     "TextInputNode": [
         {"key": "input_mode", "label": "输入模式", "type": "select", "options": ["文本提取值", "预设文本", "文件"], "default": "文本提取值"},
@@ -481,6 +495,105 @@ class SelectField(FieldWidget):
     def get_value(self) -> Any:
         current = self.var.get()
         return self._reverse_names.get(current, current)
+
+
+class TreeSelectField(FieldWidget):
+    """行为树选择字段 — 动态获取已加载的 Tab 列表"""
+
+    def __init__(self, master, label: str, key: str, on_change: Callable, default: str = "", **kwargs):
+        self._default = default or ""
+        self._tree_names = []
+        self._display_options = []
+        super().__init__(master, label, key, on_change, **kwargs)
+        # super().__init__ 之后 self.master 才可用
+        self._tree_names = self._get_available_trees()
+        self._display_options = list(self._tree_names)
+        self._create_widget()
+
+    def _create_widget(self):
+        input_frame = ctk.CTkFrame(self, fg_color="transparent")
+        input_frame.pack(fill="x")
+
+        self.var = tk.StringVar(value=self._default)
+
+        # 清空按钮
+        self.clear_btn = ctk.CTkButton(
+            input_frame,
+            text="清空",
+            font=Theme.get_font('sm'),
+            width=50,
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['info'],
+            hover_color=self._dark_colors['info_hover'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            command=self._on_clear
+        )
+        self.clear_btn.pack(side="right", padx=(Theme.DIMENSIONS['spacing_xs'], 0))
+
+        # 下拉框
+        self.menu = ctk.CTkOptionMenu(
+            input_frame,
+            variable=self.var,
+            values=self._display_options,
+            font=Theme.get_font('sm'),
+            height=Theme.DIMENSIONS['input_height'],
+            fg_color=self._dark_colors['bg_tertiary'],
+            button_color=self._dark_colors['border'],
+            button_hover_color=self._dark_colors['node_selected'],
+            text_color=self._dark_colors['text_primary'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            command=lambda choice: self.on_change(self.key, choice)
+        )
+        self.menu.pack(side="left", fill="x", expand=True)
+
+        # 通过内部 Menu 的 postcommand 在菜单弹出前刷新选项列表
+        try:
+            internal_menu = self.menu._dropdown_menu
+            if internal_menu:
+                internal_menu.configure(postcommand=lambda: self.refresh_options())
+        except Exception:
+            # 回退方案：绑定点击事件刷新
+            self.menu.bind("<ButtonPress-1>", lambda e: self.refresh_options())
+
+    def _on_clear(self):
+        """点击清空按钮时清空当前选择"""
+        self.var.set("")
+        self.on_change(self.key, "")
+
+    def _get_available_trees(self) -> list:
+        """获取当前已加载的行为树名称列表"""
+        try:
+            # 向上遍历找到 PropertyPanel 实例，通过其 app 获取 editor
+            widget = self.master
+            while widget:
+                if isinstance(widget, PropertyPanel):
+                    app = getattr(widget, 'app', None)
+                    if app and hasattr(app, 'behavior_tree'):
+                        tab_manager = app.behavior_tree.tab_manager
+                        if tab_manager:
+                            return [inst.name for inst in tab_manager._trees.values()]
+                    break
+                widget = widget.master if hasattr(widget, 'master') else None
+        except Exception:
+            pass
+        return []
+
+    def refresh_options(self):
+        """刷新下拉选项"""
+        current_value = self.var.get() if hasattr(self, 'var') else ""
+        self._tree_names = self._get_available_trees()
+        self._display_options = list(self._tree_names)
+        self.menu.configure(values=self._display_options)
+        # 始终恢复之前选中的值（包括空值），防止 CTkOptionMenu 自动选择第一项
+        self.var.set(current_value)
+
+    def set_value(self, value: Any):
+        val = str(value) if value else ""
+        if val in self._display_options:
+            self.var.set(val)
+
+    def get_value(self) -> Any:
+        return self.var.get()
 
 
 class BoolField(FieldWidget):
@@ -2696,6 +2809,10 @@ class PropertyPanel(ctk.CTkFrame):
             if key in ("name", "enabled"):
                 continue  # 基本信息已单独处理
 
+            # TreeSelectField 需要刷新选项列表
+            if isinstance(widget, TreeSelectField):
+                widget.refresh_options()
+
             value = config_data.get(key)
             if key in self._hidden_values:
                 self._hidden_values[key] = value
@@ -3206,6 +3323,11 @@ class PropertyPanel(ctk.CTkFrame):
             field_widget = TextListField(container, label, key, self._on_field_change)
         elif field_type == "variable_select":
             field_widget = VariableSelectField(container, label, key, self._on_field_change)
+        elif field_type == "tree_select":
+            field_widget = TreeSelectField(container, label, key, self._on_field_change, default=field.get("default", ""))
+            # 创建后刷新选项，确保获取最新的 Tab 列表
+            if isinstance(field_widget, TreeSelectField):
+                field_widget.refresh_options()
         
         if field_widget:
             display_value = value if value is not None else field.get("default")

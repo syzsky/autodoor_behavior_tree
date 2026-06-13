@@ -8,21 +8,21 @@ import threading
 import time
 from typing import Optional, Tuple
 
-from .base_input import BaseInputController
+from .base_input import BaseInputController, InputLevel
 
 
 def _get_input_method_from_settings() -> str:
     try:
         from config.settings_manager import SettingsManager
-        method = SettingsManager.get_instance().get("input.method", "pyautogui")
+        method = SettingsManager.get_instance().get("input.keyboard_method", "pyautogui")
     except Exception:
         method = "pyautogui"
-    
+
     if method == "dd":
         from .app_restarter import is_dd_available
         if not is_dd_available():
             method = "pyautogui"
-    
+
     return method
 
 _dd_input_instance = None
@@ -42,6 +42,14 @@ def _get_dd_input(app=None):
 
 class PyAutoGUIInput(BaseInputController):
     """PyAutoGUI输入控制器"""
+    
+    @classmethod
+    def get_input_level(cls) -> InputLevel:
+        return InputLevel.APPLICATION
+    
+    @classmethod
+    def is_driver_available(cls) -> bool:
+        return True
     
     def __init__(self, app=None):
         self._available = True
@@ -160,6 +168,15 @@ class PyAutoGUIInput(BaseInputController):
 class DDInputWrapper(BaseInputController):
     """DD输入控制器包装器"""
     
+    @classmethod
+    def get_input_level(cls) -> InputLevel:
+        return InputLevel.DRIVER
+    
+    @classmethod
+    def is_driver_available(cls) -> bool:
+        from .dd_input import DDVirtualInput
+        return DDVirtualInput.is_driver_available()
+    
     def __init__(self, dd_instance, app=None):
         self._dd = dd_instance
         self.app = app
@@ -215,6 +232,30 @@ class InputController:
     
     根据环境变量 AUTODOOR_USE_DD 自动选择DD虚拟键盘或PyAutoGUI
     """
+    
+    @classmethod
+    def get_input_level(cls) -> InputLevel:
+        """获取输入层级（委托给实际实现）"""
+        instance = cls._get_default_instance()
+        if instance:
+            return instance.get_input_level()
+        return InputLevel.APPLICATION
+    
+    @classmethod
+    def is_driver_available(cls) -> bool:
+        """检测驱动是否可用（委托给实际实现）"""
+        return True
+    
+    _default_instance = None
+    
+    @classmethod
+    def _get_default_instance(cls):
+        if cls._default_instance is None:
+            try:
+                cls._default_instance = InputController()
+            except Exception:
+                pass
+        return cls._default_instance
     
     _simulate_lock = threading.Lock()
     _simulating = False

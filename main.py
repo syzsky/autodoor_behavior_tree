@@ -193,43 +193,54 @@ def initialize_input():
         return False
 
 
-def check_admin_for_dd():
-    """检查DD模式是否需要管理员权限，如需要则提权重启"""
+def check_admin_for_driver(method: str, display_name: str, is_available_fn):
+    """检查驱动模式是否需要管理员权限，如需要则提权重启
+
+    Args:
+        method: 输入方式 key（如 "dd", "ib"）
+        display_name: 显示名称（如 "DD虚拟键盘", "IbInputSimulator"）
+        is_available_fn: 检测 DLL 是否存在的函数
+    """
     from config.settings_manager import SettingsManager
-    from bt_utils.app_restarter import is_admin, is_dd_available, restart_as_admin
-    
+    from bt_utils.app_restarter import is_admin, restart_as_admin
+
     settings = SettingsManager.get_instance()
-    input_method = settings.get("input.method", "pyautogui")
-    
-    if input_method != "dd":
+    kb_method = settings.get("input.keyboard_method", "pyautogui")
+    ms_method = settings.get("input.mouse_method", "pyautogui")
+
+    # 键盘或鼠标任一使用该驱动都需要管理员权限
+    if kb_method != method and ms_method != method:
         return True
-    
-    if not is_dd_available():
-        write_log("DD64.dll not found, falling back to PyAutoGUI")
-        settings.set("input.method", "pyautogui")
+
+    if not is_available_fn():
+        write_log(f"{display_name} DLL not found, falling back to PyAutoGUI")
+        if kb_method == method:
+            settings.set("input.keyboard_method", "pyautogui")
+        if ms_method == method:
+            settings.set("input.mouse_method", "pyautogui")
         return True
-    
+
     if is_admin():
-        write_log("DD mode: already running as admin")
+        write_log(f"{display_name}: already running as admin")
         return True
-    
-    write_log("DD mode: not admin, requesting elevation")
-    
+
+    write_log(f"{display_name}: not admin, requesting elevation")
+
     import tkinter as tk
     from tkinter import messagebox
-    
+
     root = tk.Tk()
     root.withdraw()
-    
+
     result = messagebox.askyesno(
         "需要管理员权限",
-        "DD虚拟键盘需要管理员权限才能正常工作。\n\n"
+        f"{display_name}需要管理员权限才能正常工作。\n\n"
         "是否以管理员身份重新启动应用？\n\n"
         "点击「否」将使用 PyAutoGUI 模式启动。",
         icon='warning'
     )
     root.destroy()
-    
+
     if result:
         success = restart_as_admin()
         if success:
@@ -244,16 +255,21 @@ def check_admin_for_dd():
                 "无法获取管理员权限，将使用 PyAutoGUI 模式启动。"
             )
             root2.destroy()
-    
+
     write_log("Falling back to PyAutoGUI mode")
-    settings.set("input.method", "pyautogui")
+    if kb_method == method:
+        settings.set("input.keyboard_method", "pyautogui")
+    if ms_method == method:
+        settings.set("input.mouse_method", "pyautogui")
     return True
 
 
 def main():
     ensure_workspace_exists()
-    
-    check_admin_for_dd()
+
+    from bt_utils.app_restarter import is_dd_available, is_ib_available
+    check_admin_for_driver("dd", "DD虚拟键盘", is_dd_available)
+    check_admin_for_driver("ib", "IbInputSimulator", is_ib_available)
     
     initialize_ocr()
     initialize_input()

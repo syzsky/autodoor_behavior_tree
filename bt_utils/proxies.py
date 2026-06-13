@@ -175,11 +175,10 @@ class ImageDetectionProxy:
 class InputProxy:
     """输入代理类
 
-    封装输入控制功能，提供统一的输入接口。
+    封装输入控制功能，委托给 InputControllerManager 统一管理。
     """
 
     _instance = None
-    _use_dd = False
 
     def __new__(cls):
         if cls._instance is None:
@@ -191,66 +190,50 @@ class InputProxy:
         if self._initialized:
             return
         self._initialized = True
-        self._controller = None
 
-    def _get_controller(self):
-        if self._controller is None:
-            from bt_utils.input_controller_factory import InputController
-            method = 'dd' if self._use_dd else 'pyautogui'
-            self._controller = InputController(method=method)
-        return self._controller
+    def _get_keyboard_engine(self, **kwargs):
+        """获取键盘引擎"""
+        from bt_utils.input_manager import InputControllerManager
+        return InputControllerManager().get_keyboard_engine(**kwargs)
+
+    def _get_mouse_engine(self, **kwargs):
+        """获取鼠标引擎"""
+        from bt_utils.input_manager import InputControllerManager
+        return InputControllerManager().get_mouse_engine(**kwargs)
 
     @classmethod
     def use_dd_input(cls, use_dd: bool = True) -> None:
-        """设置是否使用DD虚拟输入
-
-        Args:
-            use_dd: 是否使用DD虚拟输入
-        """
-        cls._use_dd = use_dd
-        if cls._instance:
-            cls._instance._controller = None
+        """设置是否使用DD虚拟输入"""
+        from bt_utils.input_manager import InputControllerManager
+        method = "dd" if use_dd else "pyautogui"
+        manager = InputControllerManager()
+        manager.set_keyboard_method(method)
+        manager.set_mouse_method(method)
 
     def key_press(self, key: str, action: str = "press", duration: int = 0) -> None:
-        """按键操作
-
-        Args:
-            key: 按键名称
-            action: 动作类型 (press/down/up)
-            duration: 按住时长（毫秒）
-        """
-        self._get_controller().key_press(key, action, duration)
+        """按键操作"""
+        engine = self._get_keyboard_engine()
+        if engine:
+            engine.key_press(key, action, duration)
 
     def mouse_click(self, button: str = "left", position: Tuple[int, int] = None,
                    action: str = "press", duration: int = 0) -> None:
-        """鼠标点击
-
-        Args:
-            button: 鼠标按钮 (left/right/middle)
-            position: 点击位置 (x, y)
-            action: 动作类型 (press/down/up)
-            duration: 按住时长（毫秒）
-        """
-        self._get_controller().mouse_click(button, position, action, duration)
+        """鼠标点击"""
+        engine = self._get_mouse_engine()
+        if engine:
+            engine.mouse_click(button, position, action, duration)
 
     def mouse_move(self, position: Tuple[int, int], relative: bool = False) -> None:
-        """移动鼠标
-
-        Args:
-            position: 目标位置 (x, y)
-            relative: 是否相对移动
-        """
-        controller = self._get_controller()
-        controller.mouse_move(position, relative)
+        """移动鼠标"""
+        engine = self._get_mouse_engine()
+        if engine:
+            engine.mouse_move(position, relative)
 
     def mouse_scroll(self, amount: int, position: Tuple[int, int] = None) -> None:
-        """鼠标滚轮
-
-        Args:
-            amount: 滚动量
-            position: 滚动位置
-        """
-        self._get_controller().mouse_scroll(amount, position)
+        """鼠标滚轮"""
+        engine = self._get_mouse_engine()
+        if engine:
+            engine.mouse_scroll(amount, position)
 
 
 class ScreenshotProxy:
