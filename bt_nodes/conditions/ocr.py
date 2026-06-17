@@ -15,21 +15,6 @@ class OCRConditionNode(ConditionNode):
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        self.keywords = self.config.get("keywords", "")
-        language_display = self.config.get("language", "简体中文")
-        self.language = LANGUAGE_MAP.get(language_display, "chi_sim")
-        preprocess_display = self.config.get("preprocess_mode", "默认")
-        self.preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
-        
-        self.search_direction = self.config.get("search_direction", "左上")
-
-        try:
-            from config.settings_manager import get_default_position_key
-            default_position_key = get_default_position_key()
-        except ImportError:
-            default_position_key = "last_detection_position"
-        position_key_value = self.config.get("position_key", "")
-        self.position_key = position_key_value if position_key_value else default_position_key
 
     def _check_condition(self, context) -> bool:
         try:
@@ -49,11 +34,15 @@ class OCRConditionNode(ConditionNode):
 
             found, position, all_text = OCRManager().recognize(
                 screenshot, keywords, language,
-                preprocess_mode=preprocess_mode, region=self._get_effective_region(context),
+                preprocess_mode=preprocess_mode,
                 search_direction=direction
             )
 
             if found:
+                if position:
+                    region = self._get_effective_region(context)
+                    if region:
+                        position = (position[0] + region[0], position[1] + region[1])
                 self._save_position(context, position)
                 self._log_condition_result(True)
                 return True

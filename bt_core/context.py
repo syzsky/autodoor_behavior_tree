@@ -313,8 +313,9 @@ class ExecutionContext:
         if engine:
             engine.mouse_scroll(amount, position)
 
-    def perform_ocr(self, image, keywords: str, language: str = "eng", 
-                    region: Tuple[int, int, int, int] = None) -> tuple:
+    def perform_ocr(self, image, keywords: str = None, language: str = "eng",
+                    region: Tuple[int, int, int, int] = None,
+                    preprocess_mode: str = "normal") -> tuple:
         """执行OCR识别
 
         Args:
@@ -322,6 +323,7 @@ class ExecutionContext:
             keywords: 关键词（逗号分隔）
             language: OCR语言
             region: 截图区域 (left, top, right, bottom)，用于坐标转换
+            preprocess_mode: 预处理模式 (normal/game/adaptive/auto)
 
         Returns:
             (是否找到, 位置, 所有识别文本) 元组
@@ -330,7 +332,10 @@ class ExecutionContext:
             from bt_utils.ocr_manager import OCRManager
             self._ocr_manager = OCRManager()
 
-        return self._ocr_manager.recognize(image, keywords, language, region=region)
+        return self._ocr_manager.recognize(
+            image, keywords, language, region=region,
+            preprocess_mode=preprocess_mode
+        )
     
     def resolve_path(self, relative_path: str) -> str:
         """解析相对路径为绝对路径

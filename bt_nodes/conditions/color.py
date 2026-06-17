@@ -1,6 +1,7 @@
 from bt_core.nodes import ConditionNode
 from bt_core.config import NodeConfig
 from typing import Dict, Any, Tuple, Optional
+from bt_utils.image_processor import ImageProcessor
 
 
 class ColorConditionNode(ConditionNode):
@@ -8,9 +9,6 @@ class ColorConditionNode(ConditionNode):
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        self.target_color = self._parse_color(self.config.get("target_color", None))
-        self.tolerance = self.config.get_int("tolerance", 30)
-        self.match_mode = self.config.get("match_mode", "any")
 
     def _check_condition(self, context) -> bool:
         try:
@@ -23,32 +21,19 @@ class ColorConditionNode(ConditionNode):
             if screenshot is None:
                 return False
 
-            from PIL import Image
-            import numpy as np
-
             target_color = self._parse_color(self.config.get("target_color", None))
             tolerance = self.config.get_int("tolerance", 30)
             match_mode = self.config.get("match_mode", "any")
+            match_ratio = self.config.get_float("color_match_threshold", 0.9)
 
-            img_array = np.array(screenshot)
-            target = np.array(target_color)
+            found, position = ImageProcessor.find_color(
+                screenshot, target_color, tolerance,
+                match_mode=match_mode, match_ratio=match_ratio
+            )
 
-            diff = np.abs(img_array[:, :, :3].astype(int) - target.astype(int))
-            matches = np.all(diff <= tolerance, axis=2)
-
-            if match_mode == "all":
-                result = bool(np.all(matches))
-            else:
-                result = bool(np.any(matches))
-
-            if result:
-                match_positions = np.argwhere(matches)
-                if len(match_positions) > 0:
-                    center_idx = len(match_positions) // 2
-                    y, x = match_positions[center_idx]
-                    position = (int(x) + region[0], int(y) + region[1])
-                    self._save_position(context, position)
-
+            if found:
+                actual_position = self._adjust_position(position, context)
+                self._save_position(context, actual_position)
                 self._log_condition_result(True)
                 return True
             else:
@@ -60,5 +45,3 @@ class ColorConditionNode(ConditionNode):
             log_exception(e, f"ColorConditionNode '{self.name}'")
             self._log_condition_result(False, "检测异常，详情见终端日志")
             return False
-
-

@@ -855,38 +855,12 @@ class ConditionNode(Node):
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
         self.invert = self.config.get_bool("invert", False)
-        self.check_interval_ms = self.config.get_int("check_interval_ms", 300)
-        self.save_position = self.config.get_bool("save_position", True)
         
-        try:
-            from config.settings_manager import get_default_position_key
-            default_position_key = get_default_position_key()
-        except ImportError:
-            default_position_key = "last_detection_position"
-        
-        position_key_value = self.config.get("position_key", "")
-        self.position_key = position_key_value if position_key_value else default_position_key
-        
-        # 坐标偏移参数 (向后兼容：支持旧的 offset_x/offset_y 格式)
-        offset = self.config.get("offset", None)
-        if offset is not None:
-            if isinstance(offset, (list, tuple)) and len(offset) >= 2:
-                self.offset = (int(offset[0]), int(offset[1]))
-            else:
-                self.offset = (0, 0)
-        else:
-            # 向后兼容：从旧的 offset_x/offset_y 读取
-            offset_x = self.config.get_int("offset_x", 0)
-            offset_y = self.config.get_int("offset_y", 0)
-            self.offset = (offset_x, offset_y)
-        
-        self._last_check_time = -self.check_interval_ms - 1
-        # 智能跳过：连续相同结果时逐步延长检测间隔
+        self._last_check_time = -self.config.get_int("check_interval_ms", 300) - 1
+        # 智能跳过：连续相同结果时延长检测间隔
         self._consecutive_same_count = 0
         self._last_condition_result = None
-        self._STABLE_THRESHOLD_LOW = 5     # 连续5次相同 → 间隔×2
-        self._STABLE_THRESHOLD_HIGH = 15   # 连续15次相同 → 间隔×4
-        self._MAX_INTERVAL_MULTIPLIER = 4  # 最大间隔倍数
+        self._STABLE_THRESHOLD = 15        # 连续15次相同 → 间隔×2
 
     def _parse_region(self, region_config) -> tuple:
         """解析区域配置
@@ -942,6 +916,23 @@ class ConditionNode(Node):
             except (ValueError, AttributeError):
                 pass
         return (255, 0, 0)
+
+    def _adjust_position(self, position: tuple, context=None) -> tuple:
+        """调整坐标（加上区域偏移）
+
+        Args:
+            position: 相对位置
+            context: 执行上下文
+
+        Returns:
+            绝对位置
+        """
+        if position is None:
+            return None
+        region = self._get_effective_region(context) if context else self._parse_region(self.config.get("region", None))
+        if region:
+            return (position[0] + region[0], position[1] + region[1])
+        return position
 
     def _apply_offset(self, position: tuple) -> tuple:
         """应用坐标偏移
@@ -1006,11 +997,9 @@ class ConditionNode(Node):
             return self._execute_children(context)
 
         check_interval_ms = self.config.get_int("check_interval_ms", 300)
-        # 智能跳过：连续相同结果时逐步延长检测间隔
+        # 智能跳过：连续相同结果时延长检测间隔
         effective_interval_ms = check_interval_ms
-        if self._consecutive_same_count >= self._STABLE_THRESHOLD_HIGH:
-            effective_interval_ms = check_interval_ms * self._MAX_INTERVAL_MULTIPLIER
-        elif self._consecutive_same_count >= self._STABLE_THRESHOLD_LOW:
+        if self._consecutive_same_count >= self._STABLE_THRESHOLD:
             effective_interval_ms = check_interval_ms * 2
 
         current_time = context.elapsed_time * 1000

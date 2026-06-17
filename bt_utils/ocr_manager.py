@@ -2,6 +2,7 @@ from rapidocr import RapidOCR
 from PIL import Image, ImageEnhance, ImageFilter
 from typing import Tuple, Optional, Dict, Any
 from dataclasses import dataclass
+from collections import OrderedDict
 import numpy as np
 import re
 import time
@@ -9,6 +10,7 @@ import hashlib
 import threading
 import cv2
 import logging
+import imagehash
 from bt_utils.singleton import singleton
 
 _logger = logging.getLogger(__name__)
@@ -161,7 +163,7 @@ class SmartScaleStrategy:
 @dataclass
 class PreprocessConfig:
     """预处理配置参数"""
-    
+
     scale_factor: float = 1.0
     denoise_enabled: bool = True
     denoise_method: str = "median"
@@ -177,6 +179,70 @@ class PreprocessConfig:
     binarization_threshold: int = 130
     binarization_block_size: int = 11
     binarization_c: int = 2
+    morphology_enabled: bool = False
+    morphology_method: str = "close"
+    morphology_kernel_size: int = 1
+
+    @classmethod
+    def chinese(cls, scale_factor: float = 1.0) -> 'PreprocessConfig':
+        """中文/游戏界面预处理配置
+
+        流程：智能放大→中值滤波→灰度→对比度增强→锐化→二值化
+        等价于原 _preprocess_chinese
+        """
+        return cls(
+            scale_factor=scale_factor,
+            denoise_enabled=True,
+            denoise_method="median",
+            denoise_kernel_size=3,
+            contrast_enabled=True,
+            contrast_method="simple",
+            contrast_factor=2.5,
+            sharpness_enabled=True,
+            sharpness_factor=2.0,
+            sharpness_iterations=2,
+            binarization_method="fixed",
+            binarization_threshold=130,
+        )
+
+    @classmethod
+    def standard(cls) -> 'PreprocessConfig':
+        """标准预处理配置
+
+        流程：灰度→对比度增强→锐化→二值化
+        等价于原 _preprocess_standard
+        """
+        return cls(
+            scale_factor=1.0,
+            denoise_enabled=False,
+            contrast_enabled=True,
+            contrast_method="simple",
+            contrast_factor=1.5,
+            sharpness_enabled=True,
+            sharpness_factor=1.5,
+            sharpness_iterations=1,
+            binarization_method="fixed",
+            binarization_threshold=128,
+        )
+
+    @classmethod
+    def adaptive(cls) -> 'PreprocessConfig':
+        """自适应预处理配置
+
+        流程：灰度→CLAHE对比度增强→自适应二值化
+        等价于原 _preprocess_adaptive
+        """
+        return cls(
+            scale_factor=1.0,
+            denoise_enabled=False,
+            contrast_enabled=True,
+            contrast_method="clahe",
+            clahe_clip_limit=2.0,
+            sharpness_enabled=False,
+            binarization_method="adaptive",
+            binarization_block_size=11,
+            binarization_c=2,
+        )
 
 
 class AutoConfigSelector:
@@ -282,11 +348,10 @@ class PreprocessExecutor:
         
         if config.sharpness_enabled:
             pil_image = Image.fromarray(gray)
-            enhancer = ImageEnhance.Sharpness(pil_image)
             for _ in range(config.sharpness_iterations):
-                pil_image = enhancer.enhance(config.sharpness_factor)
+                pil_image = ImageEnhance.Sharpness(pil_image).enhance(config.sharpness_factor)
             gray = np.array(pil_image)
-        
+
         if config.binarization_method == "adaptive":
             gray = cv2.adaptiveThreshold(
                 gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -296,7 +361,18 @@ class PreprocessExecutor:
             _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         else:
             _, gray = cv2.threshold(gray, config.binarization_threshold, 255, cv2.THRESH_BINARY)
-        
+
+        if config.morphology_enabled and config.morphology_kernel_size > 1:
+            kernel = np.ones((config.morphology_kernel_size, config.morphology_kernel_size), np.uint8)
+            if config.morphology_method == "close":
+                gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
+            elif config.morphology_method == "open":
+                gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel)
+            elif config.morphology_method == "dilate":
+                gray = cv2.dilate(gray, kernel)
+            elif config.morphology_method == "erode":
+                gray = cv2.erode(gray, kernel)
+
         return Image.fromarray(gray)
 
 
@@ -387,6 +463,72 @@ def calculate_keyword_position(text: str, keyword: str,
     return (x, y)
 
 
+class LRUCache:
+    """线程安全的 LRU 缓存，支持 TTL 过期和 O(1) 淘汰"""
+
+    def __init__(self, max_size: int = 200, ttl: float = 3.0):
+        self._cache: OrderedDict = OrderedDict()
+        self._max_size = max_size
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        self._hits = 0
+        self._misses = 0
+
+    def get(self, key: str) -> Optional[Any]:
+        """获取缓存结果
+
+        Args:
+            key: 缓存键
+
+        Returns:
+            缓存的结果，未命中或过期返回 None
+        """
+        with self._lock:
+            if key in self._cache:
+                entry = self._cache[key]
+                if time.time() - entry['time'] < self._ttl:
+                    self._cache.move_to_end(key)
+                    self._hits += 1
+                    return entry['result']
+                del self._cache[key]
+            self._misses += 1
+        return None
+
+    def set(self, key: str, result: Any):
+        """设置缓存结果
+
+        Args:
+            key: 缓存键
+            result: 结果
+        """
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = {'result': result, 'time': time.time()}
+            if len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)  # O(1) 淘汰最旧
+
+    def clear(self):
+        """清空缓存和统计"""
+        with self._lock:
+            self._cache.clear()
+            self._hits = 0
+            self._misses = 0
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        with self._lock:
+            total = self._hits + self._misses
+            return {
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": self._hits / total if total > 0 else 0.0,
+                "size": len(self._cache),
+                "max_size": self._max_size,
+                "ttl": self._ttl,
+            }
+
+
 @singleton
 class OCRManager:
     """OCR管理器
@@ -402,20 +544,17 @@ class OCRManager:
 
     CHINESE_LANGS = {"chi_sim", "chi_tra"}
 
-    DEFAULT_CACHE_TTL = 1.0
+    DEFAULT_CACHE_TTL = 3.0
     MAX_CACHE_SIZE = 200
 
     def __init__(self):
         if not self._available:
             return
-        
-        self._cache: Dict[str, Tuple[Any, float]] = {}
-        self._cache_lock = threading.Lock()
+
+        self._cache = LRUCache(max_size=self.MAX_CACHE_SIZE, ttl=self.DEFAULT_CACHE_TTL)
         self._auto_config_selector = AutoConfigSelector()
-        # 缓存命中率统计
-        self._cache_hits = 0
-        self._cache_misses = 0
-        
+        self._preprocess_executor = PreprocessExecutor()
+
         try:
             self._engine = RapidOCR(
                 params={
@@ -473,7 +612,7 @@ class OCRManager:
         return cls._unavailable_reason
 
     def _compute_cache_key(self, image: Image.Image, **kwargs) -> str:
-        """计算缓存键
+        """计算缓存键（使用感知哈希替代全图 MD5）
 
         Args:
             image: PIL图像
@@ -483,10 +622,13 @@ class OCRManager:
             缓存键字符串
         """
         try:
-            img_bytes = np.array(image).tobytes()
-            img_hash = hashlib.md5(img_bytes).hexdigest()[:16]
+            img_hash = str(imagehash.phash(image, hash_size=8))
         except Exception:
-            img_hash = str(id(image))
+            try:
+                img_bytes = np.array(image).tobytes()
+                img_hash = hashlib.md5(img_bytes).hexdigest()[:16]
+            except Exception:
+                img_hash = str(id(image))
         
         params_str = str(sorted(kwargs.items()))
         params_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
@@ -501,15 +643,7 @@ class OCRManager:
         Returns:
             缓存的结果，未命中返回None
         """
-        with self._cache_lock:
-            if cache_key in self._cache:
-                result, timestamp = self._cache[cache_key]
-                if time.time() - timestamp < self.DEFAULT_CACHE_TTL:
-                    self._cache_hits += 1
-                    return result
-                del self._cache[cache_key]
-            self._cache_misses += 1
-        return None
+        return self._cache.get(cache_key)
 
     def _set_cached_result(self, cache_key: str, result: Any):
         """设置缓存结果
@@ -518,18 +652,11 @@ class OCRManager:
             cache_key: 缓存键
             result: 结果
         """
-        with self._cache_lock:
-            if len(self._cache) >= self.MAX_CACHE_SIZE:
-                oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
-                del self._cache[oldest_key]
-            self._cache[cache_key] = (result, time.time())
+        self._cache.set(cache_key, result)
 
     def clear_cache(self):
         """清空缓存"""
-        with self._cache_lock:
-            self._cache.clear()
-            self._cache_hits = 0
-            self._cache_misses = 0
+        self._cache.clear()
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息
@@ -537,128 +664,7 @@ class OCRManager:
         Returns:
             包含 hits/misses/hit_rate/size 的字典
         """
-        with self._cache_lock:
-            total = self._cache_hits + self._cache_misses
-            return {
-                "hits": self._cache_hits,
-                "misses": self._cache_misses,
-                "hit_rate": self._cache_hits / total if total > 0 else 0.0,
-                "size": len(self._cache),
-                "max_size": self.MAX_CACHE_SIZE,
-                "ttl": self.DEFAULT_CACHE_TTL,
-            }
-
-    def _preprocess_chinese(self, image: Image.Image) -> Image.Image:
-        """中文图像预处理
-
-        流程：放大→中值滤波→灰度→对比度增强→锐化→二值化
-
-        Args:
-            image: 原始图像
-
-        Returns:
-            预处理后的图像
-        """
-        width, height = image.size
-        min_dimension = min(width, height)
-        
-        if min_dimension < 100:
-            scale_factor = 2.5
-            new_size = (int(width * scale_factor), int(height * scale_factor))
-            image = image.resize(new_size, Image.LANCZOS)
-        
-        image = image.filter(ImageFilter.MedianFilter(size=3))
-        
-        if image.mode != 'L':
-            image = image.convert('L')
-        
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2.5)
-        
-        enhancer = ImageEnhance.Sharpness(image)
-        image = enhancer.enhance(2.0)
-        image = enhancer.enhance(2.0)
-        
-        threshold = 130
-        image = image.point(lambda x: 255 if x > threshold else 0, 'L')
-        
-        return image
-
-    def _preprocess_standard(self, image: Image.Image) -> Image.Image:
-        """标准图像预处理
-
-        流程：灰度→对比度增强→锐化→二值化
-
-        Args:
-            image: 原始图像
-
-        Returns:
-            预处理后的图像
-        """
-        if image.mode != 'L':
-            image = image.convert('L')
-        
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(1.5)
-        
-        enhancer = ImageEnhance.Sharpness(image)
-        image = enhancer.enhance(1.5)
-        
-        threshold = 128
-        image = image.point(lambda x: 255 if x > threshold else 0, 'L')
-        
-        return image
-
-    def _preprocess_adaptive(self, image: Image.Image) -> Image.Image:
-        """自适应二值化预处理
-        
-        使用OpenCV的自适应阈值算法，根据图像局部特征自动调整阈值。
-        适用于：低对比度图像、渐变背景、深色背景浅色文字等场景。
-        
-        Args:
-            image: 原始图像
-            
-        Returns:
-            预处理后的图像
-        """
-        img_array = np.array(image)
-        
-        if len(img_array.shape) == 3:
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = img_array.copy()
-        
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
-        
-        binary = cv2.adaptiveThreshold(
-            enhanced, 
-            255, 
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY, 
-            11, 
-            2
-        )
-        
-        kernel = np.ones((1, 1), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-        
-        return Image.fromarray(binary)
-
-    def _preprocess_auto(self, image: Image.Image) -> Image.Image:
-        """自动调优预处理
-        
-        分析图像特征，自动选择最佳预处理配置。
-
-        Args:
-            image: 原始图像
-
-        Returns:
-            预处理后的图像
-        """
-        config = self._auto_config_selector.select_config(image)
-        executor = PreprocessExecutor()
-        return executor.execute(image, config)
+        return self._cache.get_stats()
 
     def _preprocess_image(self, image: Image.Image, language: str = "eng",
                           preprocess_mode: str = "normal") -> Image.Image:
@@ -668,22 +674,75 @@ class OCRManager:
             image: 原始图像
             language: OCR语言 (已废弃，保留参数兼容)
             preprocess_mode: 预处理模式
-                - normal: 标准预处理（固定阈值）
-                - game: 游戏界面预处理（放大+固定阈值）
-                - adaptive: 自适应预处理（自适应阈值）
-                - auto: 自动调优预处理（智能选择配置）
+                - normal: 标准预处理
+                - game: 游戏界面预处理（智能放大+增强）
+                - adaptive: 自适应预处理
+                - auto: 自动调优预处理
 
         Returns:
             预处理后的图像
         """
         if preprocess_mode == "game":
-            return self._preprocess_chinese(image)
+            features = self._auto_config_selector._analyzer.analyze(image)
+            scale_factor = self._auto_config_selector._scale_strategy.calculate_scale_factor(features)
+            config = PreprocessConfig.chinese(scale_factor=scale_factor)
         elif preprocess_mode == "adaptive":
-            return self._preprocess_adaptive(image)
+            config = PreprocessConfig.adaptive()
         elif preprocess_mode == "auto":
-            return self._preprocess_auto(image)
+            config = self._auto_config_selector.select_config(image)
         else:
-            return self._preprocess_standard(image)
+            config = PreprocessConfig.standard()
+
+        return self._preprocess_executor.execute(image, config)
+
+    def recognize_with_boxes(self, image: Image.Image, language: str = "eng",
+                             preprocess_mode: str = "normal",
+                             use_cache: bool = True) -> Optional[list]:
+        """执行OCR识别并返回带文本框的原始结果
+
+        Args:
+            image: PIL.Image 图像
+            language: OCR语言
+            preprocess_mode: 预处理模式
+            use_cache: 是否使用缓存
+
+        Returns:
+            OCR 结果列表 [(text, box, confidence), ...]，失败返回 None
+        """
+        try:
+            if not self._available or self._engine is None:
+                return None
+
+            cache_key = None
+            if use_cache:
+                cache_key = self._compute_cache_key(
+                    image, language=language, preprocess_mode=preprocess_mode,
+                    method="recognize_with_boxes"
+                )
+                cached = self._get_cached_result(cache_key)
+                if cached is not None:
+                    return cached
+
+            processed = self._preprocess_image(image, language, preprocess_mode)
+            img_array = np.array(processed)
+
+            result = self._engine(img_array)
+            if result is None or result.boxes is None or len(result.boxes) == 0:
+                return None
+
+            boxes_result = []
+            for i, text in enumerate(result.txts):
+                if text and i < len(result.boxes):
+                    confidence = result.scores[i] if result.scores and i < len(result.scores) else 0.0
+                    boxes_result.append((text, result.boxes[i], confidence))
+
+            if cache_key:
+                self._set_cached_result(cache_key, boxes_result)
+            return boxes_result
+
+        except Exception as e:
+            _logger.error(f"OCR识别(带位置)异常: {e}", exc_info=True)
+            return None
 
     def recognize(self, image: Image.Image, keywords: str = None,
                   language: str = "eng",
@@ -698,12 +757,13 @@ class OCRManager:
             keywords: 关键词（逗号分隔）
             language: OCR语言
             preprocess_mode: 预处理模式
-            region: 截图区域 (left, top, right, bottom)，用于坐标转换
+            region: 已废弃，保留参数兼容。区域偏移由调用方处理
             search_direction: 识别起点 (top-left/top-right/bottom-left/bottom-right)
             use_cache: 是否使用缓存
 
         Returns:
             (是否找到, 位置坐标, 所有识别文本) 元组
+            注意：位置坐标为相对坐标，不含区域偏移，调用方需自行叠加region偏移
         """
         try:
             if not self._available:
@@ -760,11 +820,7 @@ class OCRManager:
                                 scale_y = image.size[1] / processed.size[1]
                                 x = int(x * scale_x)
                                 y = int(y * scale_y)
-                            
-                            if region:
-                                x += region[0]
-                                y += region[1]
-                            
+
                             all_matches.append((x, y))
                 
                 if all_matches:
@@ -788,27 +844,6 @@ class OCRManager:
         except Exception as e:
             _logger.error(f"OCR识别异常: {e}", exc_info=True)
             return False, None, ""
-
-    def recognize_single_psm(self, image: Image.Image, keywords: str = None,
-                             language: str = "eng",
-                             preprocess_mode: str = "normal",
-                             psm: int = 7, oem: int = 3,
-                             region: Tuple[int, int, int, int] = None) -> Tuple[bool, Optional[Tuple[int, int]], str]:
-        """执行OCR识别（兼容接口，PSM/OEM参数已废弃）
-
-        Args:
-            image: PIL.Image 图像
-            keywords: 关键词（逗号分隔）
-            language: OCR语言
-            preprocess_mode: 预处理模式
-            psm: PSM模式 (已废弃，RapidOCR自动处理)
-            oem: OEM模式 (已废弃，RapidOCR使用ONNX)
-            region: 截图区域
-
-        Returns:
-            (是否找到, 位置坐标, 所有识别文本) 元组
-        """
-        return self.recognize(image, keywords, language, preprocess_mode, region)
 
     def recognize_number(self, image: Image.Image, language: str = "eng",
                          preprocess_mode: str = "normal",
@@ -980,36 +1015,56 @@ class OCRManager:
 
     def get_all_text(self, image: Image.Image, language: str = "eng",
                      preprocess_mode: str = "normal",
-                     psm: int = None, oem: int = None) -> str:
+                     psm: int = None, oem: int = None,
+                     use_cache: bool = True) -> str:
         """获取所有识别文本
-        
+
+        返回值使用换行符分隔各文本行，以便调用方按行处理。
+        recognize/recognize_number 使用空格分隔，仅用于日志展示。
+
         Args:
             image: PIL.Image 图像
             language: OCR语言
             preprocess_mode: 预处理模式
-            psm: PSM模式 (已废弃，RapidOCR自动处理)
-            oem: OEM模式 (已废弃，RapidOCR使用ONNX)
-            
+            psm: 已废弃
+            oem: 已废弃
+            use_cache: 是否使用缓存
+
         Returns:
-            识别文本
+            识别文本（换行分隔）
         """
         try:
             if not self._available:
                 return ""
-            
+
             if self._engine is None:
                 return ""
-            
+
+            cache_key = None
+            if use_cache:
+                cache_key = self._compute_cache_key(
+                    image, language=language, preprocess_mode=preprocess_mode,
+                    method="get_all_text"
+                )
+                cached = self._get_cached_result(cache_key)
+                if cached is not None:
+                    return cached
+
             processed = self._preprocess_image(image, language, preprocess_mode)
-            
+
             img_array = np.array(processed)
-            
+
             result = self._engine(img_array)
-            
+
             if result is None or result.txts is None or len(result.txts) == 0:
                 return ""
-            
-            return "\n".join(result.txts)
-        
-        except Exception:
+
+            text = "\n".join(result.txts)
+
+            if cache_key:
+                self._set_cached_result(cache_key, text)
+            return text
+
+        except Exception as e:
+            _logger.error(f"OCR获取文本异常: {e}", exc_info=True)
             return ""

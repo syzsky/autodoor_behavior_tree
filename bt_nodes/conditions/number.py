@@ -10,19 +10,6 @@ class NumberConditionNode(ConditionNode):
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        self.comparison = self.config.get("compare_mode", ">=")
-        self.target_value = self.config.get_float("threshold", 0)
-        self.extract_mode = self.config.get("extract_mode", "无规则")
-        self.extract_pattern = self.config.get("extract_pattern", "")
-        self.min_confidence = self.config.get_float("min_confidence", 50) / 100.0
-        self.value_key = self.config.get("value_key", "last_number_value")
-        
-        self.search_direction = self.config.get("search_direction", "左上")
-        
-        language_display = self.config.get("language", "简体中文")
-        self.language = LANGUAGE_MAP.get(language_display, "chi_sim")
-        preprocess_display = self.config.get("preprocess_mode", "默认")
-        self.preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
 
     def _check_condition(self, context) -> bool:
         try:

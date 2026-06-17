@@ -35,6 +35,15 @@ MK_LBUTTON = 0x0001
 MK_RBUTTON = 0x0002
 MK_MBUTTON = 0x0010
 
+# 扩展键 VK 码集合
+_EXTENDED_KEYS = {
+    0x21, 0x22, 0x23, 0x24,  # Page Up/Down, End, Home
+    0x25, 0x26, 0x27, 0x28,  # 方向键
+    0x2D, 0x2E,              # Insert, Delete
+    0x5B, 0x5C,              # 左右Win键
+    0x6B, 0x6D,              # NumPad +/-
+}
+
 user32 = ctypes.windll.user32
 
 
@@ -91,6 +100,39 @@ class BackgroundInputController(BaseInputController):
                 vk_code = ord(key_lower.upper())
         return vk_code or 0
 
+    def _make_key_lparam(self, vk_code: int, is_key_down: bool = True) -> int:
+        """构造 WM_KEYDOWN/WM_KEYUP 的 lParam
+
+        lParam 结构（32位）：
+        - 位 0-15: 重复计数
+        - 位 16-23: 扫描码
+        - 位 24: 扩展键标志
+        - 位 25-28: 保留
+        - 位 29: 上下文代码
+        - 位 30: 先前状态
+        - 位 31: 转换状态
+        """
+        scan_code = user32.MapVirtualKeyW(vk_code, 0)  # MAPVK_VK_TO_VSC
+
+        extended_flag = (1 << 24) if vk_code in _EXTENDED_KEYS else 0
+
+        if is_key_down:
+            repeat_count = 1
+            transition_state = 0
+            previous_state = 0
+        else:
+            repeat_count = 1
+            transition_state = 1 << 31  # KF_UP
+            previous_state = 1 << 30    # KF_REPEAT
+
+        lparam = (repeat_count & 0xFFFF) | \
+                 ((scan_code & 0xFF) << 16) | \
+                 extended_flag | \
+                 previous_state | \
+                 transition_state
+
+        return lparam & 0xFFFFFFFF
+
     def key_press(self, key: str, action: str = "press", duration: int = 0) -> None:
         """后台按键操作"""
         if not self._available:
@@ -105,28 +147,34 @@ class BackgroundInputController(BaseInputController):
         self._log(f"key_press: hwnd={self._hwnd:#x}, key={key}(vk=0x{vk_code:02X}), action={action}")
 
         if action == "press":
-            user32.PostMessageW(self._hwnd, WM_KEYDOWN, vk_code, 0)
+            lparam_down = self._make_key_lparam(vk_code, is_key_down=True)
+            lparam_up = self._make_key_lparam(vk_code, is_key_down=False)
+            user32.PostMessageW(self._hwnd, WM_KEYDOWN, vk_code, lparam_down)
             if duration > 0:
                 time.sleep(duration / 1000.0)
-            user32.PostMessageW(self._hwnd, WM_KEYUP, vk_code, 0)
+            user32.PostMessageW(self._hwnd, WM_KEYUP, vk_code, lparam_up)
         elif action == "down":
-            user32.PostMessageW(self._hwnd, WM_KEYDOWN, vk_code, 0)
+            lparam_down = self._make_key_lparam(vk_code, is_key_down=True)
+            user32.PostMessageW(self._hwnd, WM_KEYDOWN, vk_code, lparam_down)
         elif action == "up":
-            user32.PostMessageW(self._hwnd, WM_KEYUP, vk_code, 0)
+            lparam_up = self._make_key_lparam(vk_code, is_key_down=False)
+            user32.PostMessageW(self._hwnd, WM_KEYUP, vk_code, lparam_up)
 
     def key_down(self, key: str) -> None:
         if not self._available:
             return
         vk_code = self._get_vk_code(key)
         if vk_code:
-            user32.PostMessageW(self._hwnd, WM_KEYDOWN, vk_code, 0)
+            lparam = self._make_key_lparam(vk_code, is_key_down=True)
+            user32.PostMessageW(self._hwnd, WM_KEYDOWN, vk_code, lparam)
 
     def key_up(self, key: str) -> None:
         if not self._available:
             return
         vk_code = self._get_vk_code(key)
         if vk_code:
-            user32.PostMessageW(self._hwnd, WM_KEYUP, vk_code, 0)
+            lparam = self._make_key_lparam(vk_code, is_key_down=False)
+            user32.PostMessageW(self._hwnd, WM_KEYUP, vk_code, lparam)
 
     def mouse_click(self, button: str = "left", position: Tuple[int, int] = None,
                    action: str = "press", duration: int = 0) -> None:
@@ -158,14 +206,11 @@ class BackgroundInputController(BaseInputController):
         }
 
         if action == "press":
-            # 先移动鼠标
             user32.PostMessageW(self._hwnd, WM_MOUSEMOVE, 0, lparam)
-            # 按下
             user32.PostMessageW(self._hwnd, msg_down_map.get(button, WM_LBUTTONDOWN),
                               wparam_flag_map.get(button, MK_LBUTTON), lparam)
             if duration > 0:
                 time.sleep(duration / 1000.0)
-            # 释放
             user32.PostMessageW(self._hwnd, msg_up_map.get(button, WM_LBUTTONUP), 0, lparam)
         elif action == "down":
             user32.PostMessageW(self._hwnd, WM_MOUSEMOVE, 0, lparam)
@@ -197,12 +242,10 @@ class BackgroundInputController(BaseInputController):
             return
 
         if relative:
-            # 获取当前光标位置，加上偏移量，计算绝对坐标
             point = ctypes.wintypes.POINT()
             user32.GetCursorPos(ctypes.byref(point))
             abs_x = point.x + position[0]
             abs_y = point.y + position[1]
-            # 转换为客户区坐标
             client_x = ctypes.c_long(abs_x)
             client_y = ctypes.c_long(abs_y)
             user32.ScreenToClient(self._hwnd, ctypes.byref(client_x))
@@ -217,16 +260,24 @@ class BackgroundInputController(BaseInputController):
         user32.PostMessageW(self._hwnd, WM_MOUSEMOVE, 0, lparam)
 
     def mouse_scroll(self, amount: int, position: Tuple[int, int] = None) -> None:
-        """后台鼠标滚轮"""
+        """后台鼠标滚轮
+
+        WM_MOUSEWHEEL 的 lParam 需要屏幕坐标（MSDN规范），
+        而其他鼠标消息使用客户区坐标。此处将客户区坐标转换为屏幕坐标。
+        """
         if not self._available:
             return
 
         x = position[0] if position else 0
         y = position[1] if position else 0
-        lparam = _make_lparam(x, y)
-        # WM_MOUSEWHEEL 的 wParam 高位为 delta，低位为按键标志
+
+        # 将客户区坐标转换为屏幕坐标（WM_MOUSEWHEEL 要求屏幕坐标）
+        screen_x = ctypes.c_long(x)
+        screen_y = ctypes.c_long(y)
+        user32.ClientToScreen(self._hwnd, ctypes.byref(screen_x))
+        user32.ClientToScreen(self._hwnd, ctypes.byref(screen_y))
+        lparam = _make_lparam(screen_x.value, screen_y.value)
+
         delta = amount * 120  # WHEEL_DELTA = 120
         wparam = (delta << 16) & 0xFFFFFFFF
-        # WM_MOUSEWHEEL 需要使用屏幕坐标的 lParam
-        # 但 PostMessage 到窗口时使用客户区坐标
         user32.PostMessageW(self._hwnd, WM_MOUSEWHEEL, wparam, lparam)

@@ -9,11 +9,11 @@ from bt_utils.image_processor import ImageProcessor
 class ImageConditionNode(ConditionNode):
     NODE_TYPE = "ImageConditionNode"
 
+    # 类级别模板缓存，避免每次 tick 重新从磁盘加载
+    _template_cache: Dict[str, Image.Image] = {}
+
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        self.template_path = self.config.get("template_path", "")
-        raw_threshold = self.config.get_float("threshold", 80)
-        self.threshold = raw_threshold / 100.0 if raw_threshold > 1 else raw_threshold
 
     def _check_condition(self, context) -> bool:
         try:
@@ -30,7 +30,7 @@ class ImageConditionNode(ConditionNode):
                 self._log_condition_result(False, f"模板文件不存在: {template_path}")
                 return False
 
-            template = Image.open(resolved_path)
+            template = self._load_template(resolved_path)
             if template is None:
                 self._log_condition_result(False, f"无法加载模板文件: {template_path}")
                 return False
@@ -56,6 +56,27 @@ class ImageConditionNode(ConditionNode):
             self._log_condition_result(False, "检测异常，详情见终端日志")
             return False
 
+    def _load_template(self, resolved_path: str) -> Optional[Image.Image]:
+        """加载模板图像（带缓存）
+
+        Args:
+            resolved_path: 模板文件的绝对路径
+
+        Returns:
+            PIL.Image 图像对象，加载失败返回None
+        """
+        if resolved_path not in self._template_cache:
+            try:
+                self._template_cache[resolved_path] = Image.open(resolved_path)
+            except Exception:
+                return None
+        return self._template_cache[resolved_path]
+
+    @classmethod
+    def clear_template_cache(cls):
+        """清除模板缓存（项目切换时调用）"""
+        cls._template_cache.clear()
+
     def _resolve_template_path(self, context) -> Optional[str]:
         """解析模板路径
 
@@ -74,22 +95,3 @@ class ImageConditionNode(ConditionNode):
             return context.resolve_path(template_path)
 
         return template_path
-
-    def _adjust_position(self, position: tuple, context=None) -> tuple:
-        """调整坐标（加上区域偏移）
-
-        Args:
-            position: 相对位置
-            context: 执行上下文
-
-        Returns:
-            绝对位置
-        """
-        if position is None:
-            return None
-        region = self._get_effective_region(context) if context else self._parse_region(self.config.get("region", None))
-        if region:
-            return (position[0] + region[0], position[1] + region[1])
-        return position
-
-

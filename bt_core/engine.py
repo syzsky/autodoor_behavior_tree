@@ -242,9 +242,10 @@ class BehaviorTreeEngine:
                     self._stats.end_session()
                     self._output_stats_report()
                     
-                    if self.root_node and self.context:
-                        self.root_node.abort(self.context)
-                    elif self.root_node:
+                    # 正常完成时使用 reset() 而非 abort()
+                    # abort() 会将节点状态覆盖为 ABORTED 并通知 UI，导致正常完成的节点显示为"已中止"
+                    # reset() 仅重置节点状态为初始值，准备下次执行，不影响最终状态显示
+                    if self.root_node:
                         self.root_node.reset()
                     
                     if self._on_status_change:
