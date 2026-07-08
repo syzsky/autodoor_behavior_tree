@@ -3,18 +3,13 @@ import shutil
 from typing import Dict, List, Set, Any, Optional
 from datetime import datetime
 from bt_utils.log_manager import LogManager
+from bt_core.constants import ProjectConstants
 
 
 class ResourceService:
-    RESOURCE_KEYS = [
-        'template_path',
-        'script_path', 
-        'code_path',
-        'sound_path',
-        'file_path',
-        'subtree_path',
-    ]
-    
+    # 引用统一常量，消除硬编码
+    RESOURCE_KEYS = list(ProjectConstants.RESOURCE_PATH_KEYS)
+
     RESOURCE_TYPE_MAP = {
         'template_path': 'image',
         'script_path': 'script',
@@ -23,18 +18,11 @@ class ResourceService:
         'file_path': 'data',
         'subtree_path': 'subtree',
     }
-    
-    TYPE_DIR_MAP = {
-        'image': 'images/templates',
-        'script': 'scripts/script',
-        'code': 'scripts/code',
-        'audio': 'audio/alarms',
-        'data': 'data/config',
-        'subtree': 'subtrees',
-        'other': 'data/other',
-    }
-    
-    CACHE_DIR = 'cache'
+
+    # 引用统一常量，消除硬编码
+    TYPE_DIR_MAP = ProjectConstants.RESOURCE_DIRS
+
+    CACHE_DIR = ProjectConstants.RESOURCE_DIRS.get('cache', 'cache')
     
     RESOURCE_EXTENSIONS = {
         'image': ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff'],

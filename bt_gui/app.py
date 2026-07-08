@@ -114,7 +114,8 @@ class BehaviorTreeApp(ctk.CTk):
         """更新窗口标题，显示项目名称"""
         project_name = None
         if hasattr(self.behavior_tree, 'project_root') and self.behavior_tree.project_root:
-            project_name = os.path.basename(self.behavior_tree.project_root)
+            from bt_utils.project_manager import ProjectManager
+            project_name = ProjectManager.resolve_project_name(self.behavior_tree.project_root)
         
         if project_name:
             try:

@@ -1,10 +1,11 @@
 import os
 import shutil
 from bt_utils.path_resolver import PathResolver
+from bt_core.constants import ProjectConstants
 
 class ResourceImporter:
     """资源导入管理器"""
-    
+
     def __init__(self, project_root: str):
         self.project_root = project_root
         self.resolver = PathResolver(project_root)
@@ -51,15 +52,7 @@ class ResourceImporter:
     
     def _get_target_directory(self, resource_type: str) -> str:
         """获取目标存储目录"""
-        type_dir_map = {
-            'image': 'images/templates',
-            'script': 'scripts/script',
-            'code': 'scripts/code',
-            'audio': 'audio/alarms',
-            'data': 'data/config',
-            'other': 'data/other'
-        }
-        return type_dir_map.get(resource_type, 'data/other')
+        return ProjectConstants.RESOURCE_DIRS.get(resource_type, ProjectConstants.RESOURCE_DIRS['other'])
     
     def _handle_name_conflict(self, target_dir: str, filename: str) -> str:
         """处理文件名冲突"""

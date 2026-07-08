@@ -1572,12 +1572,20 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         return positions
     
     def get_tree_data(self) -> Dict[str, Any]:
+        from bt_core.constants import ProjectConstants
+        from bt_core.serializer import Serializer
+
         nodes_data = {}
-        
+
         for node_id, node in self.nodes.items():
             node_config = node.config if hasattr(node, 'config') else {}
-            
-            nodes_data[node_id] = {
+            # 拷贝一份 config，避免就地修改运行时对象导致 UI 副作用
+            if isinstance(node_config, dict):
+                node_config = dict(node_config)
+            else:
+                node_config = {}
+
+            node_dict = {
                 "id": node_id,
                 "type": node.node_type,
                 "name": getattr(node, 'name', ''),
@@ -1588,6 +1596,9 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
                     "y": node.y
                 }
             }
+            # 路径规范化：相对路径强制正斜杠（跨平台一致）
+            Serializer._normalize_node_paths(node_dict)
+            nodes_data[node_id] = node_dict
         
         for parent_id, child_id in self.connections:
             if parent_id in nodes_data:
@@ -1610,8 +1621,8 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
                     break
         
         return {
-            "version": "2.0",
-            "format_type": "behavior_tree_editor",
+            "version": ProjectConstants.TREE_FORMAT_VERSION,
+            "format_type": ProjectConstants.TREE_FORMAT_TYPE,
             "canvas": {
                 "name": "未命名",
                 "description": "",

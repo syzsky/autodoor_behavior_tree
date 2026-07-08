@@ -64,36 +64,42 @@ class PackageImporter:
     
     def get_project_name(self, zip_path: str) -> Optional[str]:
         """从 ZIP 文件中获取项目名称
-        
+
+        优先级（统一回退策略）：
+            1. ZIP 内 project.json 的 project_info.name
+            2. ZIP 文件名去扩展名
+
+        注意：不再使用"第一个条目的顶级目录名"作为优先来源，
+        因为导出时该目录名 = 项目文件夹名，可能与 project_info.name 不一致。
+        导入后实际文件夹名以此返回值为准，并强制写入 project_info.name。
+
         Args:
             zip_path: ZIP 文件路径
-            
+
         Returns:
             项目名称，如果无法获取则返回 None
         """
         try:
+            import json
             with zipfile.ZipFile(zip_path, 'r') as zipf:
-                namelist = zipf.namelist()
-                
-                if not namelist:
-                    return None
-                
-                first_entry = namelist[0]
-                if '/' in first_entry:
-                    project_folder = first_entry.split('/')[0]
-                    return project_folder
-                
-                for name in namelist:
+                # 1. 优先读 ZIP 内 project.json 的 project_info.name
+                for name in zipf.namelist():
                     basename = os.path.basename(name)
                     if basename == "project.json":
-                        import json
-                        with zipf.open(name) as f:
-                            project_config = json.load(f)
-                            project_info = project_config.get("project_info", {})
-                            return project_info.get("name", None)
-                
-                return None
-                
+                        try:
+                            with zipf.open(name) as f:
+                                project_config = json.load(f)
+                                project_info = project_config.get("project_info", {})
+                                name_val = project_info.get("name", "").strip()
+                                if name_val:
+                                    return name_val
+                        except (json.JSONDecodeError, OSError):
+                            pass
+                        break
+
+                # 2. 回退到 ZIP 文件名去扩展名
+                return os.path.splitext(os.path.basename(zip_path))[0] or None
+
         except Exception:
             return None
     
@@ -164,7 +170,7 @@ class PackageImporter:
             
             with zipfile.ZipFile(zip_path, 'r') as zipf:
                 zip_root = self.get_project_root_in_zip(zip_path)
-                
+
                 for member in zipf.namelist():
                     if zip_root:
                         if not member.startswith(zip_root + "/") and member != zip_root + "/":
@@ -172,22 +178,27 @@ class PackageImporter:
                         relative_path = member[len(zip_root) + 1:]
                     else:
                         relative_path = member
-                    
+
                     if not relative_path or relative_path.endswith("/"):
                         continue
-                    
+
                     target_path = os.path.normpath(os.path.join(project_root, relative_path))
-                    
+
                     normalized_root = os.path.normpath(project_root)
                     if not (target_path.startswith(normalized_root + os.sep) or
                             target_path == normalized_root):
                         continue
-                    
+
                     os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                    
+
                     with zipf.open(member) as source, open(target_path, 'wb') as target:
                         target.write(source.read())
-            
+
+            # 强制同步 project_info.name = 实际新文件夹名（处理冲突后缀的情况）
+            # 确保导入后 project_info.name 与文件夹名一致，避免后续校验弹窗
+            from bt_utils.project_manager import ProjectManager
+            ProjectManager.update_project_info_name(project_root, project_name)
+
             return True, "", project_root
             
         except Exception as e:
