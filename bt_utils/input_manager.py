@@ -82,7 +82,13 @@ class InputControllerManager:
         method = self._keyboard_method
 
         if method == "bg":
-            return self._create_bg_engine(**kwargs)
+            hwnd = kwargs.get("hwnd", 0)
+            cache_key = f"bg_{hwnd}"
+            if cache_key not in self._keyboard_engines:
+                engine = self._create_bg_engine(**kwargs)
+                if engine:
+                    self._keyboard_engines[cache_key] = engine
+            return self._keyboard_engines.get(cache_key)
 
         if method not in self._keyboard_engines:
             engine = self._create_engine(method)
@@ -97,7 +103,13 @@ class InputControllerManager:
         method = self._mouse_method
 
         if method == "bg":
-            return self._create_bg_engine(**kwargs)
+            hwnd = kwargs.get("hwnd", 0)
+            cache_key = f"bg_{hwnd}"
+            if cache_key not in self._mouse_engines:
+                engine = self._create_bg_engine(**kwargs)
+                if engine:
+                    self._mouse_engines[cache_key] = engine
+            return self._mouse_engines.get(cache_key)
 
         if method not in self._mouse_engines:
             engine = self._create_engine(method)

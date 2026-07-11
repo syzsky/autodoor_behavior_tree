@@ -2,6 +2,9 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../autodoor_executor"
 		}
 	],
 	"settings": {}

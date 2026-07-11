@@ -259,9 +259,6 @@ def _save_settings(app, dialog) -> None:
 
         app.settings_manager.save_settings()
 
-        from bt_utils.ocr_manager import OCRManager
-        OCRManager.set_tesseract_path(app._settings_tesseract_path.get())
-
         messagebox.showinfo("成功", "✅ 设置已保存")
         dialog.destroy()
     except Exception as e:

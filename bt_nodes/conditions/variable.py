@@ -8,9 +8,6 @@ class VariableConditionNode(ConditionNode):
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        self.variable_name = self.config.get("variable_name", "")
-        self.comparison = self.config.get("comparison") or self.config.get("operator", "==")
-        self.target_value = self.config.get("target_value") or self.config.get("compare_value", "")
 
     def _check_condition(self, context):
         var_name = self.config.get("variable_name", "")

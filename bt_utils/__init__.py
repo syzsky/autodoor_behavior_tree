@@ -13,19 +13,9 @@ from .consistency_checker import (
     print_consistency_report,
 )
 from .proxies import (
-    OCRProxy,
-    ImageDetectionProxy,
     InputProxy,
     ScreenshotProxy,
     AlarmProxy,
-)
-from .recognizers import (
-    BaseRecognizer,
-    OCRRecognizer,
-    ImageRecognizer,
-    ColorRecognizer,
-    NumberRecognizer,
-    RecognizerFactory,
 )
 from .coordinate import CoordinateConverter
 from .window_capture import WindowCapture
@@ -93,17 +83,9 @@ __all__ = [
     "ConsistencyIssue",
     "run_consistency_check",
     "print_consistency_report",
-    "OCRProxy",
-    "ImageDetectionProxy",
     "InputProxy",
     "ScreenshotProxy",
     "AlarmProxy",
-    "BaseRecognizer",
-    "OCRRecognizer",
-    "ImageRecognizer",
-    "ColorRecognizer",
-    "NumberRecognizer",
-    "RecognizerFactory",
     "CoordinateConverter",
     "WindowCapture",
     "BaseInputController",

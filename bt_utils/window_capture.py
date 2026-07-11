@@ -94,6 +94,10 @@ class WindowCapture:
         if width <= 0 or height <= 0:
             return None
 
+        hwndDC = None
+        hdcMem = None
+        hBitmap = None
+
         hwndDC = user32.GetWindowDC(hwnd)
         if not hwndDC:
             return None
@@ -105,7 +109,6 @@ class WindowCapture:
 
             hBitmap = gdi32.CreateCompatibleBitmap(hwndDC, width, height)
             if not hBitmap:
-                gdi32.DeleteDC(hdcMem)
                 return None
 
             gdi32.SelectObject(hdcMem, hBitmap)
@@ -144,9 +147,12 @@ class WindowCapture:
                 return image
 
         finally:
-            gdi32.DeleteObject(hBitmap)
-            gdi32.DeleteDC(hdcMem)
-            user32.ReleaseDC(hwnd, hwndDC)
+            if hBitmap:
+                gdi32.DeleteObject(hBitmap)
+            if hdcMem:
+                gdi32.DeleteDC(hdcMem)
+            if hwndDC:
+                user32.ReleaseDC(hwnd, hwndDC)
 
         return None
 

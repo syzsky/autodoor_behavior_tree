@@ -1,29 +1,30 @@
 import os
 import zipfile
 from datetime import datetime
+from bt_utils.project_manager import ProjectManager
 
 class PackageExporter:
     """项目打包导出器"""
-    
+
     EXCLUDE_DIRS = ['.metadata', '__pycache__', '.git', 'node_modules']
     EXCLUDE_EXTENSIONS = ['.pyc', '.pyo', '.tmp', '.bak', '.log']
     EXCLUDE_FILES = ['tree_backup_', 'screenshot_', '.DS_Store', 'Thumbs.db']
-    
+
     def __init__(self, project_root: str):
         self.project_root = project_root
-    
+
     def export_to_zip(self, output_path: str = None) -> str:
         """
         导出项目为 ZIP 文件
-        
+
         Args:
             output_path: 输出路径(可选)
-        
+
         Returns:
             ZIP 文件路径
         """
         if output_path is None:
-            project_name = os.path.basename(self.project_root)
+            project_name = ProjectManager.resolve_project_name(self.project_root)
             output_path = f"{project_name}.zip"
         
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -56,7 +57,7 @@ class PackageExporter:
     
     def _generate_readme(self, zip_path: str):
         """生成使用说明"""
-        project_name = os.path.basename(self.project_root)
+        project_name = ProjectManager.resolve_project_name(self.project_root)
         readme_content = f"""# {project_name} 使用说明
 
 ## 如何使用

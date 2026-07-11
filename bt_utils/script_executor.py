@@ -272,7 +272,7 @@ class ScriptExecutor:
             delay_time = command["time"] / 1000
             elapsed = 0
             while elapsed < delay_time and self.is_running:
-                sleep_time = min(0.1, delay_time - elapsed)
+                sleep_time = min(0.01, delay_time - elapsed)
                 time.sleep(sleep_time)
                 elapsed += sleep_time
 

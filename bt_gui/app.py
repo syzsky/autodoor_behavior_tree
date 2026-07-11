@@ -52,30 +52,39 @@ class BehaviorTreeApp(ctk.CTk):
     def _restore_last_file(self):
         """恢复上次打开的文件和 Tab 列表"""
         open_tabs = self._settings.get_open_tabs()
-        
+
         if open_tabs:
+            from bt_utils.project_manager import ProjectManager
             restored_active_id = self._settings.get_active_tab_id()
             first_tab_id = None
-            
+            skipped_tabs = []
+
             for i, tab_info in enumerate(open_tabs):
                 file_path = tab_info.get("file_path", "")
                 project_root = tab_info.get("project_root", "")
                 name = tab_info.get("name", "")
-                
+
+                # 原路径找不到 tree.json 时直接跳过，不导入空项目
                 if not file_path or not os.path.exists(file_path):
+                    skipped_tabs.append(name or file_path or project_root or "未知项目")
                     continue
-                
-                if i == 0:
+                if project_root and not os.path.exists(project_root):
+                    skipped_tabs.append(name or project_root or "未知项目")
+                    continue
+
+                if i == 0 or first_tab_id is None:
                     self.behavior_tree.load_tree(file_path)
                     if project_root and os.path.exists(project_root):
                         self.behavior_tree.project_root = project_root
-                        from bt_utils.project_manager import ProjectManager
                         self.behavior_tree.project_manager = ProjectManager(project_root)
                         self.behavior_tree.toolbar.set_project_path(project_root)
-                    if name:
-                        self.behavior_tree._update_tab_name(
-                            self.behavior_tree.tab_manager.get_active_tab().tab_id, name
-                        )
+                        self.behavior_tree._check_and_prompt_name_consistency_on_open(project_root)
+                        display_name = ProjectManager.resolve_project_name(project_root)
+                    else:
+                        display_name = name or os.path.splitext(os.path.basename(file_path))[0]
+                    self.behavior_tree._update_tab_name(
+                        self.behavior_tree.tab_manager.get_active_tab().tab_id, display_name
+                    )
                     first_tab_id = self.behavior_tree.tab_manager.active_tab_id
                 else:
                     if project_root and os.path.exists(project_root):
@@ -91,14 +100,48 @@ class BehaviorTreeApp(ctk.CTk):
                         self.behavior_tree.tab_bar.set_active(tab_id)
                         instance = self.behavior_tree.tab_manager.get_tab(tab_id)
                         self.behavior_tree._on_tab_switched(tab_id, instance)
-            
+
+            # 所有保存的 Tab 都恢复失败时，关闭初始化时创建的默认空 Tab
+            if first_tab_id is None:
+                default_tab = self.behavior_tree.tab_manager.get_active_tab()
+                if default_tab:
+                    default_tab_id = default_tab.tab_id
+                    if hasattr(default_tab, '_autosave_manager') and default_tab._autosave_manager:
+                        default_tab._autosave_manager.stop()
+                    self.behavior_tree.tab_manager.remove_tab(default_tab_id)
+
             if restored_active_id:
                 active_instance = self.behavior_tree.tab_manager.get_tab(restored_active_id)
                 if active_instance:
                     self.behavior_tree.tab_manager.switch_tab(restored_active_id)
                     self.behavior_tree.tab_bar.set_active(restored_active_id)
                     self.behavior_tree._on_tab_switched(restored_active_id, active_instance)
-            
+
+            # 有 Tab 恢复失败时弹窗提示用户
+            if skipped_tabs:
+                from tkinter import messagebox
+                messagebox.showwarning(
+                    "项目路径失效",
+                    f"以下项目路径已失效，无法恢复：\n\n"
+                    + "\n".join(f"  - {t}" for t in skipped_tabs)
+                    + "\n\n请通过「打开项目」或「导入项目」重新定位。"
+                )
+
+            # 更新 settings，移除失效的 Tab
+            if first_tab_id is None:
+                self._settings.set_open_tabs([])
+            elif skipped_tabs:
+                valid_tabs = []
+                for tab_id, instance in self.behavior_tree.tab_manager._trees.items():
+                    if instance.file_path and os.path.exists(instance.file_path):
+                        valid_tabs.append({
+                            "tab_id": tab_id,
+                            "name": instance.name,
+                            "file_path": instance.file_path,
+                            "project_root": instance.project_root or "",
+                        })
+                self._settings.set_open_tabs(valid_tabs)
+
             self._update_window_title()
         else:
             last_file = self._settings.get_last_file_path()
@@ -109,12 +152,21 @@ class BehaviorTreeApp(ctk.CTk):
                         self._update_window_title()
                 except Exception:
                     pass
-    
+            else:
+                # 无任何可恢复的项目，关闭初始化时创建的默认空 Tab
+                default_tab = self.behavior_tree.tab_manager.get_active_tab()
+                if default_tab:
+                    default_tab_id = default_tab.tab_id
+                    if hasattr(default_tab, '_autosave_manager') and default_tab._autosave_manager:
+                        default_tab._autosave_manager.stop()
+                    self.behavior_tree.tab_manager.remove_tab(default_tab_id)
+
     def _update_window_title(self):
         """更新窗口标题，显示项目名称"""
         project_name = None
         if hasattr(self.behavior_tree, 'project_root') and self.behavior_tree.project_root:
-            project_name = os.path.basename(self.behavior_tree.project_root)
+            from bt_utils.project_manager import ProjectManager
+            project_name = ProjectManager.resolve_project_name(self.behavior_tree.project_root)
         
         if project_name:
             try:

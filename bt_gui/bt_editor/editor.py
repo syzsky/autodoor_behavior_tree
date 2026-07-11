@@ -102,7 +102,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_tab_close=self._handle_tab_close,
             on_tab_run=self._handle_tab_run,
             on_tab_stop=self._handle_tab_stop,
-            on_import=self._handle_import_project
+            on_import=self._handle_import_project,
+            on_tab_rename=self._handle_tab_rename,
+            on_tab_is_running=self._handle_tab_is_running,
         )
         self.tab_bar.pack(fill="x")
     
@@ -252,6 +254,81 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if not folder_path:
             return
         self.import_project_to_new_tab(folder_path)
+
+    def _handle_tab_is_running(self, tab_id: str) -> bool:
+        """检查 Tab 对应的项目是否正在运行行为树（供 TabBar 决定是否允许重命名）"""
+        instance = self.tab_manager.get_tab(tab_id)
+        if not instance:
+            return False
+        return bool(getattr(instance, 'is_running', False))
+
+    def _handle_tab_rename(self, tab_id: str, new_name: str) -> bool:
+        """Tab 双击重命名回调：仅修改 project_info.name，不动文件夹名。
+
+        核心约束：
+        - 不修改文件夹名（客户端永不修改文件夹名）
+        - 仅写入 project.json 的 project_info.name
+        - 更新 TreeInstance.name 和 Tab 显示
+        - 更新窗口标题
+        - 持久化 settings.json
+
+        Args:
+            tab_id: Tab ID
+            new_name: 新名称
+
+        Returns:
+            是否重命名成功
+        """
+        instance = self.tab_manager.get_tab(tab_id)
+        if not instance:
+            return False
+
+        # 必须有 project_root（未保存项目禁止重命名）
+        if not instance.project_root or not os.path.exists(instance.project_root):
+            messagebox.showwarning("提示", "项目尚未保存，无法重命名。请先保存项目。")
+            return False
+
+        # 项目运行中禁止重命名（双击入口已检查，这里二次防御）
+        if getattr(instance, 'is_running', False):
+            messagebox.showinfo("提示", "项目运行中，无法重命名。请先停止运行。")
+            return False
+
+        from bt_utils.project_manager import ProjectManager
+
+        # 调用统一接口更新 project.json 的 project_info.name
+        ok = ProjectManager.update_project_info_name(instance.project_root, new_name)
+        if not ok:
+            messagebox.showerror("错误", f"更新 project.json 失败，请检查文件权限。")
+            return False
+
+        # 更新 TreeInstance.name（仅显示用，权威源仍是文件夹名）
+        instance.name = new_name
+
+        # 更新 Tab 标签
+        self.tab_bar.update_tab_name(tab_id, new_name)
+
+        # 更新窗口标题
+        if hasattr(self.app, '_update_window_title'):
+            self.app._update_window_title()
+
+        # 持久化 settings.json
+        if hasattr(self.app, '_save_tabs_state'):
+            try:
+                self.app._save_tabs_state()
+            except Exception:
+                pass
+
+        # 日志提示
+        try:
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(
+                f"[Rename] 已修改项目显示名为 '{new_name}'。"
+                f"注意：文件夹名未改变，下次打开时若与文件夹名不一致会提示同步。"
+            )
+        except Exception:
+            pass
+
+        return True
     
     def _save_tab(self, tab_id: str):
         instance = self.tab_manager.get_tab(tab_id)
@@ -286,8 +363,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._modified = False
     
     def import_project_to_new_tab(self, project_path: str) -> Optional[str]:
-        folder_name = os.path.basename(project_path)
-        
+        from bt_utils.project_manager import ProjectManager
+        folder_name = ProjectManager.resolve_project_name(project_path)
+
         for existing_id, existing_instance in self.tab_manager._trees.items():
             if existing_instance.project_root and os.path.samefile(existing_instance.project_root, project_path):
                 from tkinter import messagebox
@@ -295,7 +373,13 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 self.tab_manager.switch_tab(existing_id)
                 self.tab_bar.set_active(existing_id)
                 return existing_id
-        
+
+        # 导入项目时一致性校验：文件夹名 vs project_info.name
+        # 覆盖场景：用户修改了文件夹名后重新导入、启动恢复 Tab 时
+        self._check_and_prompt_name_consistency_on_open(project_path)
+        # 校验可能修改了 project_info.name，重新以文件夹名（权威源）为准
+        folder_name = ProjectManager.resolve_project_name(project_path)
+
         tab_id = self._create_new_tab(folder_name, project_path)
         
         tree_file = os.path.join(project_path, "tree.json")
@@ -449,11 +533,11 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     def _init_first_tab(self):
         BehaviorTreeEditor._tab_counter += 1
         tab_id = f"tab_{BehaviorTreeEditor._tab_counter}"
-        
+
         context = ExecutionContext(project_root=self._fallback_project_root)
         engine = BehaviorTreeEngine(None)
         command_manager = CommandManager()
-        
+
         instance = TreeInstance(
             name=self._get_project_name(),
             engine=engine,
@@ -467,13 +551,13 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             command_manager=command_manager,
             project_manager=self._fallback_project_manager
         )
-        
+
         autosave_manager = self._create_autosave_for_tab(instance)
         instance._autosave_manager = autosave_manager
-        
+
         self.tab_manager.add_tab(tab_id, instance)
         self.tab_bar.add_tab(tab_id, instance.name)
-        
+
         autosave_manager.start()
     
     def _create_autosave_for_tab(self, instance: TreeInstance) -> AutoSaveManager:
@@ -486,8 +570,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         )
     
     def _get_project_name(self) -> str:
+        from bt_utils.project_manager import ProjectManager
         if self._fallback_project_root:
-            return os.path.basename(self._fallback_project_root)
+            return ProjectManager.resolve_project_name(self._fallback_project_root)
         return "未命名"
     
     def _update_tab_name(self, tab_id: str, name: str):
@@ -1135,8 +1220,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 from bt_utils.project_manager import ProjectManager
                 self.project_manager = ProjectManager(self.project_root)
                 self.toolbar.set_project_path(self.project_root)
-                
-                project_name = os.path.basename(project_root)
+
+                project_name = ProjectManager.resolve_project_name(project_root)
                 active_tab = self.tab_manager.get_active_tab()
                 if active_tab:
                     self._update_tab_name(active_tab.tab_id, project_name)
@@ -1466,9 +1551,15 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             tree_path = os.path.join(project_root, "tree.json")
             with open(tree_path, 'w', encoding='utf-8') as f:
                 json.dump(tree_data, f, ensure_ascii=False, indent=2)
-        
-        project_name = os.path.basename(project_root)
+
+        from bt_utils.project_manager import ProjectManager
+        project_name = ProjectManager.resolve_project_name(project_root)
         default_filename = f"{project_name}.zip"
+
+        # 导出 ZIP 前一致性校验：文件夹名 vs project_info.name
+        cancel_export = self._check_and_prompt_name_consistency_on_export(project_root)
+        if cancel_export:
+            return
         
         from config.settings_manager import SettingsManager
         settings = SettingsManager.get_instance()
@@ -2039,7 +2130,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     
     def open_project(self, project_root: str):
         from bt_utils.project_manager import ProjectManager
-        
+
         for existing_id, existing_instance in self.tab_manager._trees.items():
             if existing_instance.project_root and os.path.samefile(existing_instance.project_root, project_root):
                 self.tab_manager.switch_tab(existing_id)
@@ -2047,15 +2138,19 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 instance = self.tab_manager.get_tab(existing_id)
                 self._on_tab_switched(existing_id, instance)
                 return
-        
+
         pm = ProjectManager(project_root)
-        
+
         if not pm.validate_project():
             raise ValueError("项目文件不完整或损坏")
-        
+
         config = pm.load_project()
-        project_name = config["project_info"]["name"]
-        
+        # 项目名以文件夹名为权威源（SSOT），project_info.name 仅作元数据
+        project_name = ProjectManager.resolve_project_name(project_root)
+
+        # 打开项目时一致性校验：文件夹名 vs project_info.name
+        self._check_and_prompt_name_consistency_on_open(project_root)
+
         active_tab = self.tab_manager.get_active_tab()
         need_new_tab = (active_tab is not None and 
                        (active_tab.modified or active_tab.project_root)) or active_tab is None
@@ -2085,7 +2180,100 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         from config.settings_manager import SettingsManager
         SettingsManager.get_instance().set_last_file_path(tree_file)
-    
+
+    def _check_and_prompt_name_consistency_on_open(self, project_root: str) -> None:
+        """打开项目时校验文件夹名与 project_info.name 是否一致。
+
+        不一致时弹窗提示，让用户选择：
+          ① 同步 project_info.name 为文件夹名（推荐）
+          ② 忽略，本次按文件夹名显示（不修改文件）
+
+        系统永远不会自动修改文件夹名。
+        """
+        from bt_utils.project_manager import ProjectManager
+        check = ProjectManager.check_name_consistency(project_root)
+        if check["consistent"]:
+            return
+        folder_name = check["folder_name"]
+        info_name = check["project_info_name"]
+        result = messagebox.askyesno(
+            "项目名称不一致",
+            f"检测到名称不一致：\n\n"
+            f"  文件夹名：{folder_name}\n"
+            f"  项目名称：{info_name}\n\n"
+            f"系统将以文件夹名 '{folder_name}' 作为项目名称。\n"
+            f"是否同步更新 项目名称 为 '{folder_name}'？\n\n"
+            f"（是 = 同步 项目名称；否 = 仅本次按文件夹名显示，不修改文件）",
+            icon=messagebox.WARNING,
+        )
+        if result:
+            ok = ProjectManager.update_project_info_name(project_root, folder_name)
+            if ok:
+                try:
+                    from bt_utils.log_manager import LogManager
+                    LogManager.debug_print(
+                        f"[Sync] 打开项目时同步 project_info.name: '{info_name}' -> '{folder_name}'"
+                    )
+                except Exception:
+                    pass
+            else:
+                messagebox.showerror("错误", f"更新 project.json 失败，请检查文件权限。")
+        else:
+            try:
+                from bt_utils.log_manager import LogManager
+                LogManager.debug_print(
+                    f"[Sync] 用户选择不同步，本次以文件夹名 '{folder_name}' 显示"
+                )
+            except Exception:
+                pass
+
+    def _check_and_prompt_name_consistency_on_export(self, project_root: str) -> bool:
+        """导出 ZIP 前校验文件夹名与 project_info.name 是否一致。
+
+        不一致时弹窗提示，让用户选择：
+          ① 同步 project_info.name 为文件夹名后继续导出（推荐）
+          ② 取消导出（用户可手动修改文件夹名后再次导出）
+
+        系统永远不会自动修改文件夹名。
+
+        Returns:
+            True 表示取消导出；False 表示继续导出
+        """
+        from bt_utils.project_manager import ProjectManager
+        check = ProjectManager.check_name_consistency(project_root)
+        if check["consistent"]:
+            return False
+        folder_name = check["folder_name"]
+        info_name = check["project_info_name"]
+        result = messagebox.askyesnocancel(
+            "项目名称不一致",
+            f"导出前检测到名称不一致：\n\n"
+            f"  文件夹名：{folder_name}\n"
+            f"  项目名称：{info_name}\n\n"
+            f"导出 ZIP 将以文件夹名 '{folder_name}' 作为项目名。\n"
+            f"是否同步更新 项目名称 为 '{folder_name}' 后继续导出？\n\n"
+            f"（是 = 同步并继续导出；否 = 直接导出不同步；取消 = 取消导出）",
+            icon=messagebox.WARNING,
+        )
+        if result is None:
+            # 取消
+            return True
+        if result:
+            # 是：同步
+            ok = ProjectManager.update_project_info_name(project_root, folder_name)
+            if not ok:
+                messagebox.showerror("错误", f"更新 project.json 失败，请检查文件权限。")
+                return True
+            try:
+                from bt_utils.log_manager import LogManager
+                LogManager.debug_print(
+                    f"[Sync] 导出前同步 project_info.name: '{info_name}' -> '{folder_name}'"
+                )
+            except Exception:
+                pass
+        # 否：直接导出不同步
+        return False
+
     def save_project(self):
         """保存项目"""
         if not self.project_manager:

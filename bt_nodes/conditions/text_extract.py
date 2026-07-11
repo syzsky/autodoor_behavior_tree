@@ -19,24 +19,6 @@ class TextExtractNode(ConditionNode):
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
-        extract_mode_display = self.config.get("extract_mode", "全部")
-        self.extract_mode = EXTRACT_MODE_MAP.get(extract_mode_display, "all")
-        self.keywords = self.config.get("keywords", "")
-        language_display = self.config.get("language", "简体中文")
-        self.language = LANGUAGE_MAP.get(language_display, "chi_sim")
-        preprocess_display = self.config.get("preprocess_mode", "默认")
-        self.preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
-        self.output_key = self.config.get("output_key", "last_extracted_text")
-        self.save_all_text = self.config.get_bool("save_all_text", False)
-        self.all_text_key = self.config.get("all_text_key", "all_ocr_text")
-        self.save_position = self.config.get_bool("save_position", True)
-        try:
-            from config.settings_manager import get_default_position_key
-            default_position_key = get_default_position_key()
-        except ImportError:
-            default_position_key = "last_detection_position"
-        position_key_value = self.config.get("position_key", "")
-        self.position_key = position_key_value if position_key_value else default_position_key
 
     def _check_condition(self, context) -> bool:
         try:
@@ -49,14 +31,18 @@ class TextExtractNode(ConditionNode):
             preprocess_display = self.config.get("preprocess_mode", "默认")
             preprocess_mode = PREPROCESS_MODE_MAP.get(preprocess_display, "normal")
 
+            # BUG-02 修复：使用 recognize_with_boxes 一次调用同时获取文本和位置
             ocr_manager = OCRManager()
-            all_text = ocr_manager.get_all_text(
-                screenshot, language, preprocess_mode
+            boxes_result = ocr_manager.recognize_with_boxes(
+                screenshot, language=language, preprocess_mode=preprocess_mode
             )
 
-            if not all_text:
+            if not boxes_result:
                 self._log_condition_result(False, "未识别到文本")
                 return False
+
+            # 从 boxes_result 提取全部文本
+            all_text = "\n".join(text for text, _, _ in boxes_result if text)
 
             extract_mode_display = self.config.get("extract_mode", "全部")
             extract_mode = EXTRACT_MODE_MAP.get(extract_mode_display, "all")
@@ -75,17 +61,41 @@ class TextExtractNode(ConditionNode):
                 context.blackboard.set(all_text_key, all_text)
 
             save_position = self.config.get_bool("save_position", True)
-            region = self._get_effective_region(context)
-            if save_position and region:
-                center_x = (region[0] + region[2]) // 2
-                center_y = (region[1] + region[3]) // 2
-                try:
-                    from config.settings_manager import get_default_position_key
-                    default_position_key = get_default_position_key()
-                except ImportError:
-                    default_position_key = "last_detection_position"
-                position_key = self.config.get("position_key", "") or default_position_key
-                context.blackboard.set(position_key, (center_x, center_y))
+            if save_position:
+                region = self._get_effective_region(context)
+                region_left = region[0] if region else 0
+                region_top = region[1] if region else 0
+
+                # 从已有的 boxes_result 中查找关键词位置（不再重复调用 OCR）
+                ocr_position = self._find_keyword_position(
+                    boxes_result, keywords if extract_mode == "keywords" else None,
+                    region_left, region_top
+                )
+                if ocr_position:
+                    try:
+                        from config.settings_manager import get_default_position_key
+                        default_position_key = get_default_position_key()
+                    except ImportError:
+                        default_position_key = "last_detection_position"
+                    position_key = self.config.get("position_key", "") or default_position_key
+                    context.blackboard.set(position_key, ocr_position)
+                    context.blackboard.set("last_detection_x", ocr_position[0])
+                    context.blackboard.set("last_detection_y", ocr_position[1])
+                else:
+                    # 回退：使用区域中心
+                    if region:
+                        center_x = (region[0] + region[2]) // 2
+                        center_y = (region[1] + region[3]) // 2
+                        try:
+                            from config.settings_manager import get_default_position_key
+                            default_position_key = get_default_position_key()
+                        except ImportError:
+                            default_position_key = "last_detection_position"
+                        position_key = self.config.get("position_key", "") or default_position_key
+                        context.blackboard.set(position_key, (center_x, center_y))
+                        # BUG-01 修复：回退路径补写 last_detection_x/y
+                        context.blackboard.set("last_detection_x", center_x)
+                        context.blackboard.set("last_detection_y", center_y)
 
             if extracted_text:
                 self._log_condition_result(True)
@@ -108,13 +118,51 @@ class TextExtractNode(ConditionNode):
     def _extract_keywords_text(self, all_text: str, keywords: str) -> str:
         lines = all_text.split('\n')
         matched_lines = []
-
+        keywords_lower = keywords.lower()
         for line in lines:
             line = line.strip()
-            if line and keywords in line:
+            if line and keywords_lower in line.lower():
                 matched_lines.append(line)
-
         return '\n'.join(matched_lines)
+
+    def _find_keyword_position(self, boxes_result, keywords: str = None,
+                               region_left: int = 0, region_top: int = 0) -> Optional[Tuple[int, int]]:
+        """从已有的 OCR boxes 结果中查找关键词位置
+
+        Args:
+            boxes_result: recognize_with_boxes 的返回结果 [(text, box, confidence), ...]
+            keywords: 关键词（为None时使用第一个文本框位置）
+            region_left: 区域左偏移
+            region_top: 区域上偏移
+
+        Returns:
+            关键词中心位置 (x, y)，失败返回 None
+        """
+        try:
+            # 如果有关键词，查找关键词所在文本框
+            if keywords:
+                keywords_lower = keywords.lower()
+                for text, box, _ in boxes_result:
+                    if keywords_lower in text.lower():
+                        if box is not None:
+                            xs = [p[0] for p in box]
+                            ys = [p[1] for p in box]
+                            center_x = int(sum(xs) / len(xs)) + region_left
+                            center_y = int(sum(ys) / len(ys)) + region_top
+                            return (center_x, center_y)
+
+            # 无关键词或未找到，使用第一个文本框位置
+            if boxes_result:
+                _, box, _ = boxes_result[0]
+                if box is not None:
+                    xs = [p[0] for p in box]
+                    ys = [p[1] for p in box]
+                    center_x = int(sum(xs) / len(xs)) + region_left
+                    center_y = int(sum(ys) / len(ys)) + region_top
+                    return (center_x, center_y)
+        except Exception:
+            pass
+        return None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TextExtractNode":

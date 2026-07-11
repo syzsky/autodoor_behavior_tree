@@ -59,6 +59,7 @@ class PyAutoGUIInput(BaseInputController):
         
         import pyautogui
         pyautogui.FAILSAFE = False
+        pyautogui.PAUSE = 0  # 禁用全局 PAUSE，延迟由节点/脚本显式控制（DelayNode/click_interval/Delay 命令）
     
     def get_name(self) -> str:
         return "PyAutoGUI"

@@ -4,8 +4,10 @@ from typing import Dict, Any
 from datetime import datetime
 
 from .nodes import Node
+from .constants import ProjectConstants, get_app_version
 
-CURRENT_VERSION = "2.0"
+# 向后兼容：保留旧常量名，但指向统一常量
+CURRENT_VERSION = ProjectConstants.TREE_FORMAT_VERSION
 
 
 class Serializer:
@@ -35,7 +37,10 @@ class Serializer:
         connections = []
 
         def collect_nodes(node: Node):
-            nodes[node.node_id] = node.to_dict()
+            node_dict = node.to_dict()
+            # 路径规范化：JSON 中存储的相对路径强制使用正斜杠，保证跨平台一致
+            Serializer._normalize_node_paths(node_dict)
+            nodes[node.node_id] = node_dict
             for child in node.children:
                 connections.append({
                     "parent_id": node.node_id,
@@ -47,12 +52,12 @@ class Serializer:
             collect_nodes(root_node)
 
         result = {
-            "version": CURRENT_VERSION,
-            "format_type": "behavior_tree_standalone",
+            "version": ProjectConstants.TREE_FORMAT_VERSION,
+            "format_type": ProjectConstants.TREE_FORMAT_TYPE,
             "metadata": metadata or {
                 "created_at": datetime.now().isoformat(),
                 "modified_at": datetime.now().isoformat(),
-                "app_version": "1.0.0",
+                "app_version": get_app_version(),
             },
             "canvas": canvas_state or {},
             "root_node": root_node.node_id if root_node else None,
@@ -66,6 +71,32 @@ class Serializer:
         return result
 
     @staticmethod
+    def _normalize_node_paths(node_dict: Dict[str, Any]) -> None:
+        """对节点 config 中的资源路径字段强制使用正斜杠（跨平台一致性）。
+
+        规范化规则：
+        - 仅处理 ProjectConstants.RESOURCE_PATH_KEYS 中声明的字段
+        - 仅当值为非空字符串时处理；其它类型（None/数字/list 等）保持原样
+        - 将反斜杠（os.sep on Windows）替换为正斜杠 '/'
+        - 不改变路径前缀（如 './'）和大小写
+
+        就地修改 node_dict["config"]。
+
+        Args:
+            node_dict: node.to_dict() 返回的字典
+        """
+        config = node_dict.get("config")
+        if not isinstance(config, dict):
+            return
+        for key in ProjectConstants.RESOURCE_PATH_KEYS:
+            value = config.get(key)
+            if isinstance(value, str) and value:
+                # 仅替换反斜杠为正斜杠，保留 './' 等前缀
+                normalized = value.replace('\\', '/')
+                if normalized != value:
+                    config[key] = normalized
+
+    @staticmethod
     def deserialize(data: Dict[str, Any]) -> tuple:
         """从字典反序列化行为树
 
@@ -76,6 +107,18 @@ class Serializer:
             (根节点, canvas_state, editor_state) 元组
         """
         from .registry import NodeRegistry
+
+        # format_type 校验（向后兼容：未知值仅记录警告，不报错）
+        format_type = data.get("format_type")
+        if format_type and format_type != ProjectConstants.TREE_FORMAT_TYPE:
+            # 历史文件可能是 behavior_tree_editor / behavior_tree_standalone / behavior_tree_with_subtrees
+            # 统一兼容，不阻断加载
+            import warnings
+            warnings.warn(
+                f"tree.json format_type='{format_type}'，当前标准为"
+                f"'{ProjectConstants.TREE_FORMAT_TYPE}'，将按兼容模式加载",
+                stacklevel=2,
+            )
 
         nodes_data = data.get("nodes", {})
         connections = data.get("connections", [])
@@ -294,8 +337,9 @@ class Serializer:
                                   editor_state: Dict[str, Any] = None) -> Dict[str, Any]:
         """序列化行为树（包含子树引用元数据）"""
         data = Serializer.serialize(root_node, metadata, canvas_state, editor_state)
-        data["version"] = "2.1"
-        data["format_type"] = "behavior_tree_with_subtrees"
+        # 统一 format_type / version，不再使用独立值
+        data["version"] = ProjectConstants.TREE_FORMAT_VERSION
+        data["format_type"] = ProjectConstants.TREE_FORMAT_TYPE
 
         subtree_refs = {}
         Serializer._collect_subtree_refs(root_node, subtree_refs, project_root or os.getcwd())
@@ -315,7 +359,9 @@ class Serializer:
                 resolved_path = os.path.join(project_root, resolved_path)
 
             refs[node.node_id] = {
-                "path": subtree_path,
+                # 序列化到 JSON 的 path 强制正斜杠（跨平台一致）
+                "path": subtree_path.replace('\\', '/'),
+                # resolved_path 为运行时绝对路径，保留 OS 原生分隔符供本地文件检查使用
                 "resolved_path": os.path.normpath(os.path.abspath(resolved_path)),
                 "node_count": Serializer._count_nodes_in_file(resolved_path) if os.path.exists(resolved_path) else 0
             }
