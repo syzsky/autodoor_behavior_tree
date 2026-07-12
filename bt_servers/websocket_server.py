@@ -2,7 +2,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Set
+from typing import Set
 
 try:
     from websockets.asyncio.server import serve
@@ -50,13 +50,24 @@ class WebSocketServer:
             "timestamp": message.timestamp,
             "source": message.source,
         })
-        dead = []
-        for ws, topic_filter in self._client_topics.items():
-            if self._topic_matches(topic_filter, message.topic):
-                try:
-                    await ws.send(payload)
-                except Exception:
-                    dead.append(ws)
+        # Collect (ws, send_task) for clients that match the topic
+        matching = [
+            (ws, ws.send(payload))
+            for ws, topic_filter in self._client_topics.items()
+            if self._topic_matches(topic_filter, message.topic)
+        ]
+        if not matching:
+            return
+        # Send in parallel, collecting exceptions
+        results = await asyncio.gather(
+            *[task for (_, task) in matching],
+            return_exceptions=True
+        )
+        # Remove dead clients
+        dead = [
+            ws for (ws, _), result in zip(matching, results)
+            if isinstance(result, Exception)
+        ]
         for ws in dead:
             self._clients.discard(ws)
             self._client_topics.pop(ws, None)
@@ -90,6 +101,9 @@ class WebSocketServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        # Clear client tracking (prevents stale references if restarted)
+        self._clients.clear()
+        self._client_topics.clear()
 
     async def _handle_client(self, ws) -> None:
         """处理客户端连接（websockets 16+ API: 1 arg, path via ws.request.path)"""

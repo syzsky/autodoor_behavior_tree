@@ -52,6 +52,56 @@ class TestWebSocketServer(unittest.TestCase):
 
         asyncio.run(asyncio.wait_for(client(), timeout=5.0))
 
+    def test_topic_matches_wildcards(self):
+        """测试 _topic_matches 通配符匹配逻辑"""
+        from bt_servers.websocket_server import WebSocketServer
+        matches = WebSocketServer._topic_matches
+        # ** matches everything
+        self.assertTrue(matches("**", "any.topic.here"))
+        # * matches single level
+        self.assertTrue(matches("bt.*.event", "bt.1.event"))
+        self.assertFalse(matches("bt.*.event", "bt.1.event.extra"))
+        # exact match
+        self.assertTrue(matches("bt.1.event", "bt.1.event"))
+        self.assertFalse(matches("bt.1.event", "bt.2.event"))
+        # ** in middle
+        self.assertTrue(matches("bt.**.event", "bt.1.2.3.event"))
+        # empty pattern
+        self.assertTrue(matches("", "anything"))
+        self.assertTrue(matches("**", "anything"))
+
+    def test_multiple_clients_receive_broadcast(self):
+        """多个客户端同时订阅并接收广播"""
+        from bt_bus.message_bus import MessageBus
+        from bt_bus.thread_pool import SharedThreadPool
+
+        SharedThreadPool.reset_instance()
+        MessageBus._instance = None
+        bus = MessageBus()
+        bus.start()
+        try:
+            self.server.attach_bus(bus)
+            import websockets
+
+            async def client():
+                results = []
+                async with websockets.connect("ws://127.0.0.1:8765?topic=bt.**") as ws1:
+                    async with websockets.connect("ws://127.0.0.1:8765?topic=bt.**") as ws2:
+                        await asyncio.sleep(0.2)
+                        bus.publish("bt.test.event", {"v": 1})
+                        resp1 = await asyncio.wait_for(ws1.recv(), timeout=2.0)
+                        resp2 = await asyncio.wait_for(ws2.recv(), timeout=2.0)
+                        results.extend([resp1, resp2])
+                return results
+
+            results = asyncio.run(asyncio.wait_for(client(), timeout=5.0))
+            self.assertEqual(len(results), 2)
+            for r in results:
+                self.assertIn("bt.test.event", r)
+        finally:
+            bus.stop()
+            SharedThreadPool.reset_instance()
+
     def test_server_broadcasts_bus_messages(self):
         """消息总线发布后客户端可收到广播"""
         from bt_bus.message_bus import MessageBus
