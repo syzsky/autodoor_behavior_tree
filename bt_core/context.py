@@ -49,6 +49,7 @@ class ExecutionContext:
         self._tab_manager = None
         self._current_tab_id: Optional[str] = None
         self._headless: bool = False
+        self._async_executor = None
     
     def set_stats_collector(self, collector):
         """设置统计收集器
@@ -87,6 +88,14 @@ class ExecutionContext:
     def is_headless(self) -> bool:
         """是否为 Headless 模式"""
         return self._headless
+
+    def set_async_executor(self, executor) -> None:
+        """设置异步执行器"""
+        self._async_executor = executor
+
+    def get_async_executor(self):
+        """获取异步执行器"""
+        return getattr(self, '_async_executor', None)
 
     def push_subtree(self, subtree_path: str) -> None:
         """进入子树时压栈

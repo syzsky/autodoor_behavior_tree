@@ -31,6 +31,11 @@ class BehaviorTreeEngine:
         self._pause_event = threading.Event()
         self._pause_event.set()
         self._stats = get_stats_collector()
+        # 异步执行器（基于 SharedThreadPool）
+        from bt_utils.async_executor import AsyncExecutor
+        self._async_executor = AsyncExecutor()
+        # 引擎 tick 线程 ID（供 MessageBus.request() 防死锁检测使用）
+        self._engine_thread_id = None
 
     def load_tree(self, data: Dict[str, Any]) -> None:
         """从字典数据加载行为树
@@ -104,6 +109,10 @@ class BehaviorTreeEngine:
                 self.root_node.abort(self.context)
             elif self.root_node:
                 self.root_node.reset()
+
+            # 取消所有异步任务
+            if hasattr(self, '_async_executor'):
+                self._async_executor.cancel_all()
 
             self._stop_all_script_nodes()
 
@@ -210,6 +219,8 @@ class BehaviorTreeEngine:
         return self._stats.export_to_file(filepath)
 
     def _run_loop(self) -> None:
+        # 记录引擎线程 ID（必须在 _run_loop 中记录，而非 start()）
+        self._engine_thread_id = threading.get_ident()
         start_time = time.time()
         self._stop_event.clear()
 

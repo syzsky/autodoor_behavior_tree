@@ -40,6 +40,9 @@ class Node(ABC):
         self._start_time: Optional[float] = None
         self._child_index = 0
         self._children_running = False
+        # 异步节点支持（阶段 0.2 新增）
+        self._is_async: bool = False
+        self._async_started: bool = False
 
     @abstractmethod
     def tick(self, context: "ExecutionContext") -> NodeStatus:
