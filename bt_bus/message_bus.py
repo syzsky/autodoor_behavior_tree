@@ -38,7 +38,7 @@ class MessageBus:
         self._blocked_thread_ids: Set[int] = set()
         self._event_loop = None
         self._stats = BusStats()
-        self._async_queues: List[asyncio.Queue] = []
+        self._async_queues: List[tuple] = []  # (pattern, queue, subscription_id)
         self._async_queue_lock = threading.Lock()
 
     def publish(self, topic: str, data: Any, headers: dict = None,
@@ -54,7 +54,6 @@ class MessageBus:
             for sub in subscriptions:
                 self._shared_pool.submit("bus", self._deliver, sub, m)
             self._stats.record_publish(m.topic, delivered=len(subscriptions))
-            self._push_to_async_queues(m)
             return m
 
         handler = final_handler
@@ -88,7 +87,7 @@ class MessageBus:
                 headers: dict = None, source: str = "") -> Optional[Message]:
         if threading.get_ident() in self._blocked_thread_ids:
             print(f"[MessageBus] request() called from engine thread, degrading to publish: {topic}")
-            self.publish(topic, data, source="request_degraded")
+            self.publish(topic, data, headers=headers, source=source or "request_degraded")
             return None
 
         reply_topic = f"_reply.{threading.get_ident()}.{int(time.time()*1000)}"
@@ -109,26 +108,40 @@ class MessageBus:
 
         return response_msg[0]
 
-    def subscribe_async(self, topic_pattern: str) -> "asyncio.Queue":
+    def subscribe_async(self, topic_pattern: str) -> tuple:
+        """异步订阅主题，返回 (asyncio.Queue, subscription_id)"""
         queue: asyncio.Queue = asyncio.Queue()
-        with self._async_queue_lock:
-            self._async_queues.append(queue)
-        # Subscribe with a callback that does nothing (messages pushed via _push_to_async_queues)
-        self.subscribe(topic_pattern, lambda m: None)
-        return queue
 
-    def _push_to_async_queues(self, msg: Message) -> None:
+        def callback(msg: Message):
+            # Push to this specific queue only
+            self._push_to_single_async_queue(queue, msg)
+
+        sub_id = self.subscribe(topic_pattern, callback)
+
         with self._async_queue_lock:
-            for queue in self._async_queues:
-                try:
-                    if self._event_loop and self._event_loop.is_running():
-                        asyncio.run_coroutine_threadsafe(
-                            queue.put(msg), self._event_loop
-                        )
-                    else:
-                        queue.put_nowait(msg)
-                except Exception:
-                    pass
+            self._async_queues.append((topic_pattern, queue, sub_id))
+
+        return queue, sub_id
+
+    def unsubscribe_async(self, sub_id: str) -> None:
+        """取消异步订阅"""
+        with self._async_queue_lock:
+            self._async_queues = [
+                (p, q, s) for (p, q, s) in self._async_queues if s != sub_id
+            ]
+        self.unsubscribe(sub_id)
+
+    def _push_to_single_async_queue(self, queue: asyncio.Queue, msg: Message) -> None:
+        """推送消息到单个异步队列"""
+        try:
+            if self._event_loop and self._event_loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    queue.put(msg), self._event_loop
+                )
+            else:
+                queue.put_nowait(msg)
+        except Exception as e:
+            print(f"[MessageBus] Failed to push to async queue: {e}")
 
     def add_middleware(self, middleware) -> None:
         with self._bus_lock:

@@ -100,6 +100,52 @@ class TestMessageBus(unittest.TestCase):
         bus2 = MessageBus()
         self.assertIs(self.bus, bus2)
 
+    def test_subscribe_async_basic(self):
+        """Test subscribe_async returns a queue"""
+        import asyncio
+        queue, sub_id = self.bus.subscribe_async("bt.1.event.test")
+        self.assertIsInstance(queue, asyncio.Queue)
+        self.assertTrue(sub_id)
+
+    def test_subscribe_async_receives_message(self):
+        """Test subscribe_async queue receives messages"""
+        import asyncio
+        queue, sub_id = self.bus.subscribe_async("bt.1.event.test")
+        self.bus.publish("bt.1.event.test", {"data": "hello"})
+        time.sleep(0.1)
+        self.assertFalse(queue.empty())
+        msg = queue.get_nowait()
+        self.assertEqual(msg.data, {"data": "hello"})
+        self.bus.unsubscribe_async(sub_id)
+
+    def test_subscribe_async_pattern_filter(self):
+        """Test subscribe_async filters by topic pattern"""
+        import asyncio
+        queue_a, sub_a = self.bus.subscribe_async("bt.1.event.topicA.*")
+        queue_b, sub_b = self.bus.subscribe_async("bt.1.event.topicB.*")
+
+        # Publish to topicA - only queue_a should receive
+        self.bus.publish("bt.1.event.topicA.started", "data_a")
+        time.sleep(0.1)
+
+        self.assertFalse(queue_a.empty())
+        self.assertTrue(queue_b.empty())
+
+        msg = queue_a.get_nowait()
+        self.assertEqual(msg.data, "data_a")
+
+        self.bus.unsubscribe_async(sub_a)
+        self.bus.unsubscribe_async(sub_b)
+
+    def test_unsubscribe_async(self):
+        """Test unsubscribe_async cleans up"""
+        import asyncio
+        queue, sub_id = self.bus.subscribe_async("bt.1.event.test")
+        self.bus.unsubscribe_async(sub_id)
+        self.bus.publish("bt.1.event.test", "data")
+        time.sleep(0.1)
+        self.assertTrue(queue.empty())
+
 
 if __name__ == '__main__':
     unittest.main()
