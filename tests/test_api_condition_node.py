@@ -168,6 +168,29 @@ class TestAPIConditionNode(unittest.TestCase):
             data='{"k":"v"}',
         )
 
+    def test_put_method_with_body(self):
+        """PUT 方法带 body 的请求构造验证"""
+        from bt_nodes.network.api_condition_node import APIConditionNode
+        node = APIConditionNode(config=NodeConfig(name="cond", extra={
+            "url": "http://example.com/api",
+            "method": "PUT",
+            "body": '{"k":"v"}',
+            "headers": {"Content-Type": "application/json"},
+        }))
+        ctx = ExecutionContext()
+        resp = self._make_resp(200, {})
+        with patch("bt_nodes.network.api_condition_node.requests.request",
+                   return_value=resp) as mock_request:
+            status = node.tick(ctx)
+        self.assertEqual(status, NodeStatus.SUCCESS)
+        mock_request.assert_called_once_with(
+            "PUT",
+            "http://example.com/api",
+            headers={"Content-Type": "application/json"},
+            timeout=5.0,
+            data='{"k":"v"}',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
