@@ -29,7 +29,7 @@ class TestWebSocketNode(unittest.TestCase):
                           return_value=mock_ws):
             status = node.tick(ctx)
         self.assertEqual(status, NodeStatus.SUCCESS)
-        mock_ws.send.assert_called_once()
+        mock_ws.send.assert_called_once_with('{"type":"ping"}')
 
     def test_receive_message_writes_to_blackboard(self):
         from bt_nodes.network.websocket_node import WebSocketNode

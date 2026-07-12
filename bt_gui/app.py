@@ -50,6 +50,7 @@ class BehaviorTreeApp(ctk.CTk):
         self._message_bus = None
         self._rest_server = None
         self._ws_server = None
+        self._ws_loop = None
         self._init_message_bus_and_servers()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -576,7 +577,7 @@ class BehaviorTreeApp(ctk.CTk):
         from bt_bus.thread_pool import SharedThreadPool
 
         SharedThreadPool.reset_instance()
-        MessageBus._instance = None
+        MessageBus.reset_instance()
         bus = MessageBus()
         bus.start()
         self._message_bus = bus
@@ -597,9 +598,12 @@ class BehaviorTreeApp(ctk.CTk):
             self._rest_server = rest
 
             def _run_rest():
-                rest.start()
-                uvicorn.run(rest.app, host=server_config.host,
-                            port=server_config.port, log_level="warning")
+                try:
+                    rest.start()
+                    uvicorn.run(rest.app, host=server_config.host,
+                                port=server_config.port, log_level="warning")
+                except Exception as e:
+                    LogManager.debug_print(f"[ERROR] REST 服务端启动失败: {e}")
 
             thread = threading.Thread(target=_run_rest, daemon=True)
             thread.start()
@@ -617,12 +621,17 @@ class BehaviorTreeApp(ctk.CTk):
             )
             ws.attach_bus(bus)
             self._ws_server = ws
+            self._ws_loop = None
 
             def _run_ws():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(ws.start())
-                loop.run_forever()
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    self._ws_loop = loop
+                    loop.run_until_complete(ws.start())
+                    loop.run_forever()
+                except Exception as e:
+                    LogManager.debug_print(f"[ERROR] WebSocket 服务端启动失败: {e}")
 
             thread = threading.Thread(target=_run_ws, daemon=True)
             thread.start()
@@ -632,7 +641,12 @@ class BehaviorTreeApp(ctk.CTk):
         if self._ws_server is not None:
             import asyncio
             try:
-                asyncio.run(self._ws_server.stop())
+                if self._ws_loop is not None and self._ws_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self._ws_server.stop(), self._ws_loop
+                    ).result(timeout=5)
+                else:
+                    asyncio.run(self._ws_server.stop())
             except Exception as e:
                 LogManager.debug_print(f"[WARN] 停止 WebSocket 服务端失败: {e}")
         if self._rest_server is not None:
@@ -640,6 +654,12 @@ class BehaviorTreeApp(ctk.CTk):
                 self._rest_server.stop()
             except Exception as e:
                 LogManager.debug_print(f"[WARN] 停止 REST 服务端失败: {e}")
+        # 清理 WebSocket 客户端节点连接池
+        try:
+            from bt_nodes.network.websocket_node import WebSocketNode
+            WebSocketNode.close_all_connections()
+        except Exception as e:
+            LogManager.debug_print(f"[WARN] 清理 WebSocket 连接池失败: {e}")
         if self._message_bus is not None:
             try:
                 self._message_bus.stop()

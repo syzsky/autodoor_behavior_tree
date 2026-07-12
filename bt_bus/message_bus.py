@@ -41,6 +41,20 @@ class MessageBus:
         self._async_queue_lock = threading.Lock()
         self._initialized = True
 
+    @classmethod
+    def reset_instance(cls) -> None:
+        """重置单例实例（停止旧实例并清除引用）
+
+        在 GUI 启动或测试中需要全新 MessageBus 时调用。
+        """
+        with cls._lock:
+            if cls._instance is not None:
+                try:
+                    cls._instance.stop()
+                except Exception:
+                    pass
+                cls._instance = None
+
     def publish(self, topic: str, data: Any, headers: dict = None,
                 source: str = "") -> str:
         msg = Message.create(topic, data, source, headers)

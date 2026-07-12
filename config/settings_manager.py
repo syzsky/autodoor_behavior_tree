@@ -164,6 +164,10 @@ class SettingsManager:
             "host": "127.0.0.1",
             "port": 8765,
             "heartbeat_interval": 30,
+        },
+        "sse_server": {
+            "enabled": True,
+            "max_clients": 10,
         }
     }
     

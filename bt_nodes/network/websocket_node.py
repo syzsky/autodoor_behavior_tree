@@ -28,6 +28,7 @@ class WebSocketNode(ActionNode):
 
     _connections: dict = {}
     _lock = threading.Lock()
+    _url_locks: dict = {}
 
     def __init__(self, node_id: str = None, config: NodeConfig = None):
         super().__init__(node_id, config)
@@ -37,28 +38,65 @@ class WebSocketNode(ActionNode):
         self.payload_key = self.config.get("payload_key", "ws_message")
         self.timeout_ms = self.config.get_int("timeout_ms", 1000) or 1000
 
+    @classmethod
+    def _get_url_lock(cls, url: str) -> threading.Lock:
+        """获取指定 URL 的锁（避免同一 URL 的重复连接竞态）"""
+        with cls._lock:
+            if url not in cls._url_locks:
+                cls._url_locks[url] = threading.Lock()
+            return cls._url_locks[url]
+
     def _get_connection(self):
-        """获取或创建到 URL 的 WebSocket 连接（同步封装）"""
+        """获取或创建到 URL 的 WebSocket 连接（同步封装）
+
+        使用 per-URL 锁避免同一 URL 的重复连接竞态：
+        两个线程同时对同一 URL 调用时，只有先获取 URL 锁的线程创建连接，
+        后到的线程在全局 dict 中命中缓存直接返回。
+        """
         with WebSocketNode._lock:
             if self.url in WebSocketNode._connections:
                 return WebSocketNode._connections[self.url]
 
-        async def _connect():
-            return await websockets.connect(self.url)
+        url_lock = WebSocketNode._get_url_lock(self.url)
+        with url_lock:
+            with WebSocketNode._lock:
+                if self.url in WebSocketNode._connections:
+                    return WebSocketNode._connections[self.url]
 
-        try:
-            ws = self._run_coro(_connect())
-        except (OSError, ConnectionError) as e:
-            LogManager.instance().log_failure(
-                node_type="WebSocket节点",
-                node_name=self.name,
-                reason=f"连接失败: {e}"
-            )
-            return None
+            async def _connect():
+                return await websockets.connect(self.url)
 
-        with WebSocketNode._lock:
-            WebSocketNode._connections[self.url] = ws
-        return ws
+            try:
+                ws = self._run_coro(_connect())
+            except (OSError, ConnectionError,
+                    websockets.WebSocketException) as e:
+                LogManager.instance().log_failure(
+                    node_type="WebSocket节点",
+                    node_name=self.name,
+                    reason=f"连接失败: {e}"
+                )
+                return None
+
+            with WebSocketNode._lock:
+                WebSocketNode._connections[self.url] = ws
+            return ws
+
+    @classmethod
+    def close_all_connections(cls) -> None:
+        """关闭并清理所有缓存的 WebSocket 连接
+
+        在 GUI 退出或项目切换时调用，防止连接句柄泄漏。
+        """
+        with cls._lock:
+            connections = dict(cls._connections)
+            cls._connections.clear()
+        for ws in connections.values():
+            try:
+                close_coro = ws.close()
+                if asyncio.iscoroutine(close_coro):
+                    cls._run_coro(close_coro)
+            except Exception:
+                pass
 
     def _execute_action(self, context) -> NodeStatus:
         if not self.url:
@@ -107,7 +145,8 @@ class WebSocketNode(ActionNode):
                     reason=f"不支持的操作: {self.action}"
                 )
                 return NodeStatus.FAILURE
-        except (OSError, ConnectionError) as e:
+        except (OSError, ConnectionError,
+                websockets.WebSocketException) as e:
             LogManager.instance().log_failure(
                 node_type="WebSocket节点",
                 node_name=self.name,
@@ -128,7 +167,7 @@ class WebSocketNode(ActionNode):
     def _recv(ws, timeout_ms: int):
         try:
             result = ws.recv()
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             return None
 
         if not asyncio.iscoroutine(result):
@@ -138,7 +177,7 @@ class WebSocketNode(ActionNode):
             return WebSocketNode._run_coro(
                 asyncio.wait_for(result, timeout=timeout_ms / 1000)
             )
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             return None
 
     @staticmethod
