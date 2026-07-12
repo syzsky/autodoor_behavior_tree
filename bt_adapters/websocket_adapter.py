@@ -42,6 +42,7 @@ class WebSocketAdapter(BaseAdapter):
 
     def stop(self) -> None:
         self._running = False
+        self._ws = None  # 清理 ws 引用，避免后续 send() 误用已关闭连接
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread and self._thread.is_alive():
@@ -63,7 +64,12 @@ class WebSocketAdapter(BaseAdapter):
         Args:
             url: ws:// or wss:// URL
             on_message: 消息回调 callback(message: str)
+
+        Raises:
+            RuntimeError: 已存在活动连接，需先调用 stop()
         """
+        if self._thread is not None and self._thread.is_alive():
+            raise RuntimeError("WebSocketAdapter already connected, call stop() first")
         self._url = url
         self._on_message = on_message
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -75,8 +81,10 @@ class WebSocketAdapter(BaseAdapter):
         asyncio.set_event_loop(self._loop)
         try:
             self._loop.run_until_complete(self._connect_and_listen())
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[WebSocketAdapter] run_loop error: {e}")
+        finally:
+            self._loop.close()
 
     async def _connect_and_listen(self) -> None:
         """异步连接并监听消息"""
@@ -96,11 +104,19 @@ class WebSocketAdapter(BaseAdapter):
                         except asyncio.TimeoutError:
                             # 发送心跳
                             await ws.ping()
-            except Exception:
+            except (OSError, asyncio.TimeoutError, ConnectionError,
+                    websockets.WebSocketException) as e:
                 if self._running:
+                    print(f"[WebSocketAdapter] connection error: {e}")
+                    self._ws = None  # 重置 ws 引用，避免使用已失效的连接
                     await asyncio.sleep(self._reconnect_interval_ms / 1000)
 
     async def send(self, message: str) -> None:
-        """发送消息"""
-        if self._ws:
-            await self._ws.send(message)
+        """发送消息
+
+        Raises:
+            RuntimeError: WebSocket 未连接
+        """
+        if self._ws is None:
+            raise RuntimeError("WebSocket not connected")
+        await self._ws.send(message)
