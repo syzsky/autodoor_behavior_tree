@@ -92,11 +92,19 @@ class BehaviorTreeEngine:
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
 
+            # 发布事件到消息总线
+            if context and hasattr(context, 'publish_event'):
+                context.publish_event(
+                    f"bt.{context.get_tree_id()}.event.tree.started",
+                    {"tree_id": context.get_tree_id()}
+                )
+
             if self._on_status_change:
                 self._on_status_change("running")
 
     def stop(self) -> None:
         with self._lock:
+            tree_id = self.context.get_tree_id() if self.context else "default"
             self._running = False
             self._paused = False
             self._stop_event.set()
@@ -119,6 +127,13 @@ class BehaviorTreeEngine:
             self._stats.end_session()
             self._output_stats_report()
 
+            # 发布事件到消息总线
+            if self.context and hasattr(self.context, 'publish_event'):
+                self.context.publish_event(
+                    f"bt.{tree_id}.event.tree.stopped",
+                    {"tree_id": tree_id}
+                )
+
             if self._on_status_change:
                 self._on_status_change("stopped")
 
@@ -137,14 +152,28 @@ class BehaviorTreeEngine:
                 yield from self._iter_all_nodes(child)
 
     def pause(self) -> None:
+        tree_id = self.context.get_tree_id() if self.context else "default"
         self._paused = True
         self._pause_event.clear()
+        # 发布事件到消息总线
+        if self.context and hasattr(self.context, 'publish_event'):
+            self.context.publish_event(
+                f"bt.{tree_id}.event.tree.paused",
+                {"tree_id": tree_id}
+            )
         if self._on_status_change:
             self._on_status_change("paused")
 
     def resume(self) -> None:
+        tree_id = self.context.get_tree_id() if self.context else "default"
         self._paused = False
         self._pause_event.set()
+        # 发布事件到消息总线
+        if self.context and hasattr(self.context, 'publish_event'):
+            self.context.publish_event(
+                f"bt.{tree_id}.event.tree.resumed",
+                {"tree_id": tree_id}
+            )
         if self._on_status_change:
             self._on_status_change("running")
 
