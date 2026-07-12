@@ -174,6 +174,53 @@ class RESTServer(BaseServer):
             status = await asyncio.to_thread(node_svc.get_node_status, node_id)
             return status
 
+        # SSE 事件流路由
+        self._setup_sse_routes()
+
+    def _setup_sse_routes(self) -> None:
+        """配置 SSE 事件流路由"""
+        from sse_starlette.sse import EventSourceResponse
+
+        @self.app.get("/api/v1/events/stream")
+        async def event_stream(request: Request):
+            """SSE 事件流 — 推送节点状态变化、黑板变化等事件"""
+            if not self._bus:
+                async def error_generator():
+                    yield {"event": "error", "data": "MessageBus not available"}
+                return EventSourceResponse(error_generator())
+
+            # 订阅所有 bt 事件（真实 API 返回 (queue, sub_id) 元组）
+            queue, sub_id = self._bus.subscribe_async("bt.**.event.**")
+
+            async def event_generator():
+                try:
+                    while True:
+                        if await request.is_disconnected():
+                            break
+                        try:
+                            msg = await asyncio.wait_for(queue.get(), timeout=30)
+                            yield {
+                                "event": "message",
+                                "data": {
+                                    "topic": msg.topic,
+                                    "data": msg.data,
+                                    "timestamp": msg.timestamp,
+                                    "source": msg.source,
+                                },
+                            }
+                        except asyncio.TimeoutError:
+                            # 发送心跳
+                            yield {"event": "ping", "data": ""}
+                        except Exception as e:
+                            yield {"event": "error", "data": str(e)}
+                            break
+                finally:
+                    # 清理订阅
+                    if hasattr(self._bus, "unsubscribe_async"):
+                        self._bus.unsubscribe_async(sub_id)
+
+            return EventSourceResponse(event_generator())
+
     def start(self) -> None:
         """启动服务端（在 uvicorn 中调用）"""
         # 注入事件循环到 MessageBus（在 uvicorn 启动前由调用方调用）
