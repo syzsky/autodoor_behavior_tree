@@ -190,6 +190,9 @@ class RESTServer(BaseServer):
                 return EventSourceResponse(error_generator())
 
             # 订阅所有 bt 事件（真实 API 返回 (queue, sub_id) 元组）
+            # TODO: subscribe_async creates unbounded asyncio.Queue.
+            # For production with many slow clients, add maxsize parameter to
+            # MessageBus.subscribe_async() to prevent OOM (future task).
             queue, sub_id = self._bus.subscribe_async("bt.**.event.**")
 
             async def event_generator():
@@ -216,8 +219,7 @@ class RESTServer(BaseServer):
                             break
                 finally:
                     # 清理订阅
-                    if hasattr(self._bus, "unsubscribe_async"):
-                        self._bus.unsubscribe_async(sub_id)
+                    self._bus.unsubscribe_async(sub_id)
 
             return EventSourceResponse(event_generator())
 
