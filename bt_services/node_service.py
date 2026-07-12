@@ -1,6 +1,9 @@
 """节点服务 — 节点状态/配置查询
 
 参考开发计划 §3.1.5。
+
+注意：返回字典使用服务层契约键名（node_id/node_type/name/status），
+与 bt_core.nodes.Node.to_dict() 的序列化键名（id/type/name/config/children）不同。
 """
 from typing import List
 
@@ -34,11 +37,11 @@ class NodeService(BaseService):
     def _collect_nodes(self, node, result: list) -> None:
         result.append({
             "node_id": node.node_id,
-            "node_type": getattr(node, 'NODE_TYPE', 'Unknown'),
-            "name": getattr(node, 'name', ''),
-            "status": node.status.name if hasattr(node.status, 'name') else str(node.status),
+            "node_type": node.NODE_TYPE,
+            "name": node.name,
+            "status": node.status.name,
         })
-        for child in getattr(node, 'children', []):
+        for child in node.children:
             self._collect_nodes(child, result)
 
     def get_node_status(self, node_id: str) -> dict:
@@ -48,7 +51,7 @@ class NodeService(BaseService):
             return {"error": "Node not found", "node_id": node_id}
         return {
             "node_id": node.node_id,
-            "status": node.status.name if hasattr(node.status, 'name') else str(node.status),
+            "status": node.status.name,
         }
 
     def get_node_config(self, node_id: str) -> dict:
@@ -58,8 +61,8 @@ class NodeService(BaseService):
             return {"error": "Node not found", "node_id": node_id}
         return {
             "node_id": node.node_id,
-            "node_type": getattr(node, 'NODE_TYPE', 'Unknown'),
-            "config": node.config.to_dict() if hasattr(node.config, 'to_dict') else {},
+            "node_type": node.NODE_TYPE,
+            "config": node.config.to_dict(),
         }
 
     def _find_node(self, node_id: str):
@@ -71,7 +74,7 @@ class NodeService(BaseService):
     def _search(self, node, node_id: str):
         if node.node_id == node_id:
             return node
-        for child in getattr(node, 'children', []):
+        for child in node.children:
             found = self._search(child, node_id)
             if found:
                 return found
