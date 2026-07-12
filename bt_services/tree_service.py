@@ -57,9 +57,10 @@ class TreeService(BaseService):
 
     def get_status(self) -> dict:
         """获取行为树状态"""
+        status = self._engine.get_status()
         return {
-            "running": self._engine.is_running() if hasattr(self._engine, 'is_running') else self._engine._running,
-            "paused": self._engine.is_paused() if hasattr(self._engine, 'is_paused') else self._engine._paused,
+            "running": status.get("running", False),
+            "paused": status.get("paused", False),
         }
 
     def list_trees(self) -> list:
@@ -67,6 +68,6 @@ class TreeService(BaseService):
         tab_manager = self._context.get_tab_manager()
         if not tab_manager:
             return []
-        if hasattr(tab_manager, 'list_tabs'):
-            return tab_manager.list_tabs()
+        if hasattr(tab_manager, 'get_all_status'):
+            return tab_manager.get_all_status()
         return []

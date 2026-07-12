@@ -16,8 +16,9 @@ class TestTreeService(unittest.TestCase):
         self.context = MagicMock()
         self.tab_manager = MagicMock()
         self.context.get_tab_manager.return_value = self.tab_manager
-        self.engine.is_running.return_value = False
-        self.engine.is_paused.return_value = False
+        self.engine.get_status.return_value = {
+            "running": False, "paused": False, "elapsed_time": 0.0, "tick_count": 0
+        }
         self.service = TreeService(self.engine, self.context)
 
     def test_get_name(self):
@@ -53,8 +54,9 @@ class TestTreeService(unittest.TestCase):
         self.assertEqual(result["status"], "resumed")
 
     def test_get_status(self):
-        self.engine.is_running.return_value = True
-        self.engine.is_paused.return_value = False
+        self.engine.get_status.return_value = {
+            "running": True, "paused": False, "elapsed_time": 0.0, "tick_count": 0
+        }
         status = self.service.get_status()
         self.assertTrue(status["running"])
         self.assertFalse(status["paused"])
