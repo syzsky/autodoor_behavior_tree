@@ -20,7 +20,7 @@ class CodeSecurityChecker:
         ast.Slice, ast.ExtSlice, ast.NameConstant, ast.Bytes, ast.Ellipsis,
         ast.Assert, ast.Global, ast.Nonlocal, ast.Await, ast.AsyncFor,
         ast.AsyncWith, ast.AsyncFunctionDef, ast.AnnAssign, ast.FormattedValue,
-        ast.JoinedStr, ast.NamedExpr,
+        ast.JoinedStr, ast.NamedExpr, ast.alias,
     }
     
     FORBIDDEN_NAMES: Set[str] = {
@@ -36,6 +36,14 @@ class CodeSecurityChecker:
         'subprocess.call', 'subprocess.run', 'subprocess.Popen',
         'ctypes', 'multiprocessing',
     }
+
+    # 允许导入的模块白名单（修复 L50-51 漏洞）
+    ALLOWED_MODULES: Set[str] = {
+        'math', 'random', 'json', 're', 'datetime', 'time',
+        'collections', 'itertools', 'functools', 'typing',
+        'decimal', 'fractions', 'statistics', 'hashlib',
+        'base64', 'uuid', 'string', 'textwrap',
+    }
     
     @classmethod
     def check_python_script(cls, file_path: str) -> tuple:
@@ -46,14 +54,25 @@ class CodeSecurityChecker:
             tree = ast.parse(code)
             
             for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    # 检查导入的模块名
+                    for alias in node.names:
+                        top_module = alias.name.split('.')[0]
+                        if top_module not in cls.ALLOWED_MODULES:
+                            return False, f"禁止导入模块: {alias.name}"
+                    continue
+                if isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        top_module = node.module.split('.')[0]
+                        if top_module not in cls.ALLOWED_MODULES:
+                            return False, f"禁止导入模块: {node.module}"
+                    continue
                 if type(node) not in cls.ALLOWED_AST_NODES:
-                    if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
-                        continue
                     return False, f"包含受限语法: {type(node).__name__}"
-                
+
                 if isinstance(node, ast.Name) and node.id in cls.FORBIDDEN_NAMES:
                     return False, f"包含禁止的函数/变量: {node.id}"
-                
+
                 if isinstance(node, ast.Call):
                     if isinstance(node.func, ast.Name):
                         if node.func.id in cls.FORBIDDEN_NAMES:
