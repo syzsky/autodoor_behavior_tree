@@ -11,11 +11,11 @@ if PROJECT_ROOT not in sys.path:
 class TestAdapterManager(unittest.TestCase):
     def setUp(self):
         from bt_adapters.adapter_manager import AdapterManager
-        AdapterManager._instance = None
+        AdapterManager.reset_instance()
 
     def tearDown(self):
         from bt_adapters.adapter_manager import AdapterManager
-        AdapterManager._instance = None
+        AdapterManager.reset_instance()
 
     def test_singleton(self):
         from bt_adapters.adapter_manager import AdapterManager
@@ -25,7 +25,7 @@ class TestAdapterManager(unittest.TestCase):
 
     def test_register_and_get_adapter(self):
         from bt_adapters.adapter_manager import AdapterManager
-        from bt_adapters.base import BaseAdapter, AdapterLevel
+        from bt_adapters.base import BaseAdapter, AdapterLevel, AdapterStatus
         from bt_adapters.config import AdapterConfig
 
         class DummyAdapter(BaseAdapter):
@@ -41,7 +41,9 @@ class TestAdapterManager(unittest.TestCase):
             def start(self): pass
             def stop(self): pass
             def get_name(self): return "dummy"
-            def get_status(self): return {"running": False}
+            def get_status(self): return AdapterStatus(
+                running=False, name="dummy", level=AdapterLevel.LOCAL
+            )
 
         mgr = AdapterManager()
         mgr.register_adapter("dummy", DummyAdapter)

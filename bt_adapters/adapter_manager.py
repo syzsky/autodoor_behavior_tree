@@ -34,7 +34,9 @@ class AdapterManager:
         self._adapters: Dict[str, BaseAdapter] = {}
         self._adapter_classes: Dict[str, Type[BaseAdapter]] = {}
         self._message_bus = None
-        self._lock = threading.RLock()
+        # 注意：实例级锁命名为 _adapters_lock，避免与类级 _lock（单例双重检查锁定）同名遮蔽
+        # 与 MessageBus 命名规范一致（_lock 类级 + _bus_lock 实例级）
+        self._adapters_lock = threading.RLock()
         # 注意：_initialized 必须放在所有属性初始化之后，避免半初始化问题
         # （参考 Tasks 11+12 的代码质量教训）
         self._initialized = True
@@ -42,12 +44,12 @@ class AdapterManager:
     def register_adapter(self, name: str,
                          adapter_class: Type[BaseAdapter]) -> None:
         """注册适配器类型"""
-        with self._lock:
+        with self._adapters_lock:
             self._adapter_classes[name] = adapter_class
 
     def get_adapter(self, name: str) -> Optional[BaseAdapter]:
         """获取适配器实例"""
-        with self._lock:
+        with self._adapters_lock:
             if name in self._adapters:
                 return self._adapters[name]
             cls = self._adapter_classes.get(name)
@@ -61,14 +63,18 @@ class AdapterManager:
 
     def start_all(self, message_bus) -> None:
         """启动所有已启用的适配器"""
-        with self._lock:
+        with self._adapters_lock:
             self._message_bus = message_bus
             for name, adapter in self._adapters.items():
-                adapter.start()
+                try:
+                    adapter.start()
+                except Exception as e:
+                    # 容错：单个适配器启动失败不应中断后续启动（与 stop_all 风格一致）
+                    print(f"[AdapterManager] start failed for {name}: {e}")
 
     def stop_all(self) -> None:
         """停止所有适配器"""
-        with self._lock:
+        with self._adapters_lock:
             for adapter in self._adapters.values():
                 try:
                     adapter.stop()
@@ -77,8 +83,20 @@ class AdapterManager:
 
     def list_adapters(self) -> Dict[str, dict]:
         """列出所有适配器状态"""
-        with self._lock:
+        with self._adapters_lock:
             return {
                 name: {"status": adapter.get_status()}
                 for name, adapter in self._adapters.items()
             }
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """重置单例实例 — 仅供测试使用
+
+        调用 stop_all() 停止所有适配器后清空单例状态，
+        与 InputControllerManager.reset_instance 设计一致。
+        """
+        if cls._instance is not None:
+            cls._instance.stop_all()
+        cls._instance = None
+        cls._initialized = False
