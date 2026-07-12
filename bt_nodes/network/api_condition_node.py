@@ -43,7 +43,7 @@ class APIConditionNode(ActionNode):
         expected_value: 期望的字段值（与 json_path 配合使用）
         timeout_ms: 超时毫秒（默认 5000，0 自动转为 5000）
         headers: 请求头字典
-        body: POST 请求体
+        body: 请求体（POST/PUT/PATCH/DELETE 等非 GET 方法使用）
     """
 
     NODE_TYPE = "APIConditionNode"
@@ -53,6 +53,7 @@ class APIConditionNode(ActionNode):
         super().__init__(node_id, config)
         self.url = self.config.get("url", "")
         self.method = self.config.get("method", "GET").upper()
+        self.body = self.config.get("body", "")
         self.expected_status = self.config.get_int("expected_status", 0)
         self.json_path = self.config.get("json_path", "")
         self.expected_value = self.config.get("expected_value", None)
@@ -77,9 +78,12 @@ class APIConditionNode(ActionNode):
             if self.method == "GET":
                 resp = requests.get(self.url, **kwargs)
             elif self.method == "POST":
-                kwargs["data"] = self.config.get("body", "")
+                kwargs["data"] = self.body or None
                 resp = requests.post(self.url, **kwargs)
             else:
+                # PUT/PATCH/DELETE 等非 GET 方法支持 body
+                if self.body:
+                    kwargs["data"] = self.body
                 resp = requests.request(self.method, self.url, **kwargs)
         except requests.RequestException as e:
             LogManager.instance().log_failure(

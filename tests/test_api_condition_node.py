@@ -78,6 +78,96 @@ class TestAPIConditionNode(unittest.TestCase):
             status = node.tick(ctx)
         self.assertEqual(status, NodeStatus.SUCCESS)
 
+    def test_empty_url_returns_failure(self):
+        """空 url 返回 FAILURE"""
+        from bt_nodes.network.api_condition_node import APIConditionNode
+        node = APIConditionNode(config=NodeConfig(name="cond", extra={
+            "url": "",
+        }))
+        ctx = ExecutionContext()
+        status = node.tick(ctx)
+        self.assertEqual(status, NodeStatus.FAILURE)
+
+    def test_request_exception_returns_failure(self):
+        """requests.ConnectionError 异常返回 FAILURE"""
+        import requests
+        from bt_nodes.network.api_condition_node import APIConditionNode
+        node = APIConditionNode(config=NodeConfig(name="cond", extra={
+            "url": "http://example.com/api",
+        }))
+        ctx = ExecutionContext()
+        with patch("bt_nodes.network.api_condition_node.requests.get",
+                   side_effect=requests.ConnectionError("connection refused")):
+            status = node.tick(ctx)
+        self.assertEqual(status, NodeStatus.FAILURE)
+
+    def test_non_json_response_returns_failure(self):
+        """非 JSON 响应（json_path 设置时）返回 FAILURE"""
+        from bt_nodes.network.api_condition_node import APIConditionNode
+        node = APIConditionNode(config=NodeConfig(name="cond", extra={
+            "url": "http://example.com/api",
+            "json_path": "status",
+            "expected_value": "ok",
+        }))
+        ctx = ExecutionContext()
+        resp = self._make_resp(200)
+        resp.json.side_effect = ValueError("Invalid JSON")
+        with patch("bt_nodes.network.api_condition_node.requests.get",
+                   return_value=resp):
+            status = node.tick(ctx)
+        self.assertEqual(status, NodeStatus.FAILURE)
+
+    def test_expected_status_mismatch_returns_failure(self):
+        """expected_status 不匹配返回 FAILURE"""
+        from bt_nodes.network.api_condition_node import APIConditionNode
+        node = APIConditionNode(config=NodeConfig(name="cond", extra={
+            "url": "http://example.com/api",
+            "expected_status": 200,
+        }))
+        ctx = ExecutionContext()
+        resp = self._make_resp(500, {})
+        with patch("bt_nodes.network.api_condition_node.requests.get",
+                   return_value=resp):
+            status = node.tick(ctx)
+        self.assertEqual(status, NodeStatus.FAILURE)
+
+    def test_json_path_not_found_returns_failure(self):
+        """json_path 指向不存在的字段时返回 FAILURE（actual=None != expected_value）"""
+        from bt_nodes.network.api_condition_node import APIConditionNode
+        node = APIConditionNode(config=NodeConfig(name="cond", extra={
+            "url": "http://example.com/api",
+            "json_path": "missing_field",
+            "expected_value": "ok",
+        }))
+        ctx = ExecutionContext()
+        resp = self._make_resp(200, {"status": "ok"})
+        with patch("bt_nodes.network.api_condition_node.requests.get",
+                   return_value=resp):
+            status = node.tick(ctx)
+        self.assertEqual(status, NodeStatus.FAILURE)
+
+    def test_post_method_with_body(self):
+        """POST 方法带 body 的请求构造验证"""
+        from bt_nodes.network.api_condition_node import APIConditionNode
+        node = APIConditionNode(config=NodeConfig(name="cond", extra={
+            "url": "http://example.com/api",
+            "method": "POST",
+            "body": '{"k":"v"}',
+            "headers": {"Content-Type": "application/json"},
+        }))
+        ctx = ExecutionContext()
+        resp = self._make_resp(200, {})
+        with patch("bt_nodes.network.api_condition_node.requests.post",
+                   return_value=resp) as mock_post:
+            status = node.tick(ctx)
+        self.assertEqual(status, NodeStatus.SUCCESS)
+        mock_post.assert_called_once_with(
+            "http://example.com/api",
+            headers={"Content-Type": "application/json"},
+            timeout=5.0,
+            data='{"k":"v"}',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
