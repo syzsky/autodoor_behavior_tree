@@ -43,6 +43,8 @@ class MessageSubscribeNode(ActionNode):
         self._last_message = None
         self._start_wait_time = time.perf_counter()
         bus = context.get_message_bus() or self._bus
+        if bus and self._bus is None:
+            self._bus = bus  # 缓存 bus 引用，供 reset() 使用
         if bus and self.topic and self._subscription_id is None:
             self._subscription_id = bus.subscribe(self.topic, self._on_message)
 
@@ -51,6 +53,8 @@ class MessageSubscribeNode(ActionNode):
 
     def _execute_action(self, context) -> NodeStatus:
         bus = context.get_message_bus() or self._bus
+        if bus and self._bus is None:
+            self._bus = bus  # 缓存 bus 引用，供 reset() 使用
         if not bus or not self.topic:
             LogManager.instance().log_failure(
                 node_type="消息订阅节点",
@@ -98,6 +102,7 @@ class MessageSubscribeNode(ActionNode):
             return NodeStatus.FAILURE
 
         # 非阻塞模式（默认）：未收到消息立即返回 FAILURE
+        self._unsubscribe(bus)
         LogManager.instance().log_failure(
             node_type="消息订阅节点",
             node_name=self.name,
