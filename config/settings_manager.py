@@ -147,6 +147,23 @@ class SettingsManager:
             "last_check_time": "",
             "check_interval": 86400,
             "force_update_cache": {}
+        },
+        "message_bus": {
+            "enabled": False,
+            "shared_thread_pool_size": 8,
+            "dead_letter_queue_size": 1000,
+        },
+        "rest_server": {
+            "enabled": False,
+            "host": "127.0.0.1",
+            "port": 8080,
+            "auth_enabled": False,
+        },
+        "websocket_server": {
+            "enabled": False,
+            "host": "127.0.0.1",
+            "port": 8765,
+            "heartbeat_interval": 30,
         }
     }
     
@@ -470,6 +487,10 @@ class SettingsManager:
     def get_all_settings(self) -> Dict[str, Any]:
         """获取所有设置"""
         return copy.deepcopy(self.settings)
+
+    def get_default_config(self) -> dict:
+        """返回默认配置的副本"""
+        return copy.deepcopy(self.DEFAULT_SETTINGS)
     
     def load_all_settings(self, settings: Dict[str, Any]) -> None:
         """加载所有设置"""

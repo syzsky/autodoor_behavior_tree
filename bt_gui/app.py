@@ -44,9 +44,14 @@ class BehaviorTreeApp(ctk.CTk):
         
         self._create_ui()
         self._setup_shortcuts()
-        
+
         self._restore_last_file()
-        
+
+        self._message_bus = None
+        self._rest_server = None
+        self._ws_server = None
+        self._init_message_bus_and_servers()
+
         self.protocol("WM_DELETE_WINDOW", self._on_close)
     
     def _restore_last_file(self):
@@ -560,8 +565,87 @@ class BehaviorTreeApp(ctk.CTk):
                 "无法以管理员身份重启应用，输入方式已恢复为 PyAutoGUI。"
             )
             return False
-    
+
+    def _init_message_bus_and_servers(self):
+        """根据配置启动消息总线和服务端"""
+        bus_config = self._settings.get("message_bus", {})
+        if not bus_config.get("enabled", False):
+            return
+
+        from bt_bus.message_bus import MessageBus
+        from bt_bus.thread_pool import SharedThreadPool
+
+        SharedThreadPool.reset_instance()
+        MessageBus._instance = None
+        bus = MessageBus()
+        bus.start()
+        self._message_bus = bus
+
+        # 启动 REST 服务端
+        rest_config = self._settings.get("rest_server", {})
+        if rest_config.get("enabled", False):
+            import threading
+            import uvicorn
+            from bt_servers.rest_server import RESTServer
+            from bt_servers.config import ServerConfig
+
+            server_config = ServerConfig(
+                host=rest_config.get("host", "127.0.0.1"),
+                port=rest_config.get("port", 8080),
+            )
+            rest = RESTServer(message_bus=bus, config=server_config)
+            self._rest_server = rest
+
+            def _run_rest():
+                rest.start()
+                uvicorn.run(rest.app, host=server_config.host,
+                            port=server_config.port, log_level="warning")
+
+            thread = threading.Thread(target=_run_rest, daemon=True)
+            thread.start()
+
+        # 启动 WebSocket 服务端
+        ws_config = self._settings.get("websocket_server", {})
+        if ws_config.get("enabled", False):
+            import threading
+            import asyncio
+            from bt_servers.websocket_server import WebSocketServer
+
+            ws = WebSocketServer(
+                host=ws_config.get("host", "127.0.0.1"),
+                port=ws_config.get("port", 8765),
+            )
+            ws.attach_bus(bus)
+            self._ws_server = ws
+
+            def _run_ws():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(ws.start())
+                loop.run_forever()
+
+            thread = threading.Thread(target=_run_ws, daemon=True)
+            thread.start()
+
     def _on_close(self):
+        # 清理消息总线和服务端
+        if self._ws_server is not None:
+            import asyncio
+            try:
+                asyncio.run(self._ws_server.stop())
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止 WebSocket 服务端失败: {e}")
+        if self._rest_server is not None:
+            try:
+                self._rest_server.stop()
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止 REST 服务端失败: {e}")
+        if self._message_bus is not None:
+            try:
+                self._message_bus.stop()
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止消息总线失败: {e}")
+
         self._save_state()
         
         if hasattr(self, 'behavior_tree') and self.behavior_tree:
