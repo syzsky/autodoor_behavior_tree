@@ -69,6 +69,40 @@ class TestCodeSecurity(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_dynamic_import_bypass_blocked(self):
+        """测试 __import__('os') 动态绕过被拦截"""
+        from bt_nodes.actions.code import CodeSecurityChecker
+        path = self._write_script(
+            "os_module = __import__('os')\nos_module.system('whoami')"
+        )
+        try:
+            ok, msg = CodeSecurityChecker.check_python_script(path)
+            self.assertFalse(ok, "应拦截 __import__ 动态调用")
+        finally:
+            os.unlink(path)
+
+    def test_eval_exec_blocked(self):
+        """测试 eval/exec 被拦截"""
+        from bt_nodes.actions.code import CodeSecurityChecker
+        path = self._write_script("result = eval('1+1')")
+        try:
+            ok, msg = CodeSecurityChecker.check_python_script(path)
+            self.assertFalse(ok)
+        finally:
+            os.unlink(path)
+
+    def test_sandbox_builtins_filter(self):
+        """测试沙箱 __builtins__ 过滤函数存在"""
+        from bt_nodes.actions.code import CodeSecurityChecker
+        self.assertTrue(hasattr(CodeSecurityChecker, 'get_safe_builtins'))
+        safe = CodeSecurityChecker.get_safe_builtins()
+        self.assertIn('print', safe)
+        self.assertIn('len', safe)
+        self.assertNotIn('__import__', safe)
+        self.assertNotIn('eval', safe)
+        self.assertNotIn('exec', safe)
+        self.assertNotIn('open', safe)
+
 
 if __name__ == '__main__':
     unittest.main()
