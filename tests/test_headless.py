@@ -91,5 +91,13 @@ class TestHeadlessRunner(unittest.TestCase):
         self.assertEqual(called, [])
 
 
+class TestMainHeadlessArg(unittest.TestCase):
+    def test_main_argparse_headless_flag(self):
+        with open(os.path.join(PROJECT_ROOT, "main.py"), 'r', encoding='utf-8') as f:
+            source = f.read()
+        self.assertIn("--headless", source)
+        self.assertIn("argparse", source)
+
+
 if __name__ == '__main__':
     unittest.main()

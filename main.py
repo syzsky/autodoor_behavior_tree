@@ -264,7 +264,33 @@ def check_admin_for_driver(method: str, display_name: str, is_available_fn):
     return True
 
 
+def parse_args():
+    """解析命令行参数"""
+    import argparse
+    parser = argparse.ArgumentParser(description="AutoDoor 行为树编辑器")
+    parser.add_argument("--headless", type=str, default=None,
+                        help="无 GUI 模式运行指定行为树文件")
+    parser.add_argument("--project", type=str, default=None,
+                        help="项目根目录（headless 模式）")
+    return parser.parse_args()
+
+
+def run_headless(tree_file, project_root=None):
+    """Headless 模式入口"""
+    from bt_core.headless import HeadlessRunner
+    from bt_core.registry import register_all_nodes
+    register_all_nodes()
+    runner = HeadlessRunner()
+    return runner.run(tree_file, project_root)
+
+
 def main():
+    args = parse_args()
+
+    if args.headless:
+        run_headless(args.headless, args.project)
+        return
+
     ensure_workspace_exists()
 
     from bt_utils.app_restarter import is_dd_available, is_ib_available
