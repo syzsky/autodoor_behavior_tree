@@ -33,11 +33,8 @@ class TestMiddleware(unittest.TestCase):
         from bt_bus.message import Message
         mw = ValidationMiddleware()
         msg = Message.create("", "data")
-        try:
-            result = mw.process(msg, lambda m: m)
-            self.assertIsNone(result)
-        except Exception:
-            pass
+        result = mw.process(msg, lambda m: m)
+        self.assertIsNone(result)
 
     def test_middleware_chain_order(self):
         from bt_bus.middleware import Middleware

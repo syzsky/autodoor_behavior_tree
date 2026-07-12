@@ -1,4 +1,4 @@
-"""总线统计 — 消息计数、延迟统计、错误率"""
+"""总线统计 — 消息发布与投递计数"""
 import threading
 import time
 from typing import Dict
@@ -15,6 +15,10 @@ class BusStats:
         with self._lock:
             self._publish_count[topic] = self._publish_count.get(topic, 0) + 1
             self._deliver_count[topic] = self._deliver_count.get(topic, 0) + delivered
+
+    def record_deliver(self, topic: str) -> None:
+        with self._lock:
+            self._deliver_count[topic] = self._deliver_count.get(topic, 0) + 1
 
     def get_publish_count(self, topic: str = None) -> int:
         with self._lock:

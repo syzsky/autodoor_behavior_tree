@@ -73,6 +73,34 @@ class TestMessageBus(unittest.TestCase):
         time.sleep(0.2)
         self.assertEqual(len(received), 1)
 
+    def test_subscriber_exception_added_to_dead_letter_queue(self):
+        """订阅者抛异常时，消息应进入死信队列，reason=SUBSCRIBER_EXCEPTION"""
+        def bad_callback(m):
+            raise RuntimeError("intentional error")
+        self.bus.subscribe("bt.1.event.test", bad_callback)
+        self.bus.publish("bt.1.event.test", "data")
+        time.sleep(0.2)
+        dlq = self.bus.get_dead_letter_queue()
+        entries = dlq.get_all()
+        subscriber_exc_entries = [
+            e for e in entries if e["reason"] == "SUBSCRIBER_EXCEPTION"
+        ]
+        self.assertEqual(len(subscriber_exc_entries), 1)
+        self.assertEqual(subscriber_exc_entries[0]["message"].data, "data")
+
+    def test_deliver_count_only_counts_successful_deliveries(self):
+        """deliver 统计只计数成功投递，失败的订阅者不应被计入"""
+        def bad_callback(m):
+            raise RuntimeError("intentional error")
+        self.bus.subscribe("bt.1.event.test", bad_callback)
+        self.bus.publish("bt.1.event.test", "data")
+        time.sleep(0.2)
+        stats = self.bus.get_stats()
+        # 发布计数应为 1
+        self.assertEqual(stats.get_publish_count("bt.1.event.test"), 1)
+        # 投递失败，deliver 计数应为 0（不应等于订阅者数量 1）
+        self.assertEqual(stats.get_deliver_count("bt.1.event.test"), 0)
+
     def test_request_response(self):
         def handler(msg):
             from bt_bus.message import Message
