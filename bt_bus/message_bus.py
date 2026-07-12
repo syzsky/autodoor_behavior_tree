@@ -88,7 +88,8 @@ class MessageBus:
                                  headers=response.headers,
                                  source="responder")
         except Exception as e:
-            print(f"[MessageBus] Subscriber exception: {e}")
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(f"[MessageBus] Subscriber exception: {e}")
             self._dead_letter_queue.add(msg, reason="SUBSCRIBER_EXCEPTION")
 
     def subscribe(self, topic_pattern: str, callback: Callable) -> str:
@@ -104,7 +105,8 @@ class MessageBus:
         with self._bus_lock:
             is_blocked = threading.get_ident() in self._blocked_thread_ids
         if is_blocked:
-            print(f"[MessageBus] request() called from engine thread, degrading to publish: {topic}")
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(f"[MessageBus] request() called from engine thread, degrading to publish: {topic}")
             self.publish(topic, data, headers=headers, source=source or "request_degraded")
             return None
 
@@ -161,7 +163,8 @@ class MessageBus:
             else:
                 queue.put_nowait(msg)
         except Exception as e:
-            print(f"[MessageBus] Failed to push to async queue: {e}")
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(f"[MessageBus] Failed to push to async queue: {e}")
 
     def add_middleware(self, middleware) -> None:
         with self._bus_lock:

@@ -250,6 +250,10 @@ class BehaviorTreeEngine:
     def _run_loop(self) -> None:
         # 记录引擎线程 ID（必须在 _run_loop 中记录，而非 start()）
         self._engine_thread_id = threading.get_ident()
+        # 注册到 MessageBus 以激活 request() 死锁防护
+        bus = self.context.get_message_bus() if self.context else None
+        if bus is not None:
+            bus.set_engine_thread_id(self._engine_thread_id)
         start_time = time.time()
         self._stop_event.clear()
 
