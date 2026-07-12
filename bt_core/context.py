@@ -50,7 +50,12 @@ class ExecutionContext:
         self._current_tab_id: Optional[str] = None
         self._headless: bool = False
         self._async_executor = None
-    
+        # 消息总线和服务层（阶段 3 新增）
+        self._message_bus = None
+        self._service_registry = None
+        self._adapter_manager = None
+        self._auth_principal = None
+
     def set_stats_collector(self, collector):
         """设置统计收集器
         
@@ -96,6 +101,53 @@ class ExecutionContext:
     def get_async_executor(self):
         """获取异步执行器"""
         return getattr(self, '_async_executor', None)
+
+    def set_message_bus(self, bus) -> None:
+        """设置消息总线"""
+        self._message_bus = bus
+
+    def get_message_bus(self):
+        """获取消息总线"""
+        return self._message_bus
+
+    def set_service_registry(self, registry) -> None:
+        """设置服务注册中心"""
+        self._service_registry = registry
+
+    def get_service(self, name: str):
+        """获取服务"""
+        if self._service_registry:
+            return self._service_registry.get(name)
+        return None
+
+    def set_adapter_manager(self, manager) -> None:
+        """设置适配器管理器"""
+        self._adapter_manager = manager
+
+    def get_adapter_manager(self):
+        """获取适配器管理器"""
+        return self._adapter_manager
+
+    def publish_event(self, topic: str, data) -> None:
+        """发布事件到消息总线"""
+        if self._message_bus:
+            self._message_bus.publish(topic, data)
+
+    def set_auth_principal(self, principal) -> None:
+        """设置当前认证主体"""
+        self._auth_principal = principal
+
+    def get_auth_principal(self):
+        """获取当前认证主体"""
+        return self._auth_principal
+
+    def is_authenticated(self) -> bool:
+        """是否已认证"""
+        return self._auth_principal is not None
+
+    def get_tree_id(self) -> str:
+        """返回当前行为树 ID（用于消息总线主题隔离）"""
+        return self._current_tab_id or "default"
 
     def push_subtree(self, subtree_path: str) -> None:
         """进入子树时压栈
