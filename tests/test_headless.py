@@ -72,6 +72,24 @@ class TestHeadlessRunner(unittest.TestCase):
         t.join(timeout=2)
         self.assertTrue(t.is_alive() is False)  # Thread should have exited
 
+    def test_context_set_headless_flag(self):
+        from bt_core.context import ExecutionContext
+        ctx = ExecutionContext()
+        self.assertFalse(ctx.is_headless())
+        ctx.set_headless(True)
+        self.assertTrue(ctx.is_headless())
+        ctx.set_headless(False)
+        self.assertFalse(ctx.is_headless())
+
+    def test_headless_notify_node_status_noop(self):
+        from bt_core.context import ExecutionContext
+        ctx = ExecutionContext()
+        ctx.set_headless(True)
+        called = []
+        ctx._on_node_status = lambda nid, st: called.append((nid, st))
+        ctx.notify_node_status("n1", "SUCCESS")
+        self.assertEqual(called, [])
+
 
 if __name__ == '__main__':
     unittest.main()

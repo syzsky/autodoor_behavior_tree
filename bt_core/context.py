@@ -48,6 +48,7 @@ class ExecutionContext:
         # Tab管理器引用（用于启动/停止节点访问其他行为树）
         self._tab_manager = None
         self._current_tab_id: Optional[str] = None
+        self._headless: bool = False
     
     def set_stats_collector(self, collector):
         """设置统计收集器
@@ -74,6 +75,18 @@ class ExecutionContext:
     def get_current_tab_id(self) -> Optional[str]:
         """获取当前Tab ID"""
         return self._current_tab_id
+
+    def set_headless(self, headless: bool) -> None:
+        """设置 Headless 模式
+
+        Args:
+            headless: True=无 GUI 模式（notify_node_status 为空操作）
+        """
+        self._headless = headless
+
+    def is_headless(self) -> bool:
+        """是否为 Headless 模式"""
+        return self._headless
 
     def push_subtree(self, subtree_path: str) -> None:
         """进入子树时压栈
@@ -157,6 +170,8 @@ class ExecutionContext:
             node_id: 节点ID
             status: 状态字符串
         """
+        if self._headless:
+            return
         if self._on_node_status:
             try:
                 from bt_utils.ui_dispatcher import UIUpdateDispatcher
