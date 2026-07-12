@@ -33,7 +33,8 @@ class MessagePublishNode(ActionNode):
         self._bus = bus
 
     def _execute_action(self, context) -> NodeStatus:
-        if not self._bus:
+        bus = context.get_message_bus() or self._bus
+        if not bus:
             LogManager.instance().log_failure(
                 node_type="消息发布节点",
                 node_name=self.name,
@@ -58,8 +59,14 @@ class MessagePublishNode(ActionNode):
             val = context.blackboard.get(self.payload_key)
             if val is not None:
                 payload = val
+            else:
+                LogManager.instance().log_failure(
+                    node_type="消息发布节点",
+                    node_name=self.name,
+                    reason=f"黑板键 '{self.payload_key}' 不存在，使用静态 payload"
+                )
 
-        self._bus.publish(topic, payload)
+        bus.publish(topic, payload)
         LogManager.instance().log_success(
             node_type="消息发布节点",
             node_name=self.name
