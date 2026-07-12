@@ -160,7 +160,6 @@ a = Analysis(
         'pynput',
         'pynput.keyboard',
         'pynput.mouse',
-        'pydub',
         'requests',
         'numpy',
         'numpy.core',

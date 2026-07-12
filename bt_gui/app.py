@@ -291,7 +291,7 @@ class BehaviorTreeApp(ctk.CTk):
         right_section = ctk.CTkFrame(top_bar_content, fg_color='transparent')
         right_section.pack(side='right')
         
-        from bt_utils.version_checker import open_tool_intro
+        from bt_utils.version_checker import open_tool_intro, open_video_tutorial
         
         self.check_update_btn = ctk.CTkButton(
             right_section,
@@ -318,6 +318,19 @@ class BehaviorTreeApp(ctk.CTk):
             command=open_tool_intro
         )
         self.tool_intro_btn.pack(side='left', padx=Theme.DIMENSIONS['spacing_xs'])
+        
+        self.video_tutorial_btn = ctk.CTkButton(
+            right_section,
+            text='视频教程',
+            width=80,
+            height=35,
+            font=Theme.get_font('sm'),
+            fg_color=self._dark_colors['primary'],
+            hover_color=self._dark_colors['primary_hover'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            command=open_video_tutorial
+        )
+        self.video_tutorial_btn.pack(side='left', padx=Theme.DIMENSIONS['spacing_xs'])
     
     def _switch_tab(self, tab_id: str):
         """切换Tab"""

@@ -38,18 +38,22 @@ def load_build_info():
         "update_links": {
             "tool_intro": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
             "download": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
-            "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink"
+            "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
+            "video_tutorial": "https://www.bilibili.com/video/BV1LodDBkEzS"
         }
     }
 
 
 _build_info = load_build_info()
 
-UPDATE_LINKS = _build_info.get('update_links', {
+_default_update_links = {
     "tool_intro": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
     "download": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
-    "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink"
-})
+    "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
+    "video_tutorial": "https://www.bilibili.com/video/BV1LodDBkEzS"
+}
+
+UPDATE_LINKS = {**_default_update_links, **_build_info.get('update_links', {})}
 
 
 def open_tool_intro():
@@ -66,6 +70,14 @@ def open_download_page():
         webbrowser.open(UPDATE_LINKS["download"])
     except Exception as e:
         LogManager.debug_print(f"打开下载页面失败: {str(e)}")
+
+
+def open_video_tutorial():
+    """打开视频教程页面"""
+    try:
+        webbrowser.open(UPDATE_LINKS["video_tutorial"])
+    except Exception as e:
+        LogManager.debug_print(f"打开视频教程页面失败: {str(e)}")
 
 
 class BetaExpirationChecker:

@@ -72,7 +72,8 @@ def generate_version_info():
         "update_links": config.get("update_links", {
             "tool_intro": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
             "download": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
-            "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink"
+            "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
+            "video_tutorial": "https://www.bilibili.com/video/BV1LodDBkEzS"
         }),
         
         "app_info": config.get("app_info", {

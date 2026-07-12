@@ -10,7 +10,6 @@ import hashlib
 import threading
 import cv2
 import logging
-import imagehash
 from bt_utils.singleton import singleton
 
 _logger = logging.getLogger(__name__)
@@ -622,6 +621,7 @@ class OCRManager:
             缓存键字符串
         """
         try:
+            import imagehash
             img_hash = str(imagehash.phash(image, hash_size=8))
         except Exception:
             try:
