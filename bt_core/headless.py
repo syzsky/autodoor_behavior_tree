@@ -26,15 +26,15 @@ class HeadlessRunner:
         self._tree_file: Optional[str] = None
         self._stop_requested = threading.Event()
 
-    def run(self, tree_file: str, project_root: str = None) -> bool:
+    def run(self, tree_file: str, project_root: str = None) -> None:
         """加载并运行行为树
 
         Args:
             tree_file: 行为树 JSON 文件路径
             project_root: 项目根目录，默认为行为树所在目录
 
-        Returns:
-            True=正常完成, False=出错
+        Raises:
+            Exception: 加载或运行失败时抛出异常（不返回 False）
         """
         import json
         from bt_core.serializer import Serializer
@@ -69,15 +69,14 @@ class HeadlessRunner:
         self._engine.start(self._context)
 
         try:
-            while self._engine._running:
+            # 同时检查引擎状态和线程存活：避免引擎线程异常死亡导致无限循环
+            while self._engine.get_status()['running'] and self._engine._thread.is_alive():
                 if self._stop_requested.is_set():
-                    self._engine.stop()
+                    # 外部 stop() 已调用 engine.stop()，此处仅需退出循环
                     break
                 time.sleep(0.1)
         except KeyboardInterrupt:
             self._engine.stop()
-
-        return True
 
     def stop(self) -> None:
         """停止运行"""

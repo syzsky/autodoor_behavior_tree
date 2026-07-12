@@ -1,7 +1,9 @@
 import os
 import sys
 import json
+import time
 import tempfile
+import threading
 import unittest
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -53,8 +55,22 @@ class TestHeadlessRunner(unittest.TestCase):
     def test_headless_run_simple_tree(self):
         from bt_core.headless import HeadlessRunner
         runner = HeadlessRunner()
-        result = runner.run(self.tmp.name)
-        self.assertTrue(result)
+        # run() 返回 None，成功完成不抛出异常即为通过
+        runner.run(self.tmp.name)
+
+    def test_headless_stop(self):
+        """Test that stop() works correctly"""
+        from bt_core.headless import HeadlessRunner
+        runner = HeadlessRunner()
+        result = [None]
+        def run_thread():
+            result[0] = runner.run(self.tmp.name)
+        t = threading.Thread(target=run_thread)
+        t.start()
+        time.sleep(0.05)  # Let it start
+        runner.stop()
+        t.join(timeout=2)
+        self.assertTrue(t.is_alive() is False)  # Thread should have exited
 
 
 if __name__ == '__main__':
