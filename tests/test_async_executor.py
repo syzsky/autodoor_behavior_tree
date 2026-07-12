@@ -51,6 +51,35 @@ class TestAsyncExecutor(unittest.TestCase):
         executor = AsyncExecutor()
         self.assertEqual(executor.get_result("unknown"), NodeStatus.FAILURE)
 
+    def test_resubmit_clears_stale_result(self):
+        """Regression test: re-submitting same node_id should clear stale result"""
+        from bt_utils.async_executor import AsyncExecutor
+        from bt_core.status import NodeStatus
+        executor = AsyncExecutor()
+
+        # First submission - completes quickly
+        executor.submit("n1", lambda: NodeStatus.SUCCESS)
+        while not executor.is_done("n1"):
+            time.sleep(0.01)
+        self.assertEqual(executor.get_result("n1"), NodeStatus.SUCCESS)
+
+        # Second submission - should not return stale SUCCESS
+        def long_task():
+            time.sleep(0.1)
+            return NodeStatus.FAILURE
+
+        executor.submit("n1", long_task)
+        # Immediately after submit, should NOT be done (task still running)
+        # Note: there's a small race window, so we check is_done returns False at least once
+        # Actually, just verify the result is eventually FAILURE (not stale SUCCESS)
+        attempts = 0
+        while not executor.is_done("n1"):
+            time.sleep(0.01)
+            attempts += 1
+            if attempts > 50:  # 0.5s timeout
+                break
+        self.assertEqual(executor.get_result("n1"), NodeStatus.FAILURE)
+
 
 if __name__ == '__main__':
     unittest.main()

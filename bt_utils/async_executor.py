@@ -30,6 +30,7 @@ class AsyncExecutor:
         """提交异步任务到共享线程池"""
         with self._lock:
             self._cancelled.discard(node_id)
+            self._results.pop(node_id, None)  # clear stale result
             start_time = time.time()
             deadline = start_time + timeout_ms / 1000.0
 
@@ -86,9 +87,20 @@ class AsyncExecutor:
             return NodeStatus.RUNNING
 
     def cancel_all(self) -> None:
-        """取消所有任务（引擎停止时调用）"""
+        """取消所有任务（引擎停止时调用）
+
+        注意: future.cancel() 无法中断正在执行的任务，仅能取消尚未开始的任务。
+        正在执行的任务会继续运行到完成，但其结果会被标记为 FAILURE。
+        """
         with self._lock:
             for node_id, future in self._futures.items():
                 self._cancelled.add(node_id)
                 future.cancel()
             self._futures.clear()
+
+    def clear(self) -> None:
+        """Clear all state (for long-running engines to prevent memory leak)"""
+        with self._lock:
+            self._futures.clear()
+            self._results.clear()
+            self._cancelled.clear()
