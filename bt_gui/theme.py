@@ -82,7 +82,9 @@ class Theme:
             'xl': 16,
             '2xl': 18,
             '3xl': 24,
-        }
+        },
+        'code_family': 'Consolas',
+        'code_size': 14,
     }
     
     DIMENSIONS = {
@@ -113,6 +115,10 @@ class Theme:
     def get_font(cls, size_key='base'):
         size = cls.FONTS['sizes'].get(size_key, 12)
         return (cls.FONTS['family'], size)
+    
+    @classmethod
+    def get_code_font(cls):
+        return (cls.FONTS['code_family'], cls.FONTS['code_size'])
     
     @classmethod
     def get_dark_colors(cls):

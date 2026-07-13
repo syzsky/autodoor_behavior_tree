@@ -346,7 +346,7 @@ class ScriptTab(ctk.CTkFrame):
         editor_content = ctk.CTkFrame(editor_tab, fg_color='transparent')
         editor_content.pack(fill='both', expand=True, padx=Theme.DIMENSIONS['spacing_xs'], pady=Theme.DIMENSIONS['spacing_xs'])
         
-        self.script_text = ctk.CTkTextbox(editor_content, font=('Consolas', 10))
+        self.script_text = ctk.CTkTextbox(editor_content, font=Theme.get_code_font())
         self.script_text.pack(fill='both', expand=True)
         
         clear_btn = AnimatedButton(editor_content, text='清空', font=Theme.get_font('xs'), width=80, height=22,
