@@ -88,11 +88,12 @@ class TestMessageBus(unittest.TestCase):
         self.assertEqual(len(subscriber_exc_entries), 1)
         self.assertEqual(subscriber_exc_entries[0]["message"].data, "data")
 
-    def test_deliver_count_records_dispatched_subscriber_count(self):
-        """deliver 统计在 publish 时记录已派发的订阅者数量
+    def test_deliver_count_only_counts_successful_deliveries(self):
+        """deliver 统计只记录成功投递的数量
 
-        新语义：record_publish(topic, delivered=len(subscriptions)) 在 publish()
-        时同步记录订阅者数量（派发计数），与投递是否成功无关。
+        语义：record_publish(topic) 只递增 publish_count；
+        record_deliver(topic) 在每次成功投递时递增 deliver_count。
+        回调抛异常时 record_deliver 不会被调用。
         """
         def bad_callback(m):
             raise RuntimeError("intentional error")
@@ -102,8 +103,8 @@ class TestMessageBus(unittest.TestCase):
         stats = self.bus.get_stats()
         # 发布计数应为 1
         self.assertEqual(stats.get_publish_count("bt.1.event.test"), 1)
-        # deliver 计数应等于订阅者数量（派发计数），即使投递失败
-        self.assertEqual(stats.get_deliver_count("bt.1.event.test"), 1)
+        # 投递失败时 deliver_count 应为 0
+        self.assertEqual(stats.get_deliver_count("bt.1.event.test"), 0)
 
     def test_request_response(self):
         def handler(msg):
@@ -178,31 +179,25 @@ class TestMessageBus(unittest.TestCase):
         time.sleep(0.1)
         self.assertTrue(queue.empty())
 
-    def test_publish_records_subscriber_count_in_stats(self):
-        """publish 后 stats 的 delivered 计数应等于订阅者数量
+    def test_publish_and_deliver_count_separate_semantics(self):
+        """publish_count 和 deliver_count 语义分离
 
-        使用阻塞回调隔离 record_publish 的贡献：record_publish 在 publish()
-        中同步执行，而 record_deliver 在线程池异步投递时才执行。阻塞回调确保
-        检查时 record_deliver 尚未触发。
+        publish_count: 每次 publish() 递增 1（在 publish 时同步记录）
+        deliver_count: 每次成功投递递增 1（在 _deliver 中异步记录）
+        两者独立计数，不存在双重计数。
         """
-        block = threading.Event()
-
-        def blocking_callback(m):
-            block.wait(timeout=2)
-
         # 订阅 3 个订阅者
         for _ in range(3):
-            self.bus.subscribe("bt.stats.deliver.count", blocking_callback)
+            self.bus.subscribe("bt.stats.test", lambda m: None)
 
-        self.bus.publish("bt.stats.deliver.count", "data")
-        # record_publish 已同步执行；record_deliver 因回调阻塞尚未执行
+        self.bus.publish("bt.stats.test", "data")
+        time.sleep(0.3)  # 等待异步投递完成
+
         stats = self.bus.get_stats()
-        self.assertEqual(stats.get_publish_count("bt.stats.deliver.count"), 1)
-        self.assertEqual(stats.get_deliver_count("bt.stats.deliver.count"), 3)
-
-        # 释放阻塞，让线程池完成投递
-        block.set()
-        time.sleep(0.2)
+        # publish_count 应为 1
+        self.assertEqual(stats.get_publish_count("bt.stats.test"), 1)
+        # deliver_count 应为 3（3 个订阅者都成功投递，无双重计数）
+        self.assertEqual(stats.get_deliver_count("bt.stats.test"), 3)
 
 
 if __name__ == '__main__':
