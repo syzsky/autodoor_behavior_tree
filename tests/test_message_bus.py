@@ -88,8 +88,12 @@ class TestMessageBus(unittest.TestCase):
         self.assertEqual(len(subscriber_exc_entries), 1)
         self.assertEqual(subscriber_exc_entries[0]["message"].data, "data")
 
-    def test_deliver_count_only_counts_successful_deliveries(self):
-        """deliver 统计只计数成功投递，失败的订阅者不应被计入"""
+    def test_deliver_count_records_dispatched_subscriber_count(self):
+        """deliver 统计在 publish 时记录已派发的订阅者数量
+
+        新语义：record_publish(topic, delivered=len(subscriptions)) 在 publish()
+        时同步记录订阅者数量（派发计数），与投递是否成功无关。
+        """
         def bad_callback(m):
             raise RuntimeError("intentional error")
         self.bus.subscribe("bt.1.event.test", bad_callback)
@@ -98,8 +102,8 @@ class TestMessageBus(unittest.TestCase):
         stats = self.bus.get_stats()
         # 发布计数应为 1
         self.assertEqual(stats.get_publish_count("bt.1.event.test"), 1)
-        # 投递失败，deliver 计数应为 0（不应等于订阅者数量 1）
-        self.assertEqual(stats.get_deliver_count("bt.1.event.test"), 0)
+        # deliver 计数应等于订阅者数量（派发计数），即使投递失败
+        self.assertEqual(stats.get_deliver_count("bt.1.event.test"), 1)
 
     def test_request_response(self):
         def handler(msg):
@@ -173,6 +177,32 @@ class TestMessageBus(unittest.TestCase):
         self.bus.publish("bt.1.event.test", "data")
         time.sleep(0.1)
         self.assertTrue(queue.empty())
+
+    def test_publish_records_subscriber_count_in_stats(self):
+        """publish 后 stats 的 delivered 计数应等于订阅者数量
+
+        使用阻塞回调隔离 record_publish 的贡献：record_publish 在 publish()
+        中同步执行，而 record_deliver 在线程池异步投递时才执行。阻塞回调确保
+        检查时 record_deliver 尚未触发。
+        """
+        block = threading.Event()
+
+        def blocking_callback(m):
+            block.wait(timeout=2)
+
+        # 订阅 3 个订阅者
+        for _ in range(3):
+            self.bus.subscribe("bt.stats.deliver.count", blocking_callback)
+
+        self.bus.publish("bt.stats.deliver.count", "data")
+        # record_publish 已同步执行；record_deliver 因回调阻塞尚未执行
+        stats = self.bus.get_stats()
+        self.assertEqual(stats.get_publish_count("bt.stats.deliver.count"), 1)
+        self.assertEqual(stats.get_deliver_count("bt.stats.deliver.count"), 3)
+
+        # 释放阻塞，让线程池完成投递
+        block.set()
+        time.sleep(0.2)
 
 
 if __name__ == '__main__':

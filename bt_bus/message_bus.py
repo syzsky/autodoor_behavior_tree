@@ -67,7 +67,7 @@ class MessageBus:
                 return m
             for sub in subscriptions:
                 self._shared_pool.submit("bus", self._deliver, sub, m)
-            self._stats.record_publish(m.topic, delivered=0)
+            self._stats.record_publish(m.topic, delivered=len(subscriptions))
             return m
 
         handler = final_handler
