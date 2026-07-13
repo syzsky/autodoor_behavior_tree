@@ -133,6 +133,7 @@ class AnimatedButton(ctk.CTkButton):
         self._press_color = kwargs.pop('press_color', None)
         self._original_fg = kwargs.get('fg_color', Theme.COLORS['primary'])
         self._original_hover = kwargs.get('hover_color', Theme.COLORS['primary_hover'])
+        self._override_fg = None  # 允许外部覆盖 fg_color，防止 _on_release 重置
         
         if self._press_color is None:
             if isinstance(self._original_fg, str) and self._original_fg not in ['transparent']:
@@ -145,6 +146,17 @@ class AnimatedButton(ctk.CTkButton):
         self.bind('<ButtonPress-1>', self._on_press)
         self.bind('<ButtonRelease-1>', self._on_release)
         self.bind('<Leave>', self._on_leave)
+    
+    def set_override_fg(self, color):
+        """设置覆盖色，_on_release 和 _on_leave 不会重置此颜色"""
+        self._override_fg = color
+        if color is not None:
+            self.configure(fg_color=color)
+    
+    def clear_override_fg(self):
+        """清除覆盖色，恢复原始颜色"""
+        self._override_fg = None
+        self.configure(fg_color=self._original_fg)
     
     def _darken_color(self, hex_color, factor):
         try:
@@ -160,14 +172,20 @@ class AnimatedButton(ctk.CTkButton):
             return hex_color
     
     def _on_press(self, event):
+        if self._override_fg is not None:
+            return
         if self._original_fg not in ['transparent']:
             self.configure(fg_color=self._press_color)
     
     def _on_release(self, event):
+        if self._override_fg is not None:
+            return
         if self._original_fg not in ['transparent']:
             self.configure(fg_color=self._original_fg)
     
     def _on_leave(self, event=None):
+        if self._override_fg is not None:
+            return
         if self._original_fg not in ['transparent']:
             self.configure(fg_color=self._original_fg)
 

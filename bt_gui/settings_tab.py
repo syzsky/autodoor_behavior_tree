@@ -579,17 +579,25 @@ class SettingsTab(ctk.CTkFrame):
             self.alarm_sound_path.set(file_path)
     
     def _start_key_listening(self, entry, btn):
-        btn.configure(text="请按键...", fg_color=Theme.COLORS['warning'])
+        btn.set_override_fg(Theme.COLORS['warning'])
+        btn.configure(text="请按键...")
         
-        # 暂停全局热键，避免捕获按键时触发已有快捷键
-        from bt_utils.global_hotkey import GlobalHotkeyManager
-        hotkey_mgr = GlobalHotkeyManager.get_instance()
-        was_running = hotkey_mgr.is_running()
-        if was_running:
-            hotkey_mgr.stop()
-        
-        from pynput import keyboard
-        from bt_utils.key_name_resolver import resolve_key_name
+        try:
+            # 暂停全局热键，避免捕获按键时触发已有快捷键
+            from bt_utils.global_hotkey import GlobalHotkeyManager
+            hotkey_mgr = GlobalHotkeyManager.get_instance()
+            was_running = hotkey_mgr.is_running()
+            if was_running:
+                hotkey_mgr.stop()
+            
+            from pynput import keyboard
+            from bt_utils.key_name_resolver import resolve_key_name
+        except ImportError as e:
+            btn.clear_override_fg()
+            btn.configure(text="修改")
+            from tkinter import messagebox
+            messagebox.showerror("错误", f"快捷键监听模块加载失败: {e}")
+            return
         
         _pressed_modifiers = set()
         
@@ -650,7 +658,8 @@ class SettingsTab(ctk.CTkFrame):
             if was_running:
                 hotkey_mgr.start()
             try:
-                btn.configure(text="修改", fg_color=Theme.COLORS['primary'])
+                btn.configure(text="修改")
+                btn.clear_override_fg()
             except Exception:
                 pass
         
@@ -767,7 +776,8 @@ class SettingsTab(ctk.CTkFrame):
         entry.insert(0, key_name)
         entry.configure(state="disabled")
         
-        btn.configure(text="修改", fg_color=Theme.COLORS['primary'])
+        btn.configure(text="修改")
+        btn.clear_override_fg()
         
         self._stop_settings_listener()
         
