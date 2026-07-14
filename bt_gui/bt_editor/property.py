@@ -295,6 +295,25 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "auto_reload", "label": "自动重载", "type": "bool", "default": False},
         {"key": "_aut_parameter_file", "label": "加密参数文件", "type": "file", "width": 150, "filetypes": [("参数文件", "*.json"), ("所有文件", "*.*")], "hidden": True},
     ],
+    "HTTPRequestNode": [
+        {"key": "url", "label": "请求URL", "type": "text", "default": ""},
+        {"key": "method", "label": "请求方法", "type": "select", "options": ["GET", "POST", "PUT", "DELETE"], "default": "GET"},
+        {"key": "body", "label": "请求体", "type": "text", "hide_if": {"field": "method", "value": ["GET", "DELETE"]}},
+        {"key": "headers", "label": "请求头(JSON)", "type": "text", "default": "{}"},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 100, "default": 5000},
+        {"key": "expected_status", "label": "期望状态码(0不检查)", "type": "number", "min": 0, "max": 599, "default": 0},
+        {"key": "response_key", "label": "响应变量名", "type": "text", "default": "http_response"},
+    ],
+    "APIConditionNode": [
+        {"key": "url", "label": "请求URL", "type": "text", "default": ""},
+        {"key": "method", "label": "请求方法", "type": "select", "options": ["GET", "POST"], "default": "GET"},
+        {"key": "body", "label": "请求体", "type": "text", "hide_if": {"field": "method", "value": "GET"}},
+        {"key": "headers", "label": "请求头(JSON)", "type": "text", "default": "{}"},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 100, "default": 5000},
+        {"key": "expected_status", "label": "期望状态码(0不检查)", "type": "number", "min": 0, "max": 599, "default": 0},
+        {"key": "json_path", "label": "JSON路径", "type": "text", "default": ""},
+        {"key": "expected_value", "label": "期望字段值", "type": "text", "default": ""},
+    ],
 }
 
 CONDITION_DECORATOR_FIELDS = [

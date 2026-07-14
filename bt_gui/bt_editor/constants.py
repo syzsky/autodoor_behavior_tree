@@ -11,6 +11,7 @@ NODE_CATEGORY_MAP = {
     "NumberConditionNode": "condition",
     "VariableConditionNode": "condition",
     "TextExtractNode": "condition",
+    "APIConditionNode": "condition",
     "KeyPressNode": "action",
     "MouseClickNode": "action",
     "MouseMoveNode": "action",
@@ -23,6 +24,7 @@ NODE_CATEGORY_MAP = {
     "TextInputNode": "action",
     "StartTreeNode": "action",
     "StopTreeNode": "action",
+    "HTTPRequestNode": "action",
 }
 
 NODE_DISPLAY_NAMES = {
@@ -38,6 +40,7 @@ NODE_DISPLAY_NAMES = {
     "NumberConditionNode": "数字比较",
     "VariableConditionNode": "变量判断",
     "TextExtractNode": "文本提取",
+    "APIConditionNode": "API条件",
     "KeyPressNode": "按键",
     "MouseClickNode": "点击",
     "MouseMoveNode": "移动",
@@ -50,6 +53,7 @@ NODE_DISPLAY_NAMES = {
     "TextInputNode": "文本输入",
     "StartTreeNode": "启动树",
     "StopTreeNode": "停止树",
+    "HTTPRequestNode": "HTTP请求",
 }
 
 NODE_DESCRIPTIONS = {
@@ -65,6 +69,7 @@ NODE_DESCRIPTIONS = {
     "NumberConditionNode": "比较数值大小",
     "VariableConditionNode": "判断变量值",
     "TextExtractNode": "从指定区域提取文本",
+    "APIConditionNode": "根据API响应判断条件",
     "KeyPressNode": "模拟键盘按键",
     "MouseClickNode": "模拟鼠标点击",
     "MouseMoveNode": "移动鼠标位置",
@@ -77,11 +82,12 @@ NODE_DESCRIPTIONS = {
     "TextInputNode": "向目标位置输入文本",
     "StartTreeNode": "启动其他已加载的行为树",
     "StopTreeNode": "停止当前或其他行为树",
+    "HTTPRequestNode": "发起HTTP请求",
 }
 
 COMPOSITE_NODES = ["SequenceNode", "SelectorNode", "ParallelNode", "RandomNode", "SubtreeNode"]
-CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode"]
-ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode", "StartTreeNode", "StopTreeNode"]
+CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode", "APIConditionNode"]
+ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode", "StartTreeNode", "StopTreeNode", "HTTPRequestNode"]
 
 ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES
 
@@ -121,6 +127,7 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("NumberConditionNode", "数字比较", "比较数值大小"),
                 ("VariableConditionNode", "变量判断", "判断变量值"),
                 ("TextExtractNode", "文本提取", "从指定区域提取文本"),
+                ("APIConditionNode", "API条件", "根据API响应判断条件"),
             ]
         },
         "动作节点": {
@@ -139,6 +146,7 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("TextInputNode", "文本输入", "向目标位置输入文本"),
                 ("StartTreeNode", "启动树", "启动其他已加载的行为树"),
                 ("StopTreeNode", "停止树", "停止当前或其他行为树"),
+                ("HTTPRequestNode", "HTTP请求", "发起HTTP请求"),
             ]
         },
     }
