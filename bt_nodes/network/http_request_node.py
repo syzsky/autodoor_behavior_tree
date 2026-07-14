@@ -43,6 +43,62 @@ class HTTPRequestNode(ActionNode):
                 reason="缺少 url"
             )
             return NodeStatus.FAILURE
+
+        adapter_mgr = context.get_adapter_manager()
+        if adapter_mgr:
+            return self._execute_with_adapter(context, adapter_mgr)
+        else:
+            return self._execute_with_direct_requests(context)
+
+    def _execute_with_adapter(self, context, adapter_mgr) -> NodeStatus:
+        try:
+            adapter = adapter_mgr.get_adapter("http")
+            body = self.body
+            if body and isinstance(body, str):
+                try:
+                    import json
+                    body = json.loads(body)
+                except ValueError:
+                    pass
+
+            resp = adapter.call(
+                method=self.method,
+                url=self.url,
+                headers=self.headers or None,
+                body=body,
+                timeout_ms=self.timeout_ms
+            )
+
+            context.blackboard.set(self.response_key, {
+                "status_code": resp.status_code,
+                "text": resp.text,
+                "json": resp.json,
+            })
+            context.blackboard.set("http_response_code", resp.status_code)
+
+            if self.expected_status and resp.status_code != self.expected_status:
+                LogManager.instance().log_failure(
+                    node_type="HTTP请求节点",
+                    node_name=self.name,
+                    reason=f"HTTP {self.url} 期望 {self.expected_status} 实际 {resp.status_code}"
+                )
+                return NodeStatus.FAILURE
+
+            LogManager.instance().log_success(
+                node_type="HTTP请求节点",
+                node_name=self.name
+            )
+            return NodeStatus.SUCCESS
+        except requests.RequestException as e:
+            LogManager.instance().log_failure(
+                node_type="HTTP请求节点",
+                node_name=self.name,
+                reason=f"HTTP 请求异常: {e}"
+            )
+            context.blackboard.set(self.response_key, {"error": str(e)})
+            return NodeStatus.FAILURE
+
+    def _execute_with_direct_requests(self, context) -> NodeStatus:
         try:
             kwargs = {
                 "headers": self.headers or None,
