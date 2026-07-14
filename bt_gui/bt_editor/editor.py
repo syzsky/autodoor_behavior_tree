@@ -183,6 +183,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         context = ExecutionContext(project_root=instance.project_root)
         context._on_node_status = lambda node_id, status, tid=tab_id: self._on_node_status(node_id, status, tid)
         context.set_tab_manager(self.tab_manager, tab_id)
+        context.set_message_bus(getattr(self.app, '_message_bus', None))
         
         instance.engine = engine
         instance.context = context
@@ -409,6 +410,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     def _create_new_tab(self, name: str, project_root: str = None, 
                         file_path: str = None) -> str:
         context = ExecutionContext(project_root=project_root)
+        context.set_message_bus(getattr(self.app, '_message_bus', None))
         engine = BehaviorTreeEngine(None)
         command_manager = CommandManager()
         
@@ -535,6 +537,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         tab_id = f"tab_{BehaviorTreeEditor._tab_counter}"
 
         context = ExecutionContext(project_root=self._fallback_project_root)
+        context.set_message_bus(getattr(self.app, '_message_bus', None))
         engine = BehaviorTreeEngine(None)
         command_manager = CommandManager()
 

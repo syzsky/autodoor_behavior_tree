@@ -103,8 +103,14 @@ class ExecutionContext:
         return getattr(self, '_async_executor', None)
 
     def set_message_bus(self, bus) -> None:
-        """设置消息总线"""
+        """设置消息总线
+
+        同时将 bus 注入 blackboard，使 blackboard.set() 能向总线发布
+        bt.{tree_id}.data.blackboard.changed 事件。传 None 清除引用并降级。
+        """
         self._message_bus = bus
+        if self.blackboard is not None:
+            self.blackboard.set_message_bus(bus, self.get_tree_id())
 
     def get_message_bus(self):
         """获取消息总线"""
