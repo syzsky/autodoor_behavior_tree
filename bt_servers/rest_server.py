@@ -174,6 +174,23 @@ class RESTServer(BaseServer):
             status = await asyncio.to_thread(node_svc.get_node_status, node_id)
             return status
 
+        @self.app.get("/api/v1/trees/{tree_id}/nodes/{node_id}/config")
+        async def get_node_config(tree_id: str, node_id: str):
+            node_svc = self._require_service("node")
+            config = await asyncio.to_thread(node_svc.get_node_config, node_id)
+            return config
+
+        @self.app.get("/api/v1/async/{node_id}/status")
+        async def get_async_task_status(node_id: str):
+            async_exec = self._require_service("async")
+            is_done = await asyncio.to_thread(async_exec.is_done, node_id)
+            result = await asyncio.to_thread(async_exec.get_result, node_id)
+            return {
+                "node_id": node_id,
+                "is_done": is_done,
+                "result": result.name if hasattr(result, 'name') else str(result)
+            }
+
         # SSE 事件流路由
         self._setup_sse_routes()
 
