@@ -168,6 +168,16 @@ class SettingsManager:
         "sse_server": {
             "enabled": True,
             "max_clients": 10,
+        },
+        "adapters": {
+            "http": {"enabled": False, "timeout_ms": 5000, "retry_count": 3},
+            "websocket": {"enabled": False, "reconnect_interval_ms": 5000},
+        },
+        "auth": {
+            "enabled": False,
+            "method": "noop",
+            "api_key": {"keys": []},
+            "token_expiry_seconds": 3600,
         }
     }
     
