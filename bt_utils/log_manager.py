@@ -3,6 +3,8 @@ from datetime import datetime
 from enum import Enum
 from typing import List
 import threading
+import os
+import traceback
 from bt_utils.singleton import singleton
 
 
@@ -102,6 +104,59 @@ class LogManager:
         """
         cls._console_output_enabled = enabled
     
+    _file_log_enabled = False
+    _file_log_path = None
+    _file_log_lock = threading.Lock()
+    
+    @classmethod
+    def _get_log_file_path(cls) -> str:
+        """获取日志文件路径（应用当前目录）"""
+        if cls._file_log_path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_dir = os.getcwd()
+            cls._file_log_path = os.path.join(log_dir, f"debug_log_{timestamp}.txt")
+        return cls._file_log_path
+    
+    @classmethod
+    def enable_file_log(cls, enabled: bool = True) -> None:
+        """启用/禁用文件日志
+        
+        Args:
+            enabled: 是否启用文件日志
+        """
+        cls._file_log_enabled = enabled
+        if enabled:
+            cls._write_file_log("[SYSTEM] 文件日志已启用")
+    
+    @classmethod
+    def disable_file_log(cls) -> None:
+        """禁用文件日志"""
+        cls._file_log_enabled = False
+    
+    @classmethod
+    def _write_file_log(cls, message: str) -> None:
+        """写入日志到文件
+        
+        Args:
+            message: 日志消息
+        """
+        if not cls._file_log_enabled:
+            return
+        
+        with cls._file_log_lock:
+            try:
+                log_path = cls._get_log_file_path()
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                log_line = f"[{timestamp}] {message}\n"
+                
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(log_line)
+            except Exception as e:
+                try:
+                    print(f"[LOG ERROR] 写入日志文件失败: {e}")
+                except:
+                    pass
+    
     @classmethod
     def debug_print(cls, message: str) -> None:
         """终端调试输出（仅 Debug 环境）
@@ -112,6 +167,8 @@ class LogManager:
         Args:
             message: 调试消息
         """
+        cls._write_file_log(message)
+        
         if not cls._console_output_enabled:
             if cls._console_output_enabled is None:
                 cls._console_output_enabled = _is_console_output_enabled()
@@ -128,6 +185,15 @@ class LogManager:
                 sys.stdout.buffer.flush()
             except Exception:
                 pass
+    
+    @classmethod
+    def debug_log(cls, message: str) -> None:
+        """仅写入文件的调试日志（不输出到终端）
+        
+        Args:
+            message: 调试消息
+        """
+        cls._write_file_log(message)
     
     def log(self, entry: LogEntry) -> None:
         """记录日志（仅前端显示，不输出到终端）

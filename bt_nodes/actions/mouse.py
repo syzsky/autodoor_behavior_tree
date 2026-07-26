@@ -83,12 +83,25 @@ class MouseClickNode(ActionNode):
             return NodeStatus.FAILURE
 
     def _get_position(self, context) -> Optional[Tuple[int, int]]:
-        if self.config.get_bool("use_blackboard", False):
-            position_key = self.config.get("position_key", "") or _get_default_position_key()
+        use_blackboard = self.config.get_bool("use_blackboard", False)
+        position_key = self.config.get("position_key", "") or _get_default_position_key()
+        config_position = self.config.get("position", None)
+        
+        LogManager.debug_print(f"[MOUSE] _get_position: use_blackboard={use_blackboard}, position_key={position_key}, config_position={config_position}")
+        
+        if use_blackboard:
             bb_position = context.blackboard.get(position_key)
+            LogManager.debug_print(f"[MOUSE] _get_position: 从黑板读取 position_key={position_key}, value={bb_position}")
             if bb_position:
-                return _ensure_tuple_position(bb_position)
-        return _ensure_tuple_position(self.config.get("position", None))
+                result = _ensure_tuple_position(bb_position)
+                LogManager.debug_print(f"[MOUSE] _get_position: 黑板值转换后 result={result}")
+                return result
+            else:
+                LogManager.debug_print(f"[MOUSE] _get_position: 黑板值为空，回退到配置位置")
+        
+        result = _ensure_tuple_position(config_position)
+        LogManager.debug_print(f"[MOUSE] _get_position: 返回配置位置 result={result}")
+        return result
 
     def _non_blocking_finite_click(self, context, position: Optional[Tuple[int, int]]) -> NodeStatus:
         current_time = time.time() * 1000
@@ -99,14 +112,20 @@ class MouseClickNode(ActionNode):
         if self._actual_interval is None:
             self._actual_interval = get_random_interval(click_interval, click_interval_random)
 
+        LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 当前点击次数={self._current_click}, 总次数={self.config.get_int('click_count', 1)}, position={position}")
+        LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 上次点击时间={self._last_click_time}, 当前时间={current_time}, 间隔={self._actual_interval}")
+
         if self._last_click_time is not None and self._actual_interval > 0:
             elapsed = current_time - self._last_click_time
+            LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 已过去 {elapsed:.2f}ms, 需要等待 {self._actual_interval}ms")
             if elapsed < self._actual_interval:
+                LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 等待间隔中，返回 RUNNING")
                 return NodeStatus.RUNNING
 
         click_count = self.config.get_int("click_count", 1)
         if self._current_click < click_count:
             if self._abort_flag or not context.check_running():
+                LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 中止或未运行，释放按钮")
                 self._release_button()
                 return NodeStatus.ABORTED
 
@@ -115,10 +134,15 @@ class MouseClickNode(ActionNode):
             duration = self.config.get_int("duration", 100)
             duration_random = self.config.get_int("duration_random", 0)
 
+            LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 准备执行点击 button={button}, action={action}, duration={duration}, x_float={self.x_float}, y_float={self.y_float}")
+
             if self._actual_duration is None:
                 self._actual_duration = get_random_duration(duration, duration_random)
+            
+            LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 调用 execute_mouse_click...")
             context.execute_mouse_click(button, position, action, self._actual_duration,
                                         x_float=self.x_float, y_float=self.y_float)
+            LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: execute_mouse_click 调用完成")
 
             if action == "down":
                 self._button_pressed = True
@@ -128,7 +152,10 @@ class MouseClickNode(ActionNode):
             self._actual_interval = None
             self._actual_duration = None
 
+            LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 点击完成，当前次数={self._current_click}, 总次数={click_count}")
+
             if self._current_click < click_count:
+                LogManager.debug_print(f"[MOUSE] _non_blocking_finite_click: 还需点击 {click_count - self._current_click} 次，返回 RUNNING")
                 return NodeStatus.RUNNING
         
         self._reset_click_state()

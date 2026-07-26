@@ -300,6 +300,9 @@ def main():
     initialize_ocr()
     initialize_input()
     
+    from bt_utils.log_manager import LogManager
+    LogManager.enable_file_log(True)
+    
     register_all_nodes()
     
     ctk.set_appearance_mode("dark")
