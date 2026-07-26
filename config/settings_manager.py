@@ -178,6 +178,12 @@ class SettingsManager:
             "method": "noop",
             "api_key": {"keys": []},
             "token_expiry_seconds": 3600,
+            "platform": {
+                "base_url": "https://autodoor.lizhileyun.com",
+                "api_namespace": "/wp-json/bt/v1/executor",
+                "connect_timeout": 10,
+                "read_timeout": 30,
+            }
         }
     }
     

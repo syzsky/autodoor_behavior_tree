@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from ..theme import Theme
-from .constants import CONDITION_NODES, ACTION_NODES, COMPOSITE_NODES
+from .constants import CONDITION_NODES, ACTION_NODES, COMPOSITE_NODES, INTERFACE_NODES
 from bt_utils.log_manager import LogManager
 
 
@@ -313,6 +313,25 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "expected_status", "label": "期望状态码(0不检查)", "type": "number", "min": 0, "max": 599, "default": 0},
         {"key": "json_path", "label": "JSON路径", "type": "text", "default": ""},
         {"key": "expected_value", "label": "期望字段值", "type": "text", "default": ""},
+    ],
+    "MessagePublishNode": [
+        {"key": "topic", "label": "主题", "type": "text", "default": ""},
+        {"key": "payload", "label": "静态负载(JSON)", "type": "text", "default": "{}"},
+        {"key": "payload_key", "label": "黑板键名", "type": "text", "default": ""},
+        {"key": "prefix_tree_id", "label": "自动添加树ID前缀", "type": "bool", "default": True},
+    ],
+    "MessageSubscribeNode": [
+        {"key": "topic", "label": "订阅主题", "type": "text", "default": ""},
+        {"key": "payload_key", "label": "输出变量名", "type": "text", "default": "last_message"},
+        {"key": "wait_mode", "label": "等待模式", "type": "select", "options": ["nonblocking", "blocking"], "display_names": {"nonblocking": "非阻塞", "blocking": "阻塞"}, "default": "nonblocking"},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 0, "default": 0},
+    ],
+    "WebSocketNode": [
+        {"key": "url", "label": "WebSocket地址", "type": "text", "default": ""},
+        {"key": "action", "label": "操作", "type": "select", "options": ["send", "recv"], "display_names": {"send": "发送", "recv": "接收"}, "default": "send"},
+        {"key": "message", "label": "发送消息", "type": "text", "default": "", "hide_if": {"field": "action", "value": "recv"}},
+        {"key": "payload_key", "label": "输出变量名", "type": "text", "default": "ws_message", "hide_if": {"field": "action", "value": "send"}},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 100, "default": 1000, "hide_if": {"field": "action", "value": "send"}},
     ],
 }
 

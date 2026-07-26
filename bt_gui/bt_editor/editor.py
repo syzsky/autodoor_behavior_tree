@@ -30,6 +30,7 @@ from bt_core.blackboard import Blackboard
 from bt_utils.auto_save import AutoSaveManager
 from bt_utils.crash_recovery import CrashRecoveryHandler
 from bt_utils.global_hotkey import GlobalHotkeyManager
+from bt_utils.auth.login_manager import LoginManager
 
 
 def _get_user_data_dir() -> Path:
@@ -82,10 +83,14 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         self._hotkey_manager = GlobalHotkeyManager.get_instance()
         
+        self._login_manager = LoginManager()
+        
         self._create_ui()
         self._bind_events()
         
         self._check_crash_recovery()
+        
+        self._init_auto_login()
     
     def _create_ui(self):
         self.main_container = ctk.CTkFrame(self, fg_color="transparent")
@@ -477,8 +482,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_reset_view=self.reset_view,
             on_start=self._start_running,
             on_stop=self._stop_running,
-            on_open_folder=self._open_project_folder
-        )
+            on_open_folder=self._open_project_folder,
+            )
         self.toolbar.pack(fill="x")
     
     def _create_main_area(self):
@@ -2362,6 +2367,51 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self.winfo_toplevel().title(f"autodoor - 行为树 {VERSION} - {project_name}")
         except ImportError:
             self.winfo_toplevel().title(f"autodoor - 行为树 - {project_name}")
+    
+    def _init_auto_login(self):
+        try:
+            if self._login_manager.auto_login():
+                username = self._login_manager.get_current_user() or ""
+                if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                    self.app.set_auth_status(True, username)
+                LogManager.debug_print(f"[Auth] 自动登录成功: {username}")
+            else:
+                if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                    self.app.set_auth_status(False)
+        except Exception as e:
+            LogManager.debug_print(f"[Auth] 自动登录失败: {e}")
+            if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                self.app.set_auth_status(False)
+    
+    def _on_login_click(self):
+        from bt_gui.auth.login_dialog import LoginDialog
+        
+        def on_login_success(username):
+            display_name = self._login_manager.get_current_user() or username
+            if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                self.app.set_auth_status(True, display_name)
+            LogManager.debug_print(f"[Auth] 登录成功: {username} -> {display_name}")
+        
+        def on_login_failure():
+            if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                self.app.set_auth_status(False)
+        
+        dialog = LoginDialog(
+            self.app,
+            login_manager=self._login_manager,
+            on_success=on_login_success,
+            on_failure=on_login_failure
+        )
+        self.app.wait_window(dialog)
+    
+    def _on_logout_click(self):
+        self._login_manager.logout()
+        if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+            self.app.set_auth_status(False)
+        LogManager.debug_print("[Auth] 已登出")
+    
+    def get_login_manager(self):
+        return self._login_manager
     
     def destroy(self):
         if hasattr(self, 'tab_manager'):

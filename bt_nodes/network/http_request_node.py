@@ -34,6 +34,7 @@ class HTTPRequestNode(ActionNode):
         self.timeout_ms = self.config.get_int("timeout_ms", 5000) or 5000
         self.expected_status = self.config.get_int("expected_status", 0)
         self.response_key = self.config.get("response_key", "http_response")
+        self._is_async = True
 
     def _execute_action(self, context) -> NodeStatus:
         if not self.url:

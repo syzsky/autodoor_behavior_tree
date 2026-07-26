@@ -105,6 +105,105 @@ class NoopAuthService(BaseAuthService):
         pass
 
 
+class PlatformAuthService(BaseAuthService):
+    """平台认证服务 — 对接 LoginManager
+
+    通过 LoginManager 实现真实的平台登录认证。
+    """
+
+    def __init__(self, login_manager=None):
+        self._login_manager = login_manager
+        self._current_principal: Optional[AuthPrincipal] = None
+
+    def set_login_manager(self, login_manager) -> None:
+        self._login_manager = login_manager
+
+    def verify_token(self, token: str) -> Optional[AuthPrincipal]:
+        if not self._login_manager:
+            return None
+        try:
+            api_client = self._login_manager.get_api_client()
+            validation = api_client.validate_token(token)
+            if validation:
+                self._current_principal = AuthPrincipal(
+                    user_id=validation.get("user_id", ""),
+                    username=validation.get("username", ""),
+                    display_name=validation.get("display_name", ""),
+                    roles=validation.get("roles", ["user"]),
+                    token=token,
+                    is_offline=False
+                )
+                return self._current_principal
+        except Exception:
+            pass
+        return None
+
+    def authenticate(self, credentials: dict) -> Optional[AuthPrincipal]:
+        if not self._login_manager:
+            return None
+        username = credentials.get("username", "")
+        password = credentials.get("password", "")
+        remember = credentials.get("remember", False)
+        if self._login_manager.login(username, password, remember):
+            self._current_principal = AuthPrincipal(
+                user_id=username,
+                username=username,
+                display_name=username,
+                roles=["user"],
+                token=self._login_manager.get_token() or "",
+                is_offline=self._login_manager.is_offline()
+            )
+            return self._current_principal
+        return None
+
+    def is_authenticated(self) -> bool:
+        if not self._login_manager:
+            return False
+        return self._login_manager.is_authenticated()
+
+    def get_current_principal(self) -> Optional[AuthPrincipal]:
+        if not self._login_manager:
+            return None
+        if not self._current_principal and self._login_manager.is_authenticated():
+            username = self._login_manager.get_current_user() or ""
+            self._current_principal = AuthPrincipal(
+                user_id=username,
+                username=username,
+                display_name=username,
+                roles=["user"],
+                token=self._login_manager.get_token() or "",
+                is_offline=self._login_manager.is_offline()
+            )
+        return self._current_principal
+
+    def has_role(self, role: str) -> bool:
+        principal = self.get_current_principal()
+        if not principal:
+            return False
+        return role in principal.roles
+
+    def has_permission(self, permission: str) -> bool:
+        principal = self.get_current_principal()
+        if not principal:
+            return False
+        roles = principal.roles or ["user"]
+        for role in roles:
+            permissions = ROLE_PERMISSIONS.get(role, [])
+            for perm in permissions:
+                if perm == permission:
+                    return True
+                if perm.endswith(":*"):
+                    resource = perm.split(":")[0]
+                    if permission.startswith(f"{resource}:"):
+                        return True
+        return False
+
+    def logout(self) -> None:
+        if self._login_manager:
+            self._login_manager.logout()
+        self._current_principal = None
+
+
 # 权限矩阵定义
 PERMISSIONS = {
     "tree:start":        "启动行为树",
@@ -140,5 +239,7 @@ ROLE_PERMISSIONS = {
 
 PUBLIC_ENDPOINTS = [
     "/api/v1/auth/login",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/status",
     "/api/v1/health",
 ]

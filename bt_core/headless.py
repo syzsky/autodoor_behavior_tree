@@ -118,7 +118,7 @@ class HeadlessRunner:
 
         self._service_registry = ServiceRegistry()
         self._service_registry.register("data", DataService(self._context))
-        self._service_registry.register("tree", TreeService(self._context, self._engine))
+        self._service_registry.register("tree", TreeService(self._engine, self._context))
         self._service_registry.register("node", NodeService(self._engine, self._context))
         self._service_registry.register("auth", auth_service)
         self._service_registry.register("async", AsyncExecutor())
@@ -162,6 +162,11 @@ class HeadlessRunner:
 
     def _stop_service_layer(self) -> None:
         """停止服务层"""
+        if self._rest_server:
+            try:
+                self._rest_server.stop()
+            except Exception:
+                pass
         if self._server_thread and self._server_thread.is_alive():
             pass
         if self._websocket_server:

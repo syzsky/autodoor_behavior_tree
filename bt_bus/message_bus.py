@@ -63,7 +63,7 @@ class MessageBus:
             subscriptions = self._router.match(m.topic)
             if not subscriptions:
                 self._dead_letter_queue.add(m, reason="NO_SUBSCRIBER")
-                self._stats.record_publish(m.topic, delivered=0)
+                self._stats.record_publish(m.topic)
                 return m
             for sub in subscriptions:
                 self._shared_pool.submit("bus", self._deliver, sub, m)

@@ -20,6 +20,18 @@ class BlackboardValue(BaseModel):
     value: object = None
 
 
+class LoginRequest(BaseModel):
+    """登录请求体模型"""
+    username: str
+    password: str
+    remember: bool = False
+
+
+class TreeLoadRequest(BaseModel):
+    """加载行为树请求体模型"""
+    tree_data: dict
+
+
 class RESTServer(BaseServer):
     """REST API 服务端
 
@@ -42,6 +54,10 @@ class RESTServer(BaseServer):
         self.app = FastAPI(title="AutoDoor BT API", version="1.0")
         self._setup_middleware()
         self._setup_routes()
+
+        self._server = None
+        self._server_task = None
+        self._stopped = False
 
     def _setup_middleware(self) -> None:
         """配置中间件"""
@@ -95,6 +111,50 @@ class RESTServer(BaseServer):
         async def health():
             return {"status": "ok"}
 
+        @self.app.post("/api/v1/auth/login")
+        async def login(body: LoginRequest):
+            principal = self._auth.authenticate({
+                "username": body.username,
+                "password": body.password,
+                "remember": body.remember
+            })
+            if not principal:
+                raise HTTPException(401, detail="Invalid credentials")
+            return {
+                "success": True,
+                "token": principal.token,
+                "user_id": principal.user_id,
+                "username": principal.username,
+                "display_name": principal.display_name,
+                "roles": principal.roles,
+                "is_offline": principal.is_offline
+            }
+
+        @self.app.post("/api/v1/auth/logout")
+        async def logout():
+            self._auth.logout()
+            return {"success": True}
+
+        @self.app.get("/api/v1/auth/status")
+        async def auth_status():
+            if self._auth.is_authenticated():
+                principal = self._auth.get_current_principal()
+                return {
+                    "authenticated": True,
+                    "user_id": principal.user_id if principal else "",
+                    "username": principal.username if principal else "",
+                    "display_name": principal.display_name if principal else "",
+                    "roles": principal.roles if principal else [],
+                    "is_offline": principal.is_offline if principal else False
+                }
+            return {"authenticated": False}
+
+        @self.app.post("/api/v1/trees/{tree_id}/load")
+        async def load_tree(tree_id: str, body: TreeLoadRequest):
+            tree_svc = self._require_service("tree")
+            result = await asyncio.to_thread(tree_svc.load_tree, tree_id, body.tree_data)
+            return result
+
         @self.app.get("/api/v1/trees")
         async def list_trees():
             tree_svc = self._require_service("tree")
@@ -103,11 +163,9 @@ class RESTServer(BaseServer):
 
         @self.app.get("/api/v1/trees/{tree_id}/status")
         async def get_tree_status(tree_id: str):
-            # TODO: TreeService.get_status() currently returns global engine status.
-            # Per-tree status requires TreeService extension (future task).
             tree_svc = self._require_service("tree")
-            status = await asyncio.to_thread(tree_svc.get_status)
-            return {"tree_id": tree_id, **status}
+            status = await asyncio.to_thread(tree_svc.get_tree_status, tree_id)
+            return status
 
         @self.app.post("/api/v1/trees/{tree_id}/start")
         async def start_tree(tree_id: str):
@@ -242,7 +300,6 @@ class RESTServer(BaseServer):
 
     def start(self) -> None:
         """启动服务端（在 uvicorn 中调用）"""
-        # 注入事件循环到 MessageBus（在 uvicorn 启动前由调用方调用）
         if self._bus:
             try:
                 loop = asyncio.get_running_loop()
@@ -251,6 +308,34 @@ class RESTServer(BaseServer):
                 asyncio.set_event_loop(loop)
             self._bus.set_event_loop(loop)
 
+    def run(self, host: str = "127.0.0.1", port: int = 8080) -> None:
+        """运行服务器（阻塞调用）"""
+        import uvicorn
+        uvicorn.run(
+            self.app,
+            host=host,
+            port=port,
+            log_level="warning",
+            loop="asyncio"
+        )
+
+    async def run_async(self, host: str = "127.0.0.1", port: int = 8080) -> None:
+        """异步运行服务器"""
+        import uvicorn
+        config = uvicorn.Config(
+            self.app,
+            host=host,
+            port=port,
+            log_level="warning"
+        )
+        self._server = uvicorn.Server(config)
+        await self._server.serve()
+
     def stop(self) -> None:
         """停止服务端"""
-        pass
+        self._stopped = True
+        if self._server:
+            try:
+                self._server.should_exit = True
+            except Exception:
+                pass

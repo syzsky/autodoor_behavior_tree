@@ -56,11 +56,46 @@ class TreeService(BaseService):
         return {"status": "resumed", "tree_id": tree_id}
 
     def get_status(self) -> dict:
-        """获取行为树状态"""
+        """获取全局行为树状态"""
         status = self._engine.get_status()
         return {
             "running": status.get("running", False),
             "paused": status.get("paused", False),
+        }
+
+    def get_tree_status(self, tree_id: str) -> dict:
+        """获取指定行为树的详细状态
+        
+        Args:
+            tree_id: 树 ID
+            
+        Returns:
+            详细状态字典
+        """
+        tab_manager = self._context.get_tab_manager()
+        if tree_id and tab_manager and hasattr(tab_manager, 'get_tab'):
+            instance = tab_manager.get_tab(tree_id)
+            if instance and hasattr(instance, 'engine'):
+                engine_status = instance.engine.get_status()
+                return {
+                    "tree_id": tree_id,
+                    "name": instance.name,
+                    "status": instance.status,
+                    "is_running": instance.is_running,
+                    "running": engine_status.get("running", False),
+                    "paused": engine_status.get("paused", False),
+                    "elapsed_time": engine_status.get("elapsed_time", 0),
+                    "tick_count": engine_status.get("tick_count", 0),
+                    "error_message": instance.error_message,
+                    "modified": instance.modified,
+                }
+        engine_status = self._engine.get_status()
+        return {
+            "tree_id": tree_id,
+            "running": engine_status.get("running", False),
+            "paused": engine_status.get("paused", False),
+            "elapsed_time": engine_status.get("elapsed_time", 0),
+            "tick_count": engine_status.get("tick_count", 0),
         }
 
     def list_trees(self) -> list:
@@ -71,3 +106,20 @@ class TreeService(BaseService):
         if hasattr(tab_manager, 'get_all_status'):
             return tab_manager.get_all_status()
         return []
+
+    def load_tree(self, tree_id: str, tree_data: dict) -> dict:
+        """加载行为树
+        
+        Args:
+            tree_id: 树 ID
+            tree_data: 行为树字典数据
+            
+        Returns:
+            {"status": "loaded", "tree_id": ...}
+        """
+        tab_manager = self._context.get_tab_manager()
+        if tree_id and tab_manager and hasattr(tab_manager, 'load_tree'):
+            tab_manager.load_tree(tree_id, tree_data)
+        else:
+            self._engine.load_tree(tree_data)
+        return {"status": "loaded", "tree_id": tree_id}

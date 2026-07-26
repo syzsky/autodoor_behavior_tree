@@ -11,10 +11,9 @@ class BusStats:
         self._lock = threading.Lock()
         self._start_time = time.time()
 
-    def record_publish(self, topic: str, delivered: int = 0) -> None:
+    def record_publish(self, topic: str) -> None:
         with self._lock:
             self._publish_count[topic] = self._publish_count.get(topic, 0) + 1
-            self._deliver_count[topic] = self._deliver_count.get(topic, 0) + delivered
 
     def record_deliver(self, topic: str) -> None:
         with self._lock:

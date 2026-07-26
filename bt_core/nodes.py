@@ -1213,6 +1213,8 @@ class ActionNode(Node):
         self._was_already_foreground = False
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
+        if self._is_async:
+            return self._tick_async(context)
         return self._execute_with_decorators(context, self._tick_internal)
 
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
@@ -1293,6 +1295,67 @@ class ActionNode(Node):
         super().reset(reset_counters)
         self._window_switched = False
         self._was_already_foreground = False
+        self._async_started = False
+
+    def _tick_async(self, context: "ExecutionContext") -> NodeStatus:
+        async_executor = context.get_async_executor()
+        if not async_executor:
+            LogManager.debug_print(
+                f"[DEBUG] ActionNode._tick_async: {self.NODE_TYPE} '{self.name}' "
+                f"(id={self.node_id}) 未配置异步执行器，降级为同步执行"
+            )
+            return self._execute_with_decorators(context, self._tick_internal)
+
+        if self.status != NodeStatus.RUNNING and not self._async_started:
+            context.notify_node_status(self.node_id, "running")
+            self.status = NodeStatus.RUNNING
+
+        if not self._async_started:
+            timeout_ms = self.config.get_int("timeout_ms", 30000)
+
+            def _async_func():
+                try:
+                    return self._execute_action(context)
+                except Exception as e:
+                    LogManager.instance().log_failure(
+                        node_type=self.NODE_TYPE,
+                        node_name=self.name,
+                        reason=f"异步执行异常: {e}"
+                    )
+                    return NodeStatus.FAILURE
+
+            async_executor.submit(self.node_id, _async_func, timeout_ms)
+            self._async_started = True
+            LogManager.debug_print(
+                f"[DEBUG] ActionNode._tick_async: {self.NODE_TYPE} '{self.name}' "
+                f"(id={self.node_id}) 已提交异步任务"
+            )
+            return NodeStatus.RUNNING
+
+        if async_executor.is_done(self.node_id):
+            result = async_executor.get_result(self.node_id)
+            self.status = result
+            self._async_started = False
+
+            if result == NodeStatus.SUCCESS:
+                context.notify_node_status(self.node_id, "success")
+                LogManager.instance().log_success(
+                    node_type=self.NODE_TYPE,
+                    node_name=self.name
+                )
+                if self.children:
+                    return self._execute_children(context)
+            elif result == NodeStatus.FAILURE:
+                context.notify_node_status(self.node_id, "failure")
+                LogManager.instance().log_failure(
+                    node_type=self.NODE_TYPE,
+                    node_name=self.name,
+                    reason="异步执行失败"
+                )
+
+            return result
+
+        return NodeStatus.RUNNING
 
     @abstractmethod
     def _execute_action(self, context: "ExecutionContext") -> NodeStatus:

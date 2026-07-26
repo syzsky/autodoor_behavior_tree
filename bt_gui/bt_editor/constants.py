@@ -25,6 +25,9 @@ NODE_CATEGORY_MAP = {
     "StartTreeNode": "action",
     "StopTreeNode": "action",
     "HTTPRequestNode": "action",
+    "MessagePublishNode": "interface",
+    "MessageSubscribeNode": "interface",
+    "WebSocketNode": "interface",
 }
 
 NODE_DISPLAY_NAMES = {
@@ -54,6 +57,9 @@ NODE_DISPLAY_NAMES = {
     "StartTreeNode": "启动树",
     "StopTreeNode": "停止树",
     "HTTPRequestNode": "HTTP请求",
+    "MessagePublishNode": "消息发布",
+    "MessageSubscribeNode": "消息订阅",
+    "WebSocketNode": "WebSocket连接",
 }
 
 NODE_DESCRIPTIONS = {
@@ -83,13 +89,17 @@ NODE_DESCRIPTIONS = {
     "StartTreeNode": "启动其他已加载的行为树",
     "StopTreeNode": "停止当前或其他行为树",
     "HTTPRequestNode": "发起HTTP请求",
+    "MessagePublishNode": "向消息总线发布消息",
+    "MessageSubscribeNode": "订阅消息总线主题",
+    "WebSocketNode": "建立WebSocket连接",
 }
 
 COMPOSITE_NODES = ["SequenceNode", "SelectorNode", "ParallelNode", "RandomNode", "SubtreeNode"]
 CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode", "APIConditionNode"]
 ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode", "StartTreeNode", "StopTreeNode", "HTTPRequestNode"]
+INTERFACE_NODES = ["MessagePublishNode", "MessageSubscribeNode", "WebSocketNode"]
 
-ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES
+ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES + INTERFACE_NODES
 
 
 def get_node_category(node_type: str) -> str:
@@ -147,6 +157,15 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("StartTreeNode", "启动树", "启动其他已加载的行为树"),
                 ("StopTreeNode", "停止树", "停止当前或其他行为树"),
                 ("HTTPRequestNode", "HTTP请求", "发起HTTP请求"),
+            ]
+        },
+        "接口节点": {
+            "icon": "●",
+            "color": theme_colors.get('interface', '#8B5CF6'),
+            "nodes": [
+                ("MessagePublishNode", "消息发布", "向消息总线发布消息"),
+                ("MessageSubscribeNode", "消息订阅", "订阅消息总线主题"),
+                ("WebSocketNode", "WebSocket连接", "建立WebSocket连接"),
             ]
         },
     }

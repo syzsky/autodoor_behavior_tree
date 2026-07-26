@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import os
 import sys
-from tkinter import messagebox
+from tkinter import messagebox, StringVar
 
 from .theme import Theme, init_theme
 from .bt_editor import BehaviorTreeEditor
@@ -168,11 +168,14 @@ class BehaviorTreeApp(ctk.CTk):
                     self.behavior_tree.tab_manager.remove_tab(default_tab_id)
 
     def _update_window_title(self):
-        """更新窗口标题，显示项目名称"""
+        """更新窗口标题，显示项目名称和图标"""
         project_name = None
+        project_icon = None
         if hasattr(self.behavior_tree, 'project_root') and self.behavior_tree.project_root:
             from bt_utils.project_manager import ProjectManager
             project_name = ProjectManager.resolve_project_name(self.behavior_tree.project_root)
+            project_info = ProjectManager.read_project_info(self.behavior_tree.project_root)
+            project_icon = project_info.get("icon")
         
         if project_name:
             try:
@@ -182,6 +185,24 @@ class BehaviorTreeApp(ctk.CTk):
                 self.title(f"autodoor - 行为树 - {project_name}")
         else:
             self.title(_get_app_title())
+        
+        if hasattr(self, '_app_icon_label'):
+            if project_icon:
+                try:
+                    from PIL import Image, ImageTk
+                    import os
+                    icon_path = os.path.join(self.behavior_tree.project_root, project_icon)
+                    if os.path.exists(icon_path):
+                        image = Image.open(icon_path).resize((24, 24), Image.LANCZOS)
+                        tk_image = ctk.CTkImage(image, size=(24, 24))
+                        self._app_icon_label.configure(image=tk_image, text="")
+                        self._app_icon_label.image = tk_image
+                    else:
+                        self._app_icon_label.configure(text=project_icon, image="")
+                except Exception:
+                    self._app_icon_label.configure(text=project_icon, image="")
+            else:
+                self._app_icon_label.configure(text='◉', image="")
     
     def _set_icon(self):
         """设置应用图标"""
@@ -226,12 +247,13 @@ class BehaviorTreeApp(ctk.CTk):
         left_section = ctk.CTkFrame(top_bar_content, fg_color='transparent')
         left_section.pack(side='left')
         
-        ctk.CTkLabel(
+        self._app_icon_label = ctk.CTkLabel(
             left_section,
             text='◉',
             font=Theme.get_font('xl'),
             text_color=self._dark_colors['primary']
-        ).pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        )
+        self._app_icon_label.pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_xs']))
         
         ctk.CTkLabel(
             left_section,
@@ -254,6 +276,28 @@ class BehaviorTreeApp(ctk.CTk):
             ).pack(side='left', padx=Theme.DIMENSIONS['spacing_sm'])
         except ImportError:
             pass
+
+        self._auth_btn = ctk.CTkButton(
+            left_section,
+            text="登录",
+            width=60,
+            height=28,
+            font=Theme.get_font('xs'),
+            fg_color=self._dark_colors['primary'],
+            hover_color=self._dark_colors['primary_hover'],
+            corner_radius=4,
+            command=self._on_auth_click
+        )
+        self._auth_btn.pack(side='left', padx=Theme.DIMENSIONS['spacing_sm'])
+
+        self._auth_status_var = StringVar(value="未登录")
+        self._auth_status_label = ctk.CTkLabel(
+            left_section,
+            textvariable=self._auth_status_var,
+            font=Theme.get_font('xs'),
+            text_color=self._dark_colors['text_muted']
+        )
+        self._auth_status_label.pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_sm']))
         
         center_section = ctk.CTkFrame(top_bar_content, fg_color='transparent')
         center_section.pack(side='left', expand=True)
@@ -393,6 +437,25 @@ class BehaviorTreeApp(ctk.CTk):
         else:
             from tkinter import messagebox
             messagebox.showinfo("检查更新", "版本检查器未初始化")
+    
+    def _on_auth_click(self):
+        if hasattr(self, 'behavior_tree') and self.behavior_tree:
+            login_manager = getattr(self.behavior_tree, '_login_manager', None)
+            if login_manager and login_manager.is_authenticated():
+                self.behavior_tree._on_logout_click()
+            else:
+                self.behavior_tree._on_login_click()
+    
+    def set_auth_status(self, authenticated: bool, username: str = ""):
+        if hasattr(self, '_auth_btn') and hasattr(self, '_auth_status_var') and hasattr(self, '_auth_status_label'):
+            if authenticated:
+                self._auth_btn.configure(text="登出", fg_color=self._dark_colors['error'], hover_color='#DC2626')
+                self._auth_status_var.set(username)
+                self._auth_status_label.configure(text_color=Theme.COLORS['success'])
+            else:
+                self._auth_btn.configure(text="登录", fg_color=self._dark_colors['primary'], hover_color=self._dark_colors['primary_hover'])
+                self._auth_status_var.set("未登录")
+                self._auth_status_label.configure(text_color=self._dark_colors['text_muted'])
     
     def _get_current_tab(self) -> str:
         """获取当前Tab ID"""
