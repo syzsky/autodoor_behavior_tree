@@ -269,26 +269,37 @@ class BehaviorTreeEngine:
             self._stats.record_tick()
 
             if self.root_node:
-                status = self.root_node.tick(self.context)
-
                 from bt_utils.log_manager import LogManager
-                LogManager.debug_print(
-                    f"[DEBUG] Engine._run_loop: tick={self.context.tick_count}, "
-                    f"root_node status={status.name}"
-                )
+                try:
+                    status = self.root_node.tick(self.context)
 
-                if self._on_node_status:
-                    self._on_node_status(self.root_node.node_id, status.value)
+                    if self._on_node_status:
+                        self._on_node_status(self.root_node.node_id, status.value)
 
-                if status != NodeStatus.RUNNING:
+                    if status != NodeStatus.RUNNING:
+                        self._running = False
+                        
+                        self._stats.end_session()
+                        self._output_stats_report()
+                        
+                        # 正常完成时使用 reset() 而非 abort()
+                        # abort() 会将节点状态覆盖为 ABORTED 并通知 UI，导致正常完成的节点显示为"已中止"
+                        # reset() 仅重置节点状态为初始值，准备下次执行，不影响最终状态显示
+                        if self.root_node:
+                            self.root_node.reset()
+                except Exception as e:
+                    import traceback
+                    error_traceback = traceback.format_exc()
+                    error_msg = f"[ERROR] Engine._run_loop: 异常发生\n{error_traceback}"
+                    LogManager.debug_print(error_msg)
+                    LogManager.instance().log_failure(
+                        node_type="引擎",
+                        node_name="行为树引擎",
+                        reason=str(e)
+                    )
                     self._running = False
-                    
                     self._stats.end_session()
                     self._output_stats_report()
-                    
-                    # 正常完成时使用 reset() 而非 abort()
-                    # abort() 会将节点状态覆盖为 ABORTED 并通知 UI，导致正常完成的节点显示为"已中止"
-                    # reset() 仅重置节点状态为初始值，准备下次执行，不影响最终状态显示
                     if self.root_node:
                         self.root_node.reset()
                     

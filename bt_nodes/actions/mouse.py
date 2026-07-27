@@ -17,6 +17,13 @@ def _get_default_position_key() -> str:
 def _ensure_tuple_position(value):
     if value is None:
         return None
+    if isinstance(value, str):
+        parts = value.replace(" ", "").split(",")
+        if len(parts) >= 2:
+            try:
+                return (int(parts[0]), int(parts[1]))
+            except (ValueError, TypeError):
+                pass
     if isinstance(value, (list, tuple)) and len(value) >= 2:
         return (int(value[0]), int(value[1]))
     return value
