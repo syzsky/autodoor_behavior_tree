@@ -34,6 +34,7 @@ class HeadlessRunner:
         self._rest_server = None
         self._websocket_server = None
         self._server_thread = None
+        self._plugin_loader = None
 
     def run(self, tree_file: str, project_root: str = None) -> None:
         """加载并运行行为树
@@ -149,6 +150,41 @@ class HeadlessRunner:
             )
             self._websocket_server.attach_bus(self._bus)
 
+        # 插件系统
+        if settings.get("plugins.enabled", False):
+            try:
+                from bt_plugins.base import PluginContext
+                from bt_plugins.loader import PluginLoader
+
+                plugin_context = PluginContext(
+                    settings=settings,
+                    message_bus=self._bus,
+                    adapter_manager=self._adapter_manager,
+                    service_registry=self._service_registry,
+                )
+                self._plugin_loader = PluginLoader(plugin_context)
+
+                # 扫描内置插件目录
+                import os
+                builtin_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bt_plugins", "builtin")
+                if os.path.isdir(builtin_dir):
+                    for info in self._plugin_loader.scan(builtin_dir):
+                        plugin_dir = os.path.join(builtin_dir, info.name)
+                        self._plugin_loader.load_plugin(plugin_dir)
+
+                # 扫描用户插件目录
+                user_dir = os.path.join(os.getcwd(), "plugins")
+                if os.path.isdir(user_dir):
+                    for info in self._plugin_loader.scan(user_dir):
+                        plugin_dir = os.path.join(user_dir, info.name)
+                        self._plugin_loader.load_plugin(plugin_dir)
+
+                # 启动所有插件
+                self._plugin_loader.start_all()
+                print(f"[Headless] 插件系统已启动，{len(self._plugin_loader.list_plugins())} 个插件已加载")
+            except Exception as e:
+                print(f"[Headless] 插件系统启动失败: {e}")
+
     def _start_rest_server(self, host: str, port: int) -> None:
         """启动 REST 服务器（在独立线程中运行）"""
         import uvicorn
@@ -162,6 +198,13 @@ class HeadlessRunner:
 
     def _stop_service_layer(self) -> None:
         """停止服务层"""
+        # 停止插件
+        if self._plugin_loader:
+            try:
+                self._plugin_loader.stop_all()
+            except Exception:
+                pass
+            self._plugin_loader = None
         if self._rest_server:
             try:
                 self._rest_server.stop()

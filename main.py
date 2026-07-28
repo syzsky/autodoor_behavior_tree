@@ -285,6 +285,12 @@ def run_headless(tree_file, project_root=None):
 
 
 def main():
+    # CLI 模式检测
+    if len(sys.argv) > 1 and sys.argv[1] in ("run", "schedule", "status", "stop", "daemon", "remote", "plugin", "config"):
+        from cli import main as cli_main
+        cli_main()
+        return
+
     args = parse_args()
 
     if args.headless:
