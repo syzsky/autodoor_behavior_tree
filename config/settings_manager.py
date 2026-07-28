@@ -184,7 +184,11 @@ class SettingsManager:
                 "connect_timeout": 10,
                 "read_timeout": 30,
             }
-        }
+        },
+        # 插件系统配置
+        "plugins": {},
+        # 定时调度配置
+        "schedules": {},
     }
     
     def __init__(self, config_dir: str = None):

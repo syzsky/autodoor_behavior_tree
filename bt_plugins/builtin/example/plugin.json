@@ -1,0 +1,10 @@
+{
+    "name": "example",
+    "display_name": "示例插件",
+    "version": "1.0.0",
+    "author": "AutoDoor Team",
+    "description": "插件开发示例",
+    "category": "general",
+    "entry": "main.py",
+    "class": "ExamplePlugin"
+}
