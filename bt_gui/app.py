@@ -9,6 +9,8 @@ from .script_tab import ScriptTab
 from .settings_tab import SettingsTab
 from config.settings_manager import SettingsManager
 from bt_utils.log_manager import LogManager
+from bt_plugins.base import PluginContext
+from bt_plugins.loader import PluginLoader
 
 
 def _get_app_title() -> str:
@@ -427,9 +429,33 @@ class BehaviorTreeApp(ctk.CTk):
         saved_settings = self._settings.get_all_settings()
         if saved_settings:
             self.settings.load_settings(saved_settings)
-        
+
+        # 初始化插件系统：扫描内置插件目录并加载（不自动启动）
+        self._plugin_loader = None
+        self._init_plugin_system()
+
         bt_frame.pack(fill='both', expand=True)
-    
+
+    def _init_plugin_system(self):
+        """初始化插件系统：创建上下文与加载器，扫描并加载内置插件（不自动启动）"""
+        try:
+            import bt_plugins
+            builtin_dir = os.path.join(os.path.dirname(bt_plugins.__file__), 'builtin')
+
+            plugin_context = PluginContext(settings=self._settings)
+            self._plugin_loader = PluginLoader(plugin_context)
+
+            # 扫描内置插件目录并逐个加载
+            for info in self._plugin_loader.scan(builtin_dir):
+                plugin_dir = os.path.join(builtin_dir, info.name)
+                self._plugin_loader.load_plugin(plugin_dir)
+
+            # 将插件管理面板嵌入设置页
+            self.settings.add_plugin_panel(self._plugin_loader)
+        except Exception as e:
+            LogManager.debug_print(f"[WARN] 插件系统初始化失败: {e}")
+            self._plugin_loader = None
+
     def _check_for_updates(self):
         """检查更新"""
         if hasattr(self, '_version_checker'):
@@ -713,6 +739,13 @@ class BehaviorTreeApp(ctk.CTk):
             thread.start()
 
     def _on_close(self):
+        # 停止所有已启动的插件
+        if hasattr(self, '_plugin_loader') and self._plugin_loader:
+            try:
+                self._plugin_loader.stop_all()
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止插件失败: {e}")
+
         # 清理消息总线和服务端
         if self._ws_server is not None:
             import asyncio

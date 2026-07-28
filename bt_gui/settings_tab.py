@@ -56,13 +56,23 @@ class SettingsTab(ctk.CTkFrame):
         return SettingsManager.get_default_workspace_path()
     
     def _create_ui(self):
-        scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        scroll_frame.pack(fill="both", expand=True, padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_md'])
-        
-        self._create_project_section(scroll_frame)
-        self._create_alarm_section(scroll_frame)
-        self._create_shortcut_section(scroll_frame)
-        self._create_input_method_section(scroll_frame)
+        self._scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._scroll_frame.pack(fill="both", expand=True, padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_md'])
+
+        self._create_project_section(self._scroll_frame)
+        self._create_alarm_section(self._scroll_frame)
+        self._create_shortcut_section(self._scroll_frame)
+        self._create_input_method_section(self._scroll_frame)
+
+    def add_plugin_panel(self, plugin_loader):
+        """在设置页底部添加插件管理面板
+
+        Args:
+            plugin_loader: PluginLoader 实例
+        """
+        from .plugin_panel import PluginPanel
+        self._plugin_panel = PluginPanel(self._scroll_frame, plugin_loader)
+        self._plugin_panel.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
     
     def _create_project_section(self, parent):
         project_frame = CardFrame(parent)
