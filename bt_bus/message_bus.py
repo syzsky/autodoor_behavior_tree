@@ -128,9 +128,14 @@ class MessageBus:
 
         return response_msg[0]
 
-    def subscribe_async(self, topic_pattern: str) -> tuple:
-        """异步订阅主题，返回 (asyncio.Queue, subscription_id)"""
-        queue: asyncio.Queue = asyncio.Queue()
+    def subscribe_async(self, topic_pattern: str, maxsize: int = 1000) -> tuple:
+        """异步订阅主题，返回 (asyncio.Queue, subscription_id)
+
+        Args:
+            topic_pattern: 主题模式
+            maxsize: 队列最大容量，满时丢弃最旧消息（默认 1000）
+        """
+        queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
 
         def callback(msg: Message):
             # Push to this specific queue only
@@ -161,7 +166,17 @@ class MessageBus:
                     queue.put(msg), loop
                 )
             else:
-                queue.put_nowait(msg)
+                try:
+                    queue.put_nowait(msg)
+                except asyncio.QueueFull:
+                    # 队列满，丢弃最旧消息后放入新消息
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    queue.put_nowait(msg)
+                    from bt_utils.log_manager import LogManager
+                    LogManager.debug_print("[MessageBus] Async queue full, dropped oldest message")
         except Exception as e:
             from bt_utils.log_manager import LogManager
             LogManager.debug_print(f"[MessageBus] Failed to push to async queue: {e}")

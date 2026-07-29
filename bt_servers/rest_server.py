@@ -265,10 +265,8 @@ class RESTServer(BaseServer):
                 return EventSourceResponse(error_generator())
 
             # 订阅所有 bt 事件（真实 API 返回 (queue, sub_id) 元组）
-            # TODO: subscribe_async creates unbounded asyncio.Queue.
-            # For production with many slow clients, add maxsize parameter to
-            # MessageBus.subscribe_async() to prevent OOM (future task).
-            queue, sub_id = self._bus.subscribe_async("bt.**.event.**")
+            # 限制队列大小为 500，慢消费者堆积时丢弃最旧消息，防止 OOM
+            queue, sub_id = self._bus.subscribe_async("bt.**.event.**", maxsize=500)
 
             async def event_generator():
                 try:
