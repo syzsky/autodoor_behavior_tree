@@ -37,18 +37,21 @@ class ServiceRegistry:
 
     def start_all(self) -> None:
         """启动所有服务"""
+        # 锁内复制服务列表，锁外遍历调用，避免持锁执行服务方法导致死锁
         with self._lock:
-            for name, svc in self._services.items():
-                try:
-                    svc.start()
-                except Exception as e:
-                    print(f"[ServiceRegistry] start failed for {name}: {e}")
+            services = list(self._services.items())
+        for name, svc in services:
+            try:
+                svc.start()
+            except Exception as e:
+                print(f"[ServiceRegistry] start failed for {name}: {e}")
 
     def stop_all(self) -> None:
         """停止所有服务"""
         with self._lock:
-            for name, svc in self._services.items():
-                try:
-                    svc.stop()
-                except Exception as e:
-                    print(f"[ServiceRegistry] stop failed for {name}: {e}")
+            services = list(self._services.items())
+        for name, svc in services:
+            try:
+                svc.stop()
+            except Exception as e:
+                print(f"[ServiceRegistry] stop failed for {name}: {e}")

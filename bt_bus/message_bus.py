@@ -11,35 +11,40 @@ from .thread_pool import SharedThreadPool
 
 class MessageBus:
     _instance: Optional["MessageBus"] = None
-    _lock = threading.Lock()
+    _instance_lock = threading.RLock()
 
     def __new__(cls):
+        # 双重检查锁 — 原子化单例
+        # 所有属性初始化在锁内完成，cls._instance 赋值作为最后一步，
+        # 确保其他线程拿到实例时所有属性已就绪，避免半初始化暴露
         if cls._instance is None:
-            with cls._lock:
+            with cls._instance_lock:
                 if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
+                    from .dead_letter import DeadLetterQueue
+                    from .stats import BusStats
+
+                    instance = super().__new__(cls)
+                    # 在锁内完成所有属性初始化（原子性）
+                    instance._router = TopicRouter()
+                    instance._middleware_chain: List = []
+                    instance._dead_letter_queue = DeadLetterQueue(max_size=1000)
+                    instance._bus_lock = threading.RLock()
+                    instance._running = False
+                    instance._shared_pool = SharedThreadPool.get_instance()
+                    instance._blocked_thread_ids: Set[int] = set()
+                    instance._event_loop = None
+                    instance._stats = BusStats()
+                    instance._async_queues: List[tuple] = []  # (pattern, queue, subscription_id)
+                    instance._async_queue_lock = threading.RLock()
+                    instance._initialized = True  # 最后标记
+                    cls._instance = instance        # 暴露实例（最后一步）
         return cls._instance
 
     def __init__(self):
-        if self._initialized:
-            return
-
-        from .dead_letter import DeadLetterQueue
-        from .stats import BusStats
-
-        self._router = TopicRouter()
-        self._middleware_chain: List = []
-        self._dead_letter_queue = DeadLetterQueue(max_size=1000)
-        self._bus_lock = threading.RLock()
-        self._running = False
-        self._shared_pool = SharedThreadPool.get_instance()
-        self._blocked_thread_ids: Set[int] = set()
-        self._event_loop = None
-        self._stats = BusStats()
-        self._async_queues: List[tuple] = []  # (pattern, queue, subscription_id)
-        self._async_queue_lock = threading.Lock()
-        self._initialized = True
+        # no-op：所有初始化在 __new__ 中完成
+        # Python 语义保证 __init__ 每次 MessageBus() 都会调用，
+        # 但实例已完全初始化，无需重复
+        pass
 
     @classmethod
     def reset_instance(cls) -> None:
@@ -47,7 +52,7 @@ class MessageBus:
 
         在 GUI 启动或测试中需要全新 MessageBus 时调用。
         """
-        with cls._lock:
+        with cls._instance_lock:
             if cls._instance is not None:
                 try:
                     cls._instance.stop()
