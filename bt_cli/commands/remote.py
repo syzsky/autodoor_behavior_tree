@@ -50,7 +50,8 @@ def _do_trees(base_url, headers, args):
     import requests
     resp = requests.get(f"{base_url}/api/v1/trees", headers=headers, timeout=10)
     if resp.status_code == 200:
-        trees = resp.json()
+        data = resp.json()
+        trees = data.get("trees", []) if isinstance(data, dict) else data
         if not trees:
             print("无行为树")
             return
@@ -113,7 +114,8 @@ def _do_nodes(base_url, headers, args):
         sys.exit(1)
     resp = requests.get(f"{base_url}/api/v1/trees/{args.tree_id}/nodes", headers=headers, timeout=10)
     if resp.status_code == 200:
-        nodes = resp.json()
+        data = resp.json()
+        nodes = data.get("nodes", []) if isinstance(data, dict) else data
         print(f"节点列表 ({len(nodes)} 个):")
         for node in nodes:
             node_id = node.get("node_id", "N/A")

@@ -109,7 +109,7 @@ class RESTServer(BaseServer):
         """配置路由"""
         @self.app.get("/api/v1/health")
         async def health():
-            return {"status": "ok"}
+            return {"status": "ok", "version": "1.0.0"}
 
         @self.app.post("/api/v1/auth/login")
         async def login(body: LoginRequest):
