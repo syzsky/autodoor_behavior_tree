@@ -2,8 +2,9 @@
 """daemon 命令平台兼容性测试"""
 import os
 import sys
+import signal
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # 确保项目根目录在 sys.path 中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,6 +20,7 @@ def test_stop_daemon_on_windows():
             f.write("12345")
 
         with patch.object(daemon, "DAEMON_PID_FILE", pid_file), \
+             patch.object(daemon, "DAEMON_STATUS_FILE", os.path.join(tmpdir, "daemon_status.json")), \
              patch("platform.system", return_value="Windows"), \
              patch("subprocess.call", return_value=0) as mock_call:
             daemon._stop_daemon()
@@ -35,7 +37,8 @@ def test_stop_daemon_on_linux():
             f.write("12345")
 
         with patch.object(daemon, "DAEMON_PID_FILE", pid_file), \
+             patch.object(daemon, "DAEMON_STATUS_FILE", os.path.join(tmpdir, "daemon_status.json")), \
              patch("platform.system", return_value="Linux"), \
              patch("os.kill") as mock_kill:
             daemon._stop_daemon()
-            mock_kill.assert_called_once()
+            mock_kill.assert_called_once_with(12345, signal.SIGTERM)
