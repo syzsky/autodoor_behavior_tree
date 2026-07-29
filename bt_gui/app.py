@@ -7,6 +7,7 @@ from .theme import Theme, init_theme
 from .bt_editor import BehaviorTreeEditor
 from .script_tab import ScriptTab
 from .settings_tab import SettingsTab
+from .plugin_panel import PluginStatusBarIndicator
 from config.settings_manager import SettingsManager
 from bt_utils.log_manager import LogManager
 from bt_plugins.base import PluginContext
@@ -227,9 +228,28 @@ class BehaviorTreeApp(ctk.CTk):
             fg_color=self._dark_colors['bg_primary']
         )
         self.main_container.pack(fill='both', expand=True)
-        
+
         self._create_top_bar()
+        self._create_bottom_status_bar()
         self._create_content_area()
+
+    def _create_bottom_status_bar(self):
+        """创建底部状态栏（含插件状态指示器）"""
+        self.bottom_status = ctk.CTkFrame(
+            self.main_container,
+            height=24,
+            fg_color=self._dark_colors['bg_secondary'],
+            corner_radius=0
+        )
+        self.bottom_status.pack(side='bottom', fill='x')
+        self.bottom_status.pack_propagate(False)
+
+        # 插件状态指示器（延迟到 _init_plugin_system 中创建）
+        self._plugin_indicator = None
+
+    def _show_plugin_panel(self):
+        """切换到设置标签页的插件管理面板"""
+        self._switch_tab('settings')
     
     def _create_top_bar(self):
         """创建顶部栏（包含标题、Tab按钮、操作按钮）"""
@@ -315,7 +335,8 @@ class BehaviorTreeApp(ctk.CTk):
         tab_config = [
             ('bt', '🌲 行为树编辑器'),
             ('script', '📝 脚本录制'),
-            ('settings', '⚙ 设置')
+            ('settings', '⚙ 设置'),
+            ('plugins', '🔌 插件管理')
         ]
         
         for i, (tab_id, tab_text) in enumerate(tab_config):
@@ -412,10 +433,12 @@ class BehaviorTreeApp(ctk.CTk):
         bt_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
         script_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
         settings_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
-        
+        plugins_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
+
         self.tab_frames['bt'] = bt_frame
         self.tab_frames['script'] = script_frame
         self.tab_frames['settings'] = settings_frame
+        self.tab_frames['plugins'] = plugins_frame
         
         self.behavior_tree = BehaviorTreeEditor(bt_frame, self)
         self.behavior_tree.pack(fill='both', expand=True)
@@ -437,24 +460,76 @@ class BehaviorTreeApp(ctk.CTk):
         bt_frame.pack(fill='both', expand=True)
 
     def _init_plugin_system(self):
-        """初始化插件系统：创建上下文与加载器，扫描并加载内置插件（不自动启动）"""
+        """初始化插件系统：创建上下文与加载器，扫描并加载内置插件和用户插件（不自动启动）"""
+        import traceback
         try:
             import bt_plugins
             builtin_dir = os.path.join(os.path.dirname(bt_plugins.__file__), 'builtin')
+            # 用户插件目录（项目根目录下的 plugins/）
+            user_plugin_dir = os.path.join(os.getcwd(), 'plugins')
 
             plugin_context = PluginContext(settings=self._settings)
             self._plugin_loader = PluginLoader(plugin_context)
 
             # 扫描内置插件目录并逐个加载
+            loaded_count = 0
             for info in self._plugin_loader.scan(builtin_dir):
                 plugin_dir = os.path.join(builtin_dir, info.name)
-                self._plugin_loader.load_plugin(plugin_dir)
+                if self._plugin_loader.load_plugin(plugin_dir):
+                    loaded_count += 1
 
-            # 将插件管理面板嵌入设置页
-            self.settings.add_plugin_panel(self._plugin_loader)
+            # 扫描用户插件目录并逐个加载
+            if os.path.isdir(user_plugin_dir):
+                for info in self._plugin_loader.scan(user_plugin_dir):
+                    plugin_dir = os.path.join(user_plugin_dir, info.name)
+                    if self._plugin_loader.load_plugin(plugin_dir):
+                        loaded_count += 1
+
+            LogManager.debug_print(f"[Plugin] 插件系统初始化完成，已加载 {loaded_count} 个插件")
+
+            # 将插件 loader 注入节点面板，使插件节点能动态显示
+            if hasattr(self.behavior_tree, 'palette'):
+                self.behavior_tree.palette.set_plugin_loader(self._plugin_loader)
+
+            # 在独立的插件管理 Tab 页中创建 PluginPanel
+            from .plugin_panel import PluginPanel
+            self._plugin_panel = PluginPanel(
+                self.tab_frames['plugins'], self._plugin_loader,
+                on_plugins_changed=self._on_plugins_changed
+            )
+            self._plugin_panel.pack(fill="both", expand=True,
+                                    padx=Theme.DIMENSIONS['spacing_md'],
+                                    pady=Theme.DIMENSIONS['spacing_md'])
+
+            # 创建插件状态指示器（底部状态栏）
+            if hasattr(self, 'bottom_status') and self._plugin_loader:
+                self._plugin_indicator = PluginStatusBarIndicator(
+                    self.bottom_status,
+                    self._plugin_loader,
+                    on_click=self._show_plugin_panel
+                )
+                self._plugin_indicator.pack(side='left', padx=Theme.DIMENSIONS['spacing_md'])
         except Exception as e:
-            LogManager.debug_print(f"[WARN] 插件系统初始化失败: {e}")
+            error_msg = f"[ERROR] 插件系统初始化失败: {e}\n{traceback.format_exc()}"
+            LogManager.debug_print(error_msg)
+            # 同时写入启动错误日志文件，确保问题可追溯
+            try:
+                from main import write_log
+                write_log(error_msg)
+            except Exception:
+                pass
             self._plugin_loader = None
+
+    def _on_plugins_changed(self):
+        """插件启停后触发：刷新节点面板中的插件节点分类"""
+        try:
+            if hasattr(self.behavior_tree, 'palette'):
+                self.behavior_tree.palette.refresh_plugin_nodes()
+            # 刷新底部状态栏插件指示器
+            if hasattr(self, '_plugin_indicator') and self._plugin_indicator:
+                self._plugin_indicator.refresh()
+        except Exception as e:
+            LogManager.debug_print(f"[WARN] 刷新节点面板插件节点失败: {e}")
 
     def _check_for_updates(self):
         """检查更新"""

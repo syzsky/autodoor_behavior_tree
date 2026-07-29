@@ -35,6 +35,9 @@ class PluginLoader:
         self._registered_adapters: Dict[str, str] = {}  # adapter_name → plugin_name
         self._registered_services: Dict[str, str] = {}  # service_name → plugin_name
         self._plugin_modules: Dict[str, str] = {}  # name → module name in sys.modules
+        # 插件节点 GUI 信息（display_info / schemas），key 为带前缀的 node_type
+        self._registered_display_info: Dict[str, dict] = {}
+        self._registered_schemas: Dict[str, list] = {}
 
     # ── 扫描 ──
 
@@ -241,6 +244,33 @@ class PluginLoader:
         except Exception as e:
             print(f"[PluginLoader] 注册节点失败 {name}: {e}")
 
+        # 收集插件节点的 GUI 显示信息 — key 与注册节点一致（带前缀）
+        try:
+            display_info = plugin.get_node_display_info() or {}
+            for node_type, info in display_info.items():
+                prefixed_type = f"{name}.{node_type}"
+                self._registered_display_info[prefixed_type] = info
+        except Exception as e:
+            print(f"[PluginLoader] 收集节点显示信息失败 {name}: {e}")
+
+        # 收集插件节点的属性面板 schema
+        try:
+            schemas = plugin.get_node_schemas() or {}
+            prefixed_schemas: Dict[str, list] = {}
+            for node_type, schema in schemas.items():
+                prefixed_type = f"{name}.{node_type}"
+                self._registered_schemas[prefixed_type] = schema
+                prefixed_schemas[prefixed_type] = schema
+            # 同步注册到 GUI 属性面板（GUI 模式下可用，headless 模式忽略）
+            if prefixed_schemas:
+                try:
+                    from bt_gui.bt_editor.property import register_plugin_schemas
+                    register_plugin_schemas(name, prefixed_schemas)
+                except ImportError:
+                    pass  # Headless 模式下 GUI 模块不可用，正常
+        except Exception as e:
+            print(f"[PluginLoader] 收集节点 schema 失败 {name}: {e}")
+
         # 注册适配器 — AdapterManager 是单例，优先用 context 中的实例，否则取单例
         try:
             adapters = plugin.get_adapters() or {}
@@ -296,8 +326,18 @@ class PluginLoader:
             for nt in node_types:
                 NodeRegistry.unregister(nt)
                 self._registered_nodes.pop(nt, None)
+                # 同步清理 GUI 信息
+                self._registered_display_info.pop(nt, None)
+                self._registered_schemas.pop(nt, None)
         except Exception as e:
             print(f"[PluginLoader] 注销节点失败 {name}: {e}")
+
+        # 注销 GUI 属性面板 schema（GUI 模式下可用，headless 模式忽略）
+        try:
+            from bt_gui.bt_editor.property import unregister_plugin_schemas
+            unregister_plugin_schemas(name)
+        except ImportError:
+            pass
 
         # 注销适配器（AdapterManager 无 unregister 方法，仅清理内部记录）
         try:
@@ -344,3 +384,39 @@ class PluginLoader:
         """判断插件是否已启动"""
         plugin = self._plugins.get(name)
         return plugin is not None and plugin._started
+
+    def get_registered_display_info(self) -> Dict[str, dict]:
+        """返回所有已启动插件提供的节点显示信息
+
+        Returns:
+            {prefixed_node_type: {"display_name": str, "description": str, "category": str, "icon": str}}
+            key 形如 ``plugin_name.NodeType``，与 NodeRegistry 中注册的节点类型一致
+        """
+        return dict(self._registered_display_info)
+
+    def get_registered_schemas(self) -> Dict[str, list]:
+        """返回所有已启动插件提供的节点属性面板 schema
+
+        Returns:
+            {prefixed_node_type: [schema_item, ...]}
+        """
+        return dict(self._registered_schemas)
+
+    def get_plugin_config_schema(self, name: str) -> dict:
+        """返回指定插件的配置 schema（settings.json 中该插件的配置项）
+
+        Args:
+            name: 插件名
+
+        Returns:
+            插件的配置 schema 字典，形如 {"key": {"type": ..., "default": ..., "label": ...}}
+            若插件不存在或未提供 schema，返回空字典
+        """
+        plugin = self._plugins.get(name)
+        if not plugin:
+            return {}
+        try:
+            return plugin.get_config_schema() or {}
+        except Exception as e:
+            print(f"[PluginLoader] 获取插件配置 schema 失败 {name}: {e}")
+            return {}

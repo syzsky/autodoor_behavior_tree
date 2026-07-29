@@ -46,6 +46,12 @@ def main():
     sched_sub.add_parser("list", help="列出定时任务")
     sched_rm = sched_sub.add_parser("remove", help="删除定时任务")
     sched_rm.add_argument("task_id")
+    sched_run = sched_sub.add_parser("run", help="立即执行一次定时任务")
+    sched_run.add_argument("task_id")
+    sched_enable = sched_sub.add_parser("enable", help="启用定时任务")
+    sched_enable.add_argument("task_id")
+    sched_disable = sched_sub.add_parser("disable", help="禁用定时任务")
+    sched_disable.add_argument("task_id")
 
     # daemon 命令
     daemon_parser = subparsers.add_parser("daemon", help="守护进程模式")
