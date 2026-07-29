@@ -157,19 +157,32 @@ class MessageBus:
         self.unsubscribe(sub_id)
 
     def _push_to_single_async_queue(self, queue: asyncio.Queue, msg: Message) -> None:
-        """推送消息到单个异步队列"""
+        """推送消息到单个异步队列，满时丢弃最旧消息"""
         try:
             with self._bus_lock:
                 loop = self._event_loop
+
             if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    queue.put(msg), loop
-                )
+                # 生产路径：通过 call_soon_threadsafe 在事件循环线程中执行
+                # 使用 put_nowait 而非 put 协程，避免满时阻塞等待
+                def _safe_put():
+                    try:
+                        queue.put_nowait(msg)
+                    except asyncio.QueueFull:
+                        try:
+                            queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                        queue.put_nowait(msg)
+                        from bt_utils.log_manager import LogManager
+                        LogManager.debug_print("[MessageBus] Async queue full, dropped oldest message")
+
+                loop.call_soon_threadsafe(_safe_put)
             else:
+                # 测试路径：直接 put_nowait
                 try:
                     queue.put_nowait(msg)
                 except asyncio.QueueFull:
-                    # 队列满，丢弃最旧消息后放入新消息
                     try:
                         queue.get_nowait()
                     except asyncio.QueueEmpty:
