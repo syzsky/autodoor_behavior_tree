@@ -61,6 +61,17 @@ class AdapterManager:
             self._adapters[name] = adapter
             return adapter
 
+    def unregister_adapter(self, name: str) -> None:
+        """注销适配器类型和实例"""
+        with self._adapters_lock:
+            adapter = self._adapters.pop(name, None)
+            self._adapter_classes.pop(name, None)
+        if adapter is not None:
+            try:
+                adapter.stop()
+            except Exception:
+                pass
+
     def start_all(self, message_bus) -> None:
         """启动所有已启用的适配器"""
         with self._adapters_lock:

@@ -345,10 +345,13 @@ class PluginLoader:
             except ImportError:
                 pass
 
-            # 注销适配器（AdapterManager 无 unregister 方法，仅清理内部记录）
+            # 注销适配器 — 调用 AdapterManager.unregister_adapter 并清理内部记录
             try:
                 adapter_names = [an for an, pn in self._registered_adapters.items() if pn == name]
+                am = self._context._adapter_manager
                 for an in adapter_names:
+                    if am is not None and hasattr(am, 'unregister_adapter'):
+                        am.unregister_adapter(an)
                     self._registered_adapters.pop(an, None)
             except Exception as e:
                 print(f"[PluginLoader] 清理适配器记录失败 {name}: {e}")

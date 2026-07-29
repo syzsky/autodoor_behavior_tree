@@ -29,12 +29,36 @@ class LoggingMiddleware(Middleware):
 
 
 class ValidationMiddleware(Middleware):
+    """消息验证中间件，验证失败时记录死信"""
+
+    def __init__(self, dead_letter_queue=None):
+        self._dlq = dead_letter_queue
+
     def process(self, message: Message, next_handler: Callable) -> Optional[Message]:
+        # 验证 topic
         if not message.topic:
+            self._record_dead_letter(message, "VALIDATION_FAILED_EMPTY_TOPIC")
             return None
+        # 验证 data
         if message.data is None:
+            self._record_dead_letter(message, "VALIDATION_FAILED_NULL_DATA")
             return None
+        # 验证通过，传递给下一个处理器
         return next_handler(message)
+
+    def _record_dead_letter(self, message: Message, reason: str) -> None:
+        """记录死信，无死信队列时仅记录日志"""
+        from bt_utils.log_manager import LogManager
+        LogManager.debug_print(
+            f"[ValidationMiddleware] Message rejected: {reason}, topic={message.topic}"
+        )
+        if self._dlq is not None:
+            try:
+                self._dlq.add(message, reason=reason)
+            except Exception as e:
+                LogManager.debug_print(
+                    f"[ValidationMiddleware] Failed to record dead letter: {e}"
+                )
 
 
 class RateLimitMiddleware(Middleware):

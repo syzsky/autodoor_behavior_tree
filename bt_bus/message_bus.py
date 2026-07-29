@@ -10,6 +10,8 @@ from .thread_pool import SharedThreadPool
 
 
 class MessageBus:
+    MAX_DELIVER_DEPTH = 5  # 递归发布深度上限，防止无限循环
+
     _instance: Optional["MessageBus"] = None
     _instance_lock = threading.RLock()
 
@@ -22,12 +24,16 @@ class MessageBus:
                 if cls._instance is None:
                     from .dead_letter import DeadLetterQueue
                     from .stats import BusStats
+                    from .middleware import ValidationMiddleware
 
                     instance = super().__new__(cls)
                     # 在锁内完成所有属性初始化（原子性）
                     instance._router = TopicRouter()
-                    instance._middleware_chain: List = []
                     instance._dead_letter_queue = DeadLetterQueue(max_size=1000)
+                    # 默认中间件链包含 ValidationMiddleware，注入死信队列引用 (B4)
+                    instance._middleware_chain: List = [
+                        ValidationMiddleware(dead_letter_queue=instance._dead_letter_queue)
+                    ]
                     instance._bus_lock = threading.RLock()
                     instance._running = False
                     instance._shared_pool = SharedThreadPool.get_instance()
@@ -83,12 +89,20 @@ class MessageBus:
 
     def _deliver(self, sub, msg: Message) -> None:
         try:
+            depth = msg.headers.get("_deliver_depth", 0)
+            if depth >= self.MAX_DELIVER_DEPTH:
+                from bt_utils.log_manager import LogManager
+                LogManager.debug_print(f"[MessageBus] Deliver depth limit reached: {depth}")
+                self._dead_letter_queue.add(msg, reason="MAX_DEPTH_EXCEEDED")
+                return
+
             response = sub.callback(msg)
             self._stats.record_deliver(msg.topic)
             if response is not None and isinstance(response, Message):
                 reply_to = msg.headers.get("reply_to")
                 if reply_to:
                     response.topic = reply_to
+                    response.headers["_deliver_depth"] = depth + 1
                     self.publish(reply_to, response.data,
                                  headers=response.headers,
                                  source="responder")
