@@ -97,8 +97,8 @@ class TestSSE(unittest.TestCase):
         # Trigger the endpoint
         client.get("/api/v1/events/stream",
                    headers={"Accept": "text/event-stream"})
-        # Verify subscribe_async was called with the correct pattern
-        mock_bus.subscribe_async.assert_called_with("bt.**.event.**")
+        # Verify subscribe_async was called with the correct pattern and maxsize
+        mock_bus.subscribe_async.assert_called_with("bt.**.event.**", maxsize=500)
 
 
 if __name__ == '__main__':
