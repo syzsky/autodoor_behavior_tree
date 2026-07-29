@@ -64,7 +64,14 @@ def _stop_daemon():
     try:
         with open(DAEMON_PID_FILE, "r") as f:
             pid = int(f.read().strip())
-        os.kill(pid, signal.SIGTERM)
+
+        import platform
+        if platform.system() == "Windows":
+            import subprocess
+            subprocess.call(["taskkill", "/PID", str(pid), "/F"])
+        else:
+            os.kill(pid, signal.SIGTERM)
+
         os.remove(DAEMON_PID_FILE)
         if os.path.isfile(DAEMON_STATUS_FILE):
             os.remove(DAEMON_STATUS_FILE)
