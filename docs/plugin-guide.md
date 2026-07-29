@@ -93,7 +93,7 @@
 #### 步骤 6：停止/卸载插件
 
 - 点击「停止」按钮停止插件（节点从面板移除）
-- 停止后可点击「卸载」移除插件（仅用户插件可卸载）
+- 如需完全卸载插件，使用 CLI 命令：`autodoor-bt plugin unload <plugin_name>`
 
 ### 2.2 通过 CLI 使用插件
 
@@ -1318,8 +1318,8 @@ class MyPlugin(BasePlugin):
 # 停止插件
 python cli.py plugin stop my_plugin
 
-# 通过 GUI 卸载（用户插件）
-# 设置 → 插件管理 → 找到插件 → 点击卸载按钮
+# 通过 CLI 卸载（用户插件）
+python cli.py plugin unload my_plugin
 ```
 
 内置插件（`bt_plugins/builtin/`）不可卸载，只能停止。

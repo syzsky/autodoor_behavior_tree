@@ -623,9 +623,27 @@ autodoor-bt plugin stop <name>
 
 调用 `on_stop()` 并反向注销节点/适配器/服务。输出 `插件已停止: <name>`。
 
-> 注意：`stop` 仅停止插件运行，不从加载器中卸载。如需彻底卸载请通过重启 CLI 进程或重新组织插件目录实现。
+> 注意：`stop` 仅停止插件运行，不从加载器中卸载。如需彻底卸载请使用 `plugin unload` 命令。
 
-#### 3.7.5 info — 查看插件详情
+#### 3.7.5 unload — 卸载插件
+
+```
+autodoor-bt plugin unload <name>
+```
+
+卸载已加载的插件，调用 `on_unload()` 并从加载器中移除。输出 `插件已卸载: <name>`。
+
+**参数:**
+- `name`: 插件名称
+
+**示例:**
+```bash
+autodoor-bt plugin unload file_processor
+```
+
+未找到插件时输出 `未找到插件: <name>` 并退出码 1。
+
+#### 3.7.6 info — 查看插件详情
 
 ```
 autodoor-bt plugin info <name>
@@ -787,18 +805,18 @@ autodoor-bt schedule add ./trees/xmas.json --once "2026-12-25 09:00:00" --name "
 
 ## 5. 退出码参考表
 
-| 退出码 | 说明 | 触发场景 |
-|--------|------|----------|
-| 0 | 成功 | 命令正常执行完成 |
-| 1 | 通用错误 | 业务逻辑失败（如任务未找到、参数缺失、API 调用失败） |
-| 2 | 配置错误 | 配置项不存在或配置文件解析失败 |
-| 3 | 文件未找到 | `run` 命令的 `tree_file` 不存在 |
-| 4 | 依赖缺失 | `remote` 命令缺少 `requests` 库 |
-| 5 | 认证失败 | 远程服务返回 401（保留，当前由 API 层处理） |
-| 6 | 插件错误 | 插件加载/启动失败 |
-| 130 | 用户中断（Ctrl+C） | 用户主动中断前台运行进程 |
+| 退出码 | 常量 | 说明 | 状态 |
+|--------|------|------|------|
+| 0 | EXIT_SUCCESS | 成功 | 已实现 |
+| 1 | EXIT_GENERIC_ERROR | 通用错误 | 已实现 |
+| 2 | EXIT_CONFIG_ERROR | 配置错误 | 预留 |
+| 3 | EXIT_FILE_NOT_FOUND | 文件未找到 | 已实现 |
+| 4 | EXIT_DEPENDENCY_MISSING | 依赖缺失 | 已实现 |
+| 5 | EXIT_AUTH_FAILED | 认证失败 | 预留 |
+| 6 | EXIT_PLUGIN_ERROR | 插件错误 | 预留 |
+| 130 | EXIT_INTERRUPTED | 用户中断（Ctrl+C） | 已实现 |
 
-> **说明**：当前 CLI 实现中显式使用的退出码为 0/1/3/4。2/5/6/130 为约定保留值，便于未来扩展和脚本统一处理。
+> **说明**：退出码常量定义于 `bt_cli/errors.py`，可通过 `exit_with_code(code, message)` 统一调用。当前 CLI 实现中显式使用的退出码为 0/1/3/4/130。2/5/6 为约定保留值，便于未来扩展和脚本统一处理。
 
 ---
 
@@ -1180,17 +1198,17 @@ autodoor-bt config path
 
 ### Q10: 如何卸载插件？
 
-**A**: CLI 当前未提供直接的 `plugin unload` 命令。卸载步骤：
+**A**: 使用 `plugin unload` 命令直接卸载：
 
-1. 停止插件：`autodoor-bt plugin stop <name>`。
-2. 从插件目录中移除插件文件夹（`bt_plugins/builtin/<name>` 或 `<cwd>/plugins/<name>`）。
-3. 重启 CLI 进程（或守护进程），插件将不再被自动扫描加载。
+```bash
+autodoor-bt plugin unload <name>
+```
 
-`PluginLoader` 内部实现了 `unload_plugin` 方法（调用 `on_unload` 并清理 `sys.modules`），但 CLI 层暂未暴露为子命令。
+该命令调用 `PluginLoader.unload_plugin()`，执行 `on_unload()` 并清理 `sys.modules` 中的插件模块。如需同时从磁盘移除，可手动删除插件目录后重启 CLI。
 
 ### Q11: `run` 命令的 `--rest` 配置会被保存到配置文件吗？
 
-**A**: 会临时写入 `SettingsManager` 的内存配置（影响当前进程的服务启动行为），但**不会**自动持久化到 `config.json`。下次启动如果不带 `--rest`，REST 服务不会自动启用。若需持久化，请使用 `autodoor-bt config set rest_server.enabled true`。
+**A**: 会。`run --headless` 模式下，CLI 参数（`--bus`、`--rest`、`--ws`、`--plugins`）在应用到 `SettingsManager` 后会调用 `save_settings()` 持久化到配置文件。下次启动时即使不带这些参数，已保存的配置仍然生效。
 
 ### Q12: 同一台机器能同时运行多个行为树吗？
 
