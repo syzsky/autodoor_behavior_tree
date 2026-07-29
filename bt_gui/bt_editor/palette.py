@@ -2,7 +2,7 @@ import customtkinter as ctk
 from typing import List, Callable, Optional
 
 from ..theme import Theme
-from .constants import build_node_categories
+from .constants import build_node_categories, build_plugin_category
 
 
 NODE_CATEGORIES = build_node_categories(Theme.NODE_COLORS)
@@ -152,15 +152,19 @@ class NodePalette(ctk.CTkFrame):
     def __init__(self, master, on_node_add: Optional[Callable[[str], None]] = None, **kwargs):
         super().__init__(master, **kwargs)
         self.on_node_add = on_node_add
-        
+        self._plugin_loader = None
+        self._plugin_section: Optional[CategorySection] = None
+
         self._dark_colors = Theme.get_dark_colors()
         self.configure(
             fg_color=self._dark_colors['sidebar_bg'],
             corner_radius=0,
             width=Theme.DIMENSIONS['sidebar_width']
         )
-        
+
         self._create_ui()
+        # 初次刷新插件节点（若有）
+        self.refresh_plugin_nodes()
     
     def _create_ui(self):
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -242,3 +246,43 @@ class NodePalette(ctk.CTkFrame):
     def _on_node_click(self, node_type: str):
         if self.on_node_add:
             self.on_node_add(node_type)
+
+    def set_plugin_loader(self, loader) -> None:
+        """注入 PluginLoader 实例，用于动态显示插件节点"""
+        self._plugin_loader = loader
+        self.refresh_plugin_nodes()
+
+    def refresh_plugin_nodes(self) -> None:
+        """根据 PluginLoader 当前状态刷新「插件节点」分类
+
+        - 若已存在插件节点 section，先销毁
+        - 然后查询 loader 的 display_info，若非空则重建 section
+        - 调用时机：palette 初始化后、插件启动/停止后
+        """
+        # 销毁旧的插件节点 section
+        if self._plugin_section is not None:
+            try:
+                self._plugin_section.destroy()
+            except Exception:
+                pass
+            self._plugin_section = None
+            # 从 category_sections 中移除已销毁的引用
+            self.category_sections = [s for s in self.category_sections if s.winfo_exists()]
+
+        if self._plugin_loader is None:
+            return
+
+        plugin_category = build_plugin_category(self._plugin_loader, Theme.NODE_COLORS)
+        if not plugin_category:
+            return
+
+        category_name, category_data = next(iter(plugin_category.items()))
+        section = CategorySection(
+            self.content_frame,
+            category_name=category_name,
+            category_data=category_data,
+            on_node_click=self._on_node_click
+        )
+        section.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
+        self._plugin_section = section
+        self.category_sections.append(section)

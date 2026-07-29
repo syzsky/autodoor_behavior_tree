@@ -110,6 +110,7 @@ class Theme:
         'action': {'bg': '#047857', 'hover': '#065F46', 'text': '#FFFFFF'},
         'start': {'bg': '#F59E0B', 'hover': '#D97706', 'text': '#FFFFFF'},
         'interface': {'bg': '#8B5CF6', 'hover': '#7C3AED', 'text': '#FFFFFF'},
+        'plugin': {'bg': '#6B7280', 'hover': '#4B5563', 'text': '#FFFFFF'},
     }
     
     @classmethod

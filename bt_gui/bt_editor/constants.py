@@ -169,3 +169,36 @@ def build_node_categories(theme_colors: dict) -> dict:
             ]
         },
     }
+
+
+def build_plugin_category(plugin_loader, theme_colors: dict = None) -> dict:
+    """根据已启动插件构建「插件节点」分类
+
+    Args:
+        plugin_loader: PluginLoader 实例，查询其 get_registered_display_info()
+        theme_colors: 主题色字典，未提供时使用默认色
+
+    Returns:
+        {"插件节点": {"icon": "★", "color": {"bg","hover","text"}, "nodes": [(node_type, name, desc), ...]}}
+        若无插件节点，返回空 dict
+    """
+    if plugin_loader is None:
+        return {}
+    display_info = plugin_loader.get_registered_display_info()
+    if not display_info:
+        return {}
+    nodes = []
+    for node_type, info in display_info.items():
+        name = info.get("display_name", node_type)
+        desc = info.get("description", "")
+        nodes.append((node_type, name, desc))
+    color_config = {'bg': '#6B7280', 'hover': '#4B5563', 'text': '#FFFFFF'}
+    if theme_colors and 'plugin' in theme_colors:
+        color_config = theme_colors['plugin']
+    return {
+        "插件节点": {
+            "icon": "★",
+            "color": color_config,
+            "nodes": nodes,
+        }
+    }

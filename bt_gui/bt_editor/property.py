@@ -358,6 +358,40 @@ COMPOSITE_DECORATOR_FIELDS = [
 ]
 
 
+# ── 插件节点 schema 动态注册 ──
+# NODE_CONFIG_SCHEMAS 是模块级 dict，运行时可变。
+# 插件启动时调用 register_plugin_schemas() 注册其节点 schema，
+# 停止时调用 unregister_plugin_schemas() 清理，保证属性面板能正确渲染插件节点配置。
+_plugin_schema_index: Dict[str, str] = {}  # node_type → plugin_name（用于按插件名清理）
+
+
+def register_plugin_schemas(plugin_name: str, schemas: Dict[str, list]) -> None:
+    """注册插件节点 schema 到全局 NODE_CONFIG_SCHEMAS
+
+    Args:
+        plugin_name: 插件名（用于按插件名批量清理）
+        schemas: {prefixed_node_type: [schema_item, ...]}
+    """
+    for node_type, schema in (schemas or {}).items():
+        NODE_CONFIG_SCHEMAS[node_type] = schema
+        _plugin_schema_index[node_type] = plugin_name
+
+
+def unregister_plugin_schemas(plugin_name: str) -> None:
+    """按插件名清理已注册的 schema"""
+    keys_to_remove = [nt for nt, pn in _plugin_schema_index.items() if pn == plugin_name]
+    for key in keys_to_remove:
+        NODE_CONFIG_SCHEMAS.pop(key, None)
+        _plugin_schema_index.pop(key, None)
+
+
+def unregister_all_plugin_schemas() -> None:
+    """清理所有插件 schema（应用退出时调用）"""
+    for key in list(_plugin_schema_index.keys()):
+        NODE_CONFIG_SCHEMAS.pop(key, None)
+    _plugin_schema_index.clear()
+
+
 class FieldWidget(ctk.CTkFrame):
     def __init__(self, master, label: str, key: str, on_change: Callable, **kwargs):
         super().__init__(master, **kwargs)
