@@ -306,11 +306,14 @@ def test_schedule_add_with_cron(tmp_path, monkeypatch):
     from bt_cli.scheduler import Scheduler
     monkeypatch.setattr(Scheduler, "SCHEDULES_FILE", str(tmp_path / "schedules.json"))
     monkeypatch.setattr(Scheduler, "DATA_DIR", str(tmp_path))
+    # 创建临时行为树文件（add_task 现在会验证文件存在）
+    tree_file = tmp_path / "tree.json"
+    tree_file.write_text("{}")
 
     from bt_cli.commands.schedule import cmd_schedule
     args = _make_args(
         command="schedule", schedule_action="add",
-        tree_file="tree.json", name="定时任务",
+        tree_file=str(tree_file), name="定时任务",
         cron="0 * * * *", headless=True
     )
     cmd_schedule(args)

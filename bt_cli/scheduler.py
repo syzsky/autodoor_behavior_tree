@@ -25,6 +25,7 @@ class ScheduleTask:
         self.last_run = None
         self.next_run = None
         self.run_count = 0
+        self.last_run_status = None  # "success" / "failed(code)" / "timeout" / "error(msg)"
 
     def to_dict(self):
         return {
@@ -34,6 +35,7 @@ class ScheduleTask:
             "headless": self.headless, "enabled": self.enabled,
             "last_run": self.last_run, "next_run": self.next_run,
             "run_count": self.run_count,
+            "last_run_status": self.last_run_status,
         }
 
     @classmethod
@@ -48,6 +50,7 @@ class ScheduleTask:
         task.last_run = data.get("last_run")
         task.next_run = data.get("next_run")
         task.run_count = data.get("run_count", 0)
+        task.last_run_status = data.get("last_run_status")
         return task
 
 
@@ -142,6 +145,9 @@ class Scheduler:
                  once=None, headless=True) -> str:
         """添加定时任务"""
         import uuid
+        if not os.path.isfile(tree_file):
+            print(f"[Scheduler] 行为树文件不存在: {tree_file}")
+            return ""
         task_id = f"task_{uuid.uuid4().hex[:8]}"
         task = ScheduleTask(
             task_id=task_id, name=name or tree_file, tree_file=tree_file,
@@ -185,22 +191,23 @@ class Scheduler:
 
     def _execute_task(self, task: ScheduleTask):
         """执行任务"""
+        import subprocess
         print(f"[Scheduler] 执行任务: {task.name} ({task.tree_file})")
         task.last_run = datetime.now().isoformat()
         task.run_count += 1
-        self._save()
 
-        if task.headless:
-            # 在子进程中运行
-            import subprocess
-            subprocess.Popen(
-                ["python", "cli.py", "run", task.tree_file, "--headless"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-        else:
-            import subprocess
-            subprocess.Popen(["python", "cli.py", "run", task.tree_file])
+        try:
+            cmd = ["python", "cli.py", "run", task.tree_file]
+            if task.headless:
+                cmd.append("--headless")
+            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            task.last_run_status = "success" if result.returncode == 0 else f"failed({result.returncode})"
+        except subprocess.TimeoutExpired:
+            task.last_run_status = "timeout"
+        except Exception as e:
+            task.last_run_status = f"error({e})"
+
+        self._save()
 
     def start(self):
         """启动调度器线程"""

@@ -81,6 +81,8 @@ def main():
     plugin_stop.add_argument("name")
     plugin_info = plugin_sub.add_parser("info", help="查看插件详情")
     plugin_info.add_argument("name")
+    plugin_unload = plugin_sub.add_parser("unload", help="卸载插件")
+    plugin_unload.add_argument("name")
 
     # config 命令
     config_parser = subparsers.add_parser("config", help="配置管理")

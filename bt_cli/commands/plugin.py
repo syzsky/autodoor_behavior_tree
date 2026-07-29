@@ -43,6 +43,8 @@ def cmd_plugin(args):
         _start_plugin(loader, args)
     elif action == "stop":
         _stop_plugin(loader, args)
+    elif action == "unload":
+        _unload_plugin(loader, args)
     elif action == "info":
         _show_info(loader, args)
 
@@ -88,6 +90,15 @@ def _stop_plugin(loader, args):
     """停止插件"""
     loader.stop_plugin(args.name)
     print(f"插件已停止: {args.name}")
+
+
+def _unload_plugin(loader, args):
+    """卸载插件"""
+    if args.name not in [p.name for p in loader.list_plugins()]:
+        print(f"未找到插件: {args.name}")
+        sys.exit(1)
+    loader.unload_plugin(args.name)
+    print(f"插件已卸载: {args.name}")
 
 
 def _show_info(loader, args):

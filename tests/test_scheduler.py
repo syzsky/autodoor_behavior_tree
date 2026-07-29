@@ -165,12 +165,17 @@ def temp_scheduler(tmp_path, monkeypatch):
     schedules_file = tmp_path / "schedules.json"
     monkeypatch.setattr(Scheduler, "SCHEDULES_FILE", str(schedules_file))
     monkeypatch.setattr(Scheduler, "DATA_DIR", str(tmp_path))
-    return Scheduler()
+    # 创建临时行为树文件供测试使用（add_task 现在会验证文件存在）
+    tree_file = tmp_path / "tree.json"
+    tree_file.write_text("{}")
+    scheduler = Scheduler()
+    scheduler._test_tree_file = str(tree_file)
+    return scheduler
 
 
 def test_scheduler_add_task(temp_scheduler):
     task_id = temp_scheduler.add_task(
-        name="测试任务", tree_file="tree.json",
+        name="测试任务", tree_file=temp_scheduler._test_tree_file,
         cron="0 * * * *", headless=True
     )
     assert task_id.startswith("task_")
@@ -180,7 +185,7 @@ def test_scheduler_add_task(temp_scheduler):
 
 
 def test_scheduler_remove_task(temp_scheduler):
-    task_id = temp_scheduler.add_task(name="t1", tree_file="tree.json", cron="0 * * * *")
+    task_id = temp_scheduler.add_task(name="t1", tree_file=temp_scheduler._test_tree_file, cron="0 * * * *")
     assert temp_scheduler.remove_task(task_id) is True
     assert len(temp_scheduler.list_tasks()) == 0
     # 删除不存在的任务返回 False
@@ -188,7 +193,7 @@ def test_scheduler_remove_task(temp_scheduler):
 
 
 def test_scheduler_enable_disable_task(temp_scheduler):
-    task_id = temp_scheduler.add_task(name="t1", tree_file="tree.json", cron="0 * * * *")
+    task_id = temp_scheduler.add_task(name="t1", tree_file=temp_scheduler._test_tree_file, cron="0 * * * *")
     assert temp_scheduler.disable_task(task_id) is True
     task = temp_scheduler.list_tasks()[0]
     assert task.enabled is False
@@ -202,9 +207,12 @@ def test_scheduler_persistence(tmp_path, monkeypatch):
     schedules_file = tmp_path / "schedules.json"
     monkeypatch.setattr(Scheduler, "SCHEDULES_FILE", str(schedules_file))
     monkeypatch.setattr(Scheduler, "DATA_DIR", str(tmp_path))
+    # 创建临时行为树文件（add_task 现在会验证文件存在）
+    tree_file = tmp_path / "tree.json"
+    tree_file.write_text("{}")
 
     s1 = Scheduler()
-    task_id = s1.add_task(name="持久任务", tree_file="tree.json", cron="0 * * * *")
+    task_id = s1.add_task(name="持久任务", tree_file=str(tree_file), cron="0 * * * *")
 
     # 重新加载
     s2 = Scheduler()

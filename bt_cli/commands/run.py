@@ -33,6 +33,11 @@ def _run_headless(args):
         settings.set("websocket_server.enabled", True)
         settings.set("websocket_server.host", args.ws_host)
         settings.set("websocket_server.port", args.ws_port)
+    if args.plugins:
+        settings.set("plugins.enabled", True)
+
+    # 落盘保存配置
+    settings.save_settings()
 
     # 打印运行信息
     print(f"运行行为树: {args.tree_file}")
