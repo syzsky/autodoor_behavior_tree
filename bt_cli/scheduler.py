@@ -86,7 +86,7 @@ class CronMatcher:
                 match_field(parts[1], dt.hour, 0, 23) and
                 match_field(parts[2], dt.day, 1, 31) and
                 match_field(parts[3], dt.month, 1, 12) and
-                match_field(parts[4], dt.weekday() if dt.weekday() != 6 else 0, 0, 6))
+                match_field(parts[4], (dt.weekday() + 1) % 7, 0, 6))
 
 
 def parse_interval(interval: str) -> Optional[float]:

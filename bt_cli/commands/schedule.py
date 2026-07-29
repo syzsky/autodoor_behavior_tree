@@ -8,7 +8,7 @@ def cmd_schedule(args):
     action = args.schedule_action
 
     if action is None:
-        print("用法: autodoor-bt schedule <add|list|remove|enable|disable|run>")
+        print("用法: autodoor-bt schedule <add|list|remove|run|enable|disable>")
         sys.exit(1)
 
     scheduler = Scheduler()
@@ -20,6 +20,24 @@ def cmd_schedule(args):
     elif action == "remove":
         if scheduler.remove_task(args.task_id):
             print(f"已删除任务: {args.task_id}")
+        else:
+            print(f"未找到任务: {args.task_id}")
+            sys.exit(1)
+    elif action == "run":
+        if scheduler.run_task_now(args.task_id):
+            print(f"已触发执行: {args.task_id}")
+        else:
+            print(f"未找到任务: {args.task_id}")
+            sys.exit(1)
+    elif action == "enable":
+        if scheduler.enable_task(args.task_id):
+            print(f"已启用任务: {args.task_id}")
+        else:
+            print(f"未找到任务: {args.task_id}")
+            sys.exit(1)
+    elif action == "disable":
+        if scheduler.disable_task(args.task_id):
+            print(f"已禁用任务: {args.task_id}")
         else:
             print(f"未找到任务: {args.task_id}")
             sys.exit(1)
