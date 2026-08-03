@@ -62,3 +62,9 @@ build_cython/
 
 # Worktrees
 .worktrees/
+
+# AI orchestration intermediate files
+.ai/
+
+# Debug logs
+debug_log_*.txt

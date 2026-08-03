@@ -189,6 +189,29 @@ class SettingsManager:
         "plugins": {},
         # 定时调度配置
         "schedules": {},
+        # AI 编排配置
+        "ai": {
+            "enabled": False,
+            "llm": {
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "",
+                "model": "gpt-4o",
+                "timeout_ms": 30000,
+                "max_tokens": 4096,
+            },
+            "vlm": {
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "",
+                "model": "gpt-4o",
+                "timeout_ms": 30000,
+                "max_tokens": 4096,
+                "image_detail": "high",
+            },
+            "iteration": {
+                "max_rounds": 3,
+                "test_timeout_ms": 30000,
+            },
+        },
     }
     
     def __init__(self, config_dir: str = None):
