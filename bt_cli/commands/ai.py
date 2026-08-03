@@ -331,17 +331,222 @@ def _take_screenshot(output_path: str):
 
 def _cmd_test(args):
     """阶段⑤ 试运行"""
-    exit_with_code(EXIT_GENERIC_ERROR, "试运行功能将在第三阶段实现")
+    tree_path = args.tree_file
+    if not os.path.exists(tree_path):
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: 文件不存在: {tree_path}")
+
+    from config.settings_manager import get_settings_manager
+    sm = get_settings_manager()
+    timeout_ms = getattr(args, "timeout", None) or sm.get("ai.iteration.test_timeout_ms", 30000)
+
+    from bt_cli.ai.iteration_engine import IterationEngine
+
+    engine = IterationEngine()
+    print(f"正在试运行（超时 {timeout_ms}ms）...")
+
+    report = engine.run_test(tree_path, timeout_ms=timeout_ms)
+
+    # 保存报告
+    ai_dir = _ensure_ai_dir()
+    report_path = os.path.join(ai_dir, "test_report.json")
+    try:
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"保存报告失败: {e}")
+
+    if report["success"]:
+        print(f"\n试运行成功 ✓")
+        print(f"报告已保存: {report_path}")
+    else:
+        print(f"\n试运行失败 ✗")
+        print(f"报告已保存: {report_path}")
+        print(f"\n执行日志（最后 10 行）:")
+        for line in report["logs"][-10:]:
+            print(f"  {line}")
+        print(f"\n可运行迭代修正: autodoor-bt ai refine {tree_path}")
 
 
 def _cmd_refine(args):
     """阶段⑤ 迭代修正"""
-    exit_with_code(EXIT_GENERIC_ERROR, "迭代修正功能将在第三阶段实现")
+    _check_api_key()
+
+    tree_path = args.tree_file
+    if not os.path.exists(tree_path):
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: 文件不存在: {tree_path}")
+
+    from config.settings_manager import get_settings_manager
+    sm = get_settings_manager()
+    max_rounds = getattr(args, "max_rounds", None) or sm.get("ai.iteration.max_rounds", 3)
+
+    # 获取任务上下文
+    task_context = ""
+    plan_path = os.path.join(os.path.dirname(tree_path), "plan.json")
+    if os.path.exists(plan_path):
+        try:
+            with open(plan_path, "r", encoding="utf-8") as f:
+                plan = json.load(f)
+                task_context = plan.get("task_summary", "")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    from bt_cli.ai.iteration_engine import IterationEngine
+
+    engine = IterationEngine()
+    result = engine.iterate(tree_path, max_rounds=max_rounds, task_context=task_context)
+
+    if result["success"]:
+        print(f"\n迭代成功！共 {result['rounds']} 轮")
+    else:
+        print(f"\n迭代未完全成功，共试运行 {result['rounds']} 轮")
+        print(f"最终版本已保存: {tree_path}")
+        print(f"建议手动检查或调整参数后重试")
 
 
 def _cmd_create(args):
     """完整创建流程"""
-    exit_with_code(EXIT_GENERIC_ERROR, "完整流程将在所有阶段实现后集成")
+    _check_api_key()
+
+    from config.settings_manager import get_settings_manager
+    sm = get_settings_manager()
+
+    description = args.description
+    print(f"=== AI 行为树创建流程 ===")
+    print(f"任务描述: {description}\n")
+
+    # 阶段① 意图分析
+    print("--- 阶段 1/5: 意图分析 ---")
+    from bt_cli.ai.intent_analyzer import IntentAnalyzer, IntentAnalysisError
+    try:
+        analyzer = IntentAnalyzer()
+        plan = analyzer.analyze(description)
+    except IntentAnalysisError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"意图分析失败: {e}")
+
+    ai_dir = _ensure_ai_dir()
+    plan_path = os.path.join(ai_dir, "plan.json")
+    try:
+        with open(plan_path, "w", encoding="utf-8") as f:
+            json.dump(plan, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"保存计划文件失败: {e}")
+    print(f"  任务概述: {plan.get('task_summary', 'N/A')}")
+    print(f"  阶段数: {len(plan.get('phases', []))}")
+
+    if not _confirm("是否继续节点选型？"):
+        print(f"任务计划已保存: {plan_path}")
+        print(f"后续可运行: autodoor-bt ai select {plan_path}")
+        return
+
+    # 阶段② 节点选型
+    print("\n--- 阶段 2/5: 节点选型 ---")
+    from bt_core.registry import register_all_nodes
+    from bt_cli.ai.node_selector import NodeSelector, NodeSelectionError
+    register_all_nodes()
+    try:
+        selector = NodeSelector()
+        structure = selector.select(plan)
+    except NodeSelectionError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"节点选型失败: {e}")
+
+    structure_path = os.path.join(ai_dir, "structure.json")
+    try:
+        with open(structure_path, "w", encoding="utf-8") as f:
+            json.dump(structure, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"保存结构文件失败: {e}")
+    print(f"  节点数: {len(structure['nodes'])}")
+
+    if not _confirm("是否继续屏幕感知？"):
+        print(f"节点结构已保存: {structure_path}")
+        print(f"后续可运行: autodoor-bt ai scan {structure_path}")
+        return
+
+    # 阶段③ 屏幕感知
+    print("\n--- 阶段 3/5: VLM 屏幕感知 ---")
+    vlm_key = sm.get("ai.vlm.api_key", "")
+    if not vlm_key:
+        print("  跳过：未配置 VLM API Key")
+        print("  节点结构保持原样（参数需手动补充）")
+        filled = structure
+    else:
+        screenshot_path = os.path.join(ai_dir, "screenshot.png")
+        print("  正在截取屏幕...")
+        _take_screenshot(screenshot_path)
+
+        from bt_cli.ai.vlm_analyzer import VLMAnalyzer, VLMAnalysisError
+        try:
+            vlm = VLMAnalyzer()
+            suggestions = vlm.analyze(screenshot_path, structure, plan.get("task_summary", ""))
+            filled = vlm.fill_structure(structure, suggestions)
+            print(f"  填充建议数: {len(suggestions)}")
+        except VLMAnalysisError as e:
+            print(f"  VLM 分析失败: {e}")
+            print("  节点结构保持原样")
+            filled = structure
+
+    filled_path = os.path.join(ai_dir, "structure_filled.json")
+    try:
+        with open(filled_path, "w", encoding="utf-8") as f:
+            json.dump(filled, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"保存填充结构失败: {e}")
+
+    # 阶段④ 生成
+    print("\n--- 阶段 4/5: 生成 JSON ---")
+    from bt_cli.ai.tree_generator import TreeGenerator
+    gen = TreeGenerator()
+    tree_data, errors = gen.generate_and_validate(filled, canvas_name=plan.get("task_summary", "AI生成流程"))
+    if errors:
+        print(f"  校验发现问题:")
+        for e in errors:
+            print(f"    - {e}")
+        exit_with_code(EXIT_GENERIC_ERROR, "生成失败")
+    print("  校验通过 ✓")
+
+    tree_path = os.path.join(ai_dir, "tree.json")
+    try:
+        with open(tree_path, "w", encoding="utf-8") as f:
+            json.dump(tree_data, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"保存行为树文件失败: {e}")
+    print(f"  行为树已生成: {tree_path}")
+
+    if not _confirm("是否继续试运行？"):
+        print(f"\n可运行: autodoor-bt run {tree_path} --headless")
+        return
+
+    # 阶段⑤ 试运行
+    print("\n--- 阶段 5/5: 试运行 ---")
+    from bt_cli.ai.iteration_engine import IterationEngine
+    engine = IterationEngine()
+    timeout_ms = sm.get("ai.iteration.test_timeout_ms", 30000)
+    report = engine.run_test(tree_path, timeout_ms=timeout_ms)
+
+    if report["success"]:
+        print("\n试运行成功 ✓")
+        print(f"最终行为树: {tree_path}")
+    else:
+        print("\n试运行失败 ✗")
+        report_path = os.path.join(ai_dir, "test_report.json")
+        try:
+            with open(report_path, "w", encoding="utf-8") as f:
+                json.dump(report, f, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
+        print(f"报告: {report_path}")
+        if _confirm("是否进行 AI 迭代修正？"):
+            max_rounds = sm.get("ai.iteration.max_rounds", 3)
+            result = engine.iterate(tree_path, max_rounds=max_rounds,
+                                    task_context=plan.get("task_summary", ""))
+            if result["success"]:
+                print(f"\n迭代成功！最终行为树: {tree_path}")
+            else:
+                print(f"\n迭代未完全成功，最终版本: {tree_path}")
+
+    print(f"\n=== 完成 ===")
+    print(f"行为树文件: {tree_path}")
+    print(f"中间文件目录: {ai_dir}")
 
 
 def _ensure_ai_dir() -> str:
@@ -349,3 +554,12 @@ def _ensure_ai_dir() -> str:
     ai_dir = os.path.join(os.getcwd(), ".ai")
     os.makedirs(ai_dir, exist_ok=True)
     return ai_dir
+
+
+def _confirm(message: str) -> bool:
+    """交互式确认"""
+    try:
+        answer = input(f"{message} (y/n): ")
+        return answer.lower() in ("y", "yes", "")
+    except EOFError:
+        return False

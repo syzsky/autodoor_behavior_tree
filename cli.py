@@ -95,6 +95,38 @@ def main():
     config_sub.add_parser("list", help="列出所有配置")
     config_sub.add_parser("path", help="显示配置文件路径")
 
+    # ai 命令
+    ai_parser = subparsers.add_parser("ai", help="AI 编排自动化")
+    ai_sub = ai_parser.add_subparsers(dest="ai_action")
+
+    ai_plan = ai_sub.add_parser("plan", help="阶段①: 意图分析")
+    ai_plan.add_argument("description", help="任务描述")
+
+    ai_select = ai_sub.add_parser("select", help="阶段②: 节点选型")
+    ai_select.add_argument("plan_file", help="plan.json 文件路径")
+
+    ai_scan = ai_sub.add_parser("scan", help="阶段③: VLM屏幕感知")
+    ai_scan.add_argument("structure_file", help="structure.json 文件路径")
+
+    ai_generate = ai_sub.add_parser("generate", help="阶段④: 生成JSON")
+    ai_generate.add_argument("structure_file", help="structure_filled.json 文件路径")
+
+    ai_validate = ai_sub.add_parser("validate", help="校验JSON结构")
+    ai_validate.add_argument("tree_file", help="tree.json 文件路径")
+
+    ai_test = ai_sub.add_parser("test", help="阶段⑤: 试运行")
+    ai_test.add_argument("tree_file", help="tree.json 文件路径")
+    ai_test.add_argument("--timeout", type=int, default=None, help="超时毫秒")
+
+    ai_refine = ai_sub.add_parser("refine", help="阶段⑤: 迭代修正")
+    ai_refine.add_argument("tree_file", help="tree.json 文件路径")
+    ai_refine.add_argument("--max-rounds", type=int, default=None, help="最大迭代次数")
+
+    ai_nodes = ai_sub.add_parser("nodes", help="列出可用节点规格")
+
+    ai_create = ai_sub.add_parser("create", help="完整创建流程")
+    ai_create.add_argument("description", help="任务描述")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -132,6 +164,9 @@ def _dispatch(args):
     elif cmd == "config":
         from bt_cli.commands.config import cmd_config
         cmd_config(args)
+    elif cmd == "ai":
+        from bt_cli.commands.ai import cmd_ai
+        cmd_ai(args)
     else:
         print(f"未知命令: {cmd}")
         sys.exit(1)
