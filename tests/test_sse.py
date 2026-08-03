@@ -8,7 +8,15 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# 检查 sse_starlette 是否可用
+try:
+    import sse_starlette  # noqa: F401
+    _SSE_AVAILABLE = True
+except ImportError:
+    _SSE_AVAILABLE = False
 
+
+@unittest.skipUnless(_SSE_AVAILABLE, "sse_starlette 未安装")
 class TestSSE(unittest.TestCase):
     def setUp(self):
         """重置 sse_starlette 模块级 AppStatus.should_exit_event。

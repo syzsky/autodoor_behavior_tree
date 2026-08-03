@@ -254,7 +254,11 @@ class RESTServer(BaseServer):
 
     def _setup_sse_routes(self) -> None:
         """配置 SSE 事件流路由"""
-        from sse_starlette.sse import EventSourceResponse
+        try:
+            from sse_starlette.sse import EventSourceResponse
+        except ImportError:
+            # sse_starlette 未安装时跳过 SSE 路由注册
+            return
 
         @self.app.get("/api/v1/events/stream")
         async def event_stream(request: Request):

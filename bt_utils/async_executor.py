@@ -32,7 +32,7 @@ class AsyncExecutor:
             self._cancelled.discard(node_id)
             self._results.pop(node_id, None)  # clear stale result
             start_time = time.time()
-            deadline = start_time + timeout_ms / 1000.0
+            deadline = start_time + timeout_ms / 1000.0 if timeout_ms > 0 else None
 
             def wrapped():
                 if deadline and time.time() > deadline:
