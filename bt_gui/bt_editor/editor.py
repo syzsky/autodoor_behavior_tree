@@ -483,6 +483,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_start=self._start_running,
             on_stop=self._stop_running,
             on_open_folder=self._open_project_folder,
+            on_toggle_ai=self.toggle_ai_assistant,
             )
         self.toolbar.pack(fill="x")
     
@@ -493,6 +494,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._create_palette()
         self._create_canvas()
         self._create_property_panel()
+        self._create_ai_assistant_panel()
         
         self._create_log_panel()
     
@@ -593,6 +595,95 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     
     def _create_property_panel(self):
         pass
+
+    def _create_ai_assistant_panel(self):
+        """创建 AI 助手面板（默认隐藏）"""
+        from bt_gui.ai_assistant.assistant_panel import AssistantPanel
+        from bt_gui.ai_assistant.canvas_overlay import CanvasOverlay
+
+        self.ai_assistant_panel = AssistantPanel(
+            self.main_area,
+            editor=self,
+        )
+        # 默认隐藏
+        self.ai_assistant_panel.hide()
+
+        # 注册回调
+        self.ai_assistant_panel.register_callback(
+            "on_tree_generated", self._on_ai_tree_generated
+        )
+        self.ai_assistant_panel.register_callback(
+            "on_tree_updated", self._on_ai_tree_updated
+        )
+        self.ai_assistant_panel.register_callback(
+            "on_vlm_suggestions", self._on_ai_vlm_suggestions
+        )
+
+        # 创建画布标注覆盖层
+        active_tab = self.tab_manager.get_active_tab()
+        if active_tab and active_tab.canvas:
+            self._canvas_overlay = CanvasOverlay(active_tab.canvas)
+        else:
+            self._canvas_overlay = CanvasOverlay(self._fallback_canvas)
+
+    def toggle_ai_assistant(self):
+        """切换 AI 助手面板可见性"""
+        if hasattr(self, 'ai_assistant_panel'):
+            self.ai_assistant_panel.toggle()
+
+    def _on_ai_tree_generated(self, tree_data):
+        """AI 生成行为树后加载到画布"""
+        import json, tempfile, os
+        tree_path = os.path.join(tempfile.gettempdir(), "ai_generated_tree.json")
+        with open(tree_path, "w", encoding="utf-8") as f:
+            json.dump(tree_data, f, ensure_ascii=False)
+        self.load_tree(tree_path)
+
+    def _on_ai_tree_updated(self, tree_data):
+        """AI 修正后更新画布"""
+        active_tab = self.tab_manager.get_active_tab()
+        if active_tab and active_tab.canvas:
+            # 更新画布节点数据
+            for node_id, node_data in tree_data.get("nodes", {}).items():
+                if hasattr(active_tab.canvas, 'nodes') and node_id in active_tab.canvas.nodes:
+                    node_item = active_tab.canvas.nodes[node_id]
+                    # 更新配置
+                    if hasattr(node_item, 'config'):
+                        node_item.config = node_data.get("config", {})
+                    if hasattr(active_tab.canvas, '_update_node_display'):
+                        active_tab.canvas._update_node_display(node_id)
+
+    def _on_ai_vlm_suggestions(self, suggestions):
+        """VLM 分析完成后在画布上绘制标注"""
+        if not hasattr(self, '_canvas_overlay'):
+            return
+
+        self._canvas_overlay.clear()
+        for sug in suggestions:
+            value = sug.get("suggested_value", [])
+            param = sug.get("param", "")
+            node_id = sug.get("node_id", "")
+            confidence = sug.get("confidence", 0)
+
+            # 根据参数类型确定标注类型
+            if param in ("region",):
+                ann_type = "region"
+            elif param in ("position",):
+                ann_type = "position"
+            elif param in ("template_path",):
+                ann_type = "template"
+            else:
+                continue
+
+            self._canvas_overlay.add_annotation(
+                node_id=node_id,
+                param=param,
+                value=value,
+                confidence=confidence,
+                annotation_type=ann_type,
+            )
+
+        self._canvas_overlay.show()
     
     def _bind_events(self):
         self._init_ui_dispatcher()
