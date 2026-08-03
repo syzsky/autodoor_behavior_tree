@@ -116,7 +116,8 @@ def test_ai_test_command(cli_env, tmp_path):
         cli_env, timeout=30,
     )
 
-    assert "试运行" in result.stdout or "试运行" in result.stderr
+    assert "试运行" in result.stdout
+    assert "报告已保存" in result.stdout or "试运行成功" in result.stdout or "试运行失败" in result.stdout
 
 
 def test_ai_test_file_not_found(cli_env):
