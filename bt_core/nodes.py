@@ -62,6 +62,7 @@ class Node(ABC):
             return NodeStatus.SUCCESS
 
         if self.status != NodeStatus.RUNNING:
+            LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
             context.notify_node_status(self.node_id, "running")
 
         if self._start_time is None:
@@ -342,16 +343,18 @@ class SequenceNode(CompositeNode):
         self.child_interval = self.config.get_int("childinterval", 0)
         self.child_interval_random = self.config.get_int("childinterval_random", 0)
         self._last_child_finish_time: Optional[float] = None
+        self._completed = False
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         return self._execute_with_decorators(context, self._tick_internal)
 
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
-
-        if not self.children:
+        if self._completed:
             return NodeStatus.SUCCESS
 
-        LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
+        if not self.children:
+            self._completed = True
+            return NodeStatus.SUCCESS
 
         has_failure = False
 
@@ -405,15 +408,18 @@ class SequenceNode(CompositeNode):
                 node_name=self.name
             )
         
+        self._completed = True
         return NodeStatus.FAILURE if has_failure else NodeStatus.SUCCESS
 
     def reset(self, reset_counters: bool = True) -> None:
         super().reset(reset_counters)
         self._last_child_finish_time = None
+        self._completed = False
 
     def _reset_for_retry(self) -> None:
         super()._reset_for_retry()
         self._last_child_finish_time = None
+        self._completed = False
 
 
 class SelectorNode(CompositeNode):
@@ -437,8 +443,6 @@ class SelectorNode(CompositeNode):
                 reason="没有子节点"
             )
             return NodeStatus.FAILURE
-
-        LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
 
         while self.current_index < len(self.children):
             child = self.children[self.current_index]
@@ -515,8 +519,6 @@ class ParallelNode(CompositeNode):
                 node_name=self.name
             )
             return NodeStatus.SUCCESS
-
-        LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
 
         success_count = 0
         failure_count = 0
@@ -970,8 +972,6 @@ class ConditionNode(Node):
         if time_since_last < effective_interval_ms:
             return self.status
 
-        LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
-
         self._last_check_time = current_time
         result = self._check_condition(context)
 
@@ -1257,7 +1257,6 @@ class ActionNode(Node):
                     self._was_already_foreground = False
                     return NodeStatus.RUNNING
             
-            LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
             LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 执行动作...")
             action_start = time.time()
             status = self._execute_action(context)
@@ -1408,6 +1407,7 @@ class StartNode(CompositeNode):
         self.window_title = self.config.get("window_title", "")
         self.window_pid = self.config.get_int("window_pid", 0)
         self._window_bound = False
+        self._completed = False
     
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         """顺序执行所有子节点,失败后继续执行
@@ -1425,6 +1425,8 @@ class StartNode(CompositeNode):
         return self._execute_with_decorators(context, self._tick_internal)
     
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
+        if self._completed:
+            return NodeStatus.SUCCESS
 
         bind_window = self.config.get_bool("bind_window", False)
         window_title = self.config.get("window_title", "")
@@ -1433,14 +1435,13 @@ class StartNode(CompositeNode):
             self._window_bound = True
 
         if not self.children:
+            self._completed = True
             LogManager.instance().log_success(
                 node_type="开始节点",
                 node_name=self.name
             )
             return NodeStatus.SUCCESS
 
-        LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
-        
         while self.current_index < len(self.children):
             child = self.children[self.current_index]
             
@@ -1463,6 +1464,7 @@ class StartNode(CompositeNode):
             self.current_index += 1
         
         self.current_index = 0
+        self._completed = True
         
         LogManager.instance().log_success(
             node_type="开始节点",
@@ -1475,6 +1477,7 @@ class StartNode(CompositeNode):
         """重置节点状态"""
         super().reset(reset_counters)
         self._window_bound = False
+        self._completed = False
         for child in self.children:
             child.reset()
 
@@ -1519,10 +1522,12 @@ class StartNode(CompositeNode):
     def _reset_for_retry(self) -> None:
         """重试时重置状态（保留重试计数器）"""
         super()._reset_for_retry()
+        self._completed = False
     
     def _reset_for_repeat(self) -> None:
         """重复执行时重置状态（保留重复计数器）"""
         super()._reset_for_repeat()
+        self._completed = False
     
     def to_dict(self) -> Dict[str, Any]:
         """

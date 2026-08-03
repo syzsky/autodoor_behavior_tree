@@ -287,6 +287,10 @@ class BehaviorTreeEngine:
                         # reset() 仅重置节点状态为初始值，准备下次执行，不影响最终状态显示
                         if self.root_node:
                             self.root_node.reset()
+                        
+                        # 通知 GUI 引擎已完成（正常完成路径）
+                        if self._on_status_change:
+                            self._on_status_change("completed", status)
                 except Exception as e:
                     import traceback
                     error_traceback = traceback.format_exc()
