@@ -1,8 +1,11 @@
 # bt_cli/ai/tree_generator.py
 """阶段④ JSON 生成 — 将节点结构转换为 tree.json 格式"""
 import json
+from collections import deque
 from typing import Dict, Any, List
 from datetime import datetime
+
+from bt_core.constants import ProjectConstants, get_app_version
 
 
 class TreeGenerator:
@@ -25,12 +28,12 @@ class TreeGenerator:
         Returns:
             tree.json 格式字典
         """
+        if not isinstance(structure, dict):
+            raise ValueError("structure 必须是字典类型")
+
         nodes_list = structure.get("nodes", [])
         if not nodes_list:
             raise ValueError("节点结构为空")
-
-        # 构建节点查找表
-        node_map = {n["id"]: n for n in nodes_list}
 
         # 计算布局
         layout = self._compute_layout(nodes_list)
@@ -60,13 +63,14 @@ class TreeGenerator:
                     "child_id": child_id,
                 })
 
+        now = datetime.now().isoformat()
         tree_data = {
-            "version": "2.1",
-            "format_type": "behavior_tree",
+            "version": ProjectConstants.TREE_FORMAT_VERSION,
+            "format_type": ProjectConstants.TREE_FORMAT_TYPE,
             "metadata": {
-                "created_at": datetime.now().isoformat(),
-                "modified_at": datetime.now().isoformat(),
-                "app_version": "ai-generated",
+                "created_at": now,
+                "modified_at": now,
+                "app_version": get_app_version(),
             },
             "canvas": {
                 "name": canvas_name,
@@ -106,9 +110,9 @@ class TreeGenerator:
 
         # BFS 遍历计算层级
         levels = {}  # node_id -> level
-        queue = [(root_id, 0)]
+        queue = deque([(root_id, 0)])
         while queue:
-            node_id, level = queue.pop(0)
+            node_id, level = queue.popleft()
             if node_id in levels:
                 continue
             levels[node_id] = level
@@ -163,5 +167,12 @@ class TreeGenerator:
             "NumberConditionNode": "数字比较",
             "VariableConditionNode": "变量判断",
             "TextExtractNode": "文本提取",
+            "StartTreeNode": "启动树",
+            "StopTreeNode": "停止树",
+            "HTTPRequestNode": "HTTP请求",
+            "APIConditionNode": "API条件",
+            "WebSocketNode": "WebSocket连接",
+            "MessagePublishNode": "消息发布",
+            "MessageSubscribeNode": "消息订阅",
         }
         return type_names.get(node["type"], node["type"])

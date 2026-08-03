@@ -10,7 +10,7 @@
 import pytest
 import json
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # ------------------------------------------------------------------
 # 在导入前,为环境中缺失的可选重型依赖注入 Mock
@@ -165,3 +165,59 @@ def test_validate_condition_without_children():
     validator = TreeValidator()
     errors = validator.validate(tree_data)
     assert any("子节点" in e for e in errors)
+
+
+def test_generate_and_validate_returns_empty_errors_for_valid_structure():
+    """测试生成并校验返回空错误列表"""
+    from bt_cli.ai.tree_generator import TreeGenerator
+
+    structure = {
+        "nodes": [
+            {"id": "node_start", "type": "StartNode",
+             "config": {"bind_window": False}, "children": ["node_seq"]},
+            {"id": "node_seq", "type": "SequenceNode",
+             "config": {"repeat_count": -1, "repeat_interval_ms": 1000},
+             "children": ["node_delay"]},
+            {"id": "node_delay", "type": "DelayNode",
+             "config": {"duration_ms": 1000}, "children": []},
+        ]
+    }
+
+    gen = TreeGenerator()
+    tree_data, errors = gen.generate_and_validate(structure, canvas_name="测试流程")
+
+    assert errors == []
+    assert tree_data["root_node"] == "node_start"
+    assert tree_data["version"] == "2.1"
+    assert tree_data["format_type"] == "behavior_tree"
+
+
+def test_validate_with_serializer_rejects_invalid_data():
+    """测试 Serializer 深度校验拒绝无效数据
+
+    通过 mock Serializer.deserialize 返回 None 根节点，
+    模拟结构校验通过但反序列化失败的场景。
+    """
+    from bt_cli.ai.tree_validator import TreeValidator
+
+    tree_data = {
+        "version": "2.1",
+        "format_type": "behavior_tree",
+        "root_node": "node_start",
+        "nodes": {
+            "node_start": {"id": "node_start", "type": "StartNode",
+                           "name": "开始", "enabled": True, "config": {},
+                           "position": {"x": 400, "y": 50}, "children": ["node_delay"]},
+            "node_delay": {"id": "node_delay", "type": "DelayNode",
+                           "name": "延时", "enabled": True, "config": {"duration_ms": 1000},
+                           "position": {"x": 400, "y": 150}, "children": []},
+        },
+        "connections": [{"parent_id": "node_start", "child_id": "node_delay"}],
+    }
+
+    validator = TreeValidator()
+    # mock Serializer.deserialize 返回根节点为 None，模拟反序列化失败
+    with patch("bt_core.serializer.Serializer.deserialize", return_value=(None, {}, {})):
+        errors = validator.validate_with_serializer(tree_data)
+
+    assert any("Serializer" in e or "反序列化" in e for e in errors)
