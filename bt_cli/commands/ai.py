@@ -210,10 +210,8 @@ def _cmd_scan(args):
             with open(plan_path, "r", encoding="utf-8") as f:
                 plan = json.load(f)
                 task_context = plan.get("task_summary", "")
-        except json.JSONDecodeError as e:
-            exit_with_code(EXIT_CONFIG_ERROR, f"错误: plan.json 解析失败: {e}")
-        except OSError as e:
-            exit_with_code(EXIT_CONFIG_ERROR, f"错误: 读取文件失败: {e}")
+        except (json.JSONDecodeError, OSError):
+            pass  # task_context 是可选的，读取失败不阻断流程
 
     print("VLM 正在分析截图...")
 
@@ -393,7 +391,10 @@ def _cmd_refine(args):
     from bt_cli.ai.iteration_engine import IterationEngine
 
     engine = IterationEngine()
-    result = engine.iterate(tree_path, max_rounds=max_rounds, task_context=task_context)
+    try:
+        result = engine.iterate(tree_path, max_rounds=max_rounds, task_context=task_context)
+    except (json.JSONDecodeError, OSError) as e:
+        exit_with_code(EXIT_CONFIG_ERROR, f"读取或解析行为树失败: {e}")
 
     if result["success"]:
         print(f"\n迭代成功！共 {result['rounds']} 轮")
@@ -492,6 +493,11 @@ def _cmd_create(args):
     except OSError as e:
         exit_with_code(EXIT_GENERIC_ERROR, f"保存填充结构失败: {e}")
 
+    if not _confirm("是否继续生成行为树？"):
+        print(f"填充结构已保存: {filled_path}")
+        print(f"后续可运行: autodoor-bt ai generate {filled_path}")
+        return
+
     # 阶段④ 生成
     print("\n--- 阶段 4/5: 生成 JSON ---")
     from bt_cli.ai.tree_generator import TreeGenerator
@@ -533,12 +539,15 @@ def _cmd_create(args):
             with open(report_path, "w", encoding="utf-8") as f:
                 json.dump(report, f, ensure_ascii=False, indent=2)
         except OSError:
-            pass
+            print(f"  警告: 保存报告失败")
         print(f"报告: {report_path}")
         if _confirm("是否进行 AI 迭代修正？"):
             max_rounds = sm.get("ai.iteration.max_rounds", 3)
-            result = engine.iterate(tree_path, max_rounds=max_rounds,
-                                    task_context=plan.get("task_summary", ""))
+            try:
+                result = engine.iterate(tree_path, max_rounds=max_rounds,
+                                        task_context=plan.get("task_summary", ""))
+            except (json.JSONDecodeError, OSError) as e:
+                exit_with_code(EXIT_CONFIG_ERROR, f"读取或解析行为树失败: {e}")
             if result["success"]:
                 print(f"\n迭代成功！最终行为树: {tree_path}")
             else:
