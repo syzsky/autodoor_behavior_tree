@@ -97,3 +97,87 @@ def test_apply_fixes_modifies_tree():
 
     fixed_tree = engine.apply_fixes(tree_data, fixes)
     assert fixed_tree["nodes"]["node_detect"]["config"]["region"] == [100, 200, 400, 400]
+
+
+def test_apply_fixes_does_not_mutate_original():
+    """测试 apply_fixes 不修改原始数据（深拷贝）"""
+    from bt_cli.ai.iteration_engine import IterationEngine
+
+    engine = IterationEngine()
+    tree_data = {
+        "nodes": {
+            "node_1": {"id": "node_1", "type": "DelayNode",
+                       "config": {"duration_ms": 1000}, "children": []},
+        }
+    }
+    fixes = [
+        {"node_id": "node_1", "param": "duration_ms",
+         "new_value": 2000, "reason": "增加延时"}
+    ]
+    fixed_tree = engine.apply_fixes(tree_data, fixes)
+    # 原始数据不受影响
+    assert tree_data["nodes"]["node_1"]["config"]["duration_ms"] == 1000
+    # 修正后的数据已更新
+    assert fixed_tree["nodes"]["node_1"]["config"]["duration_ms"] == 2000
+
+
+def test_analyze_failure_llm_error():
+    """测试 LLM 请求异常时抛出 IterationError"""
+    from bt_cli.ai.iteration_engine import IterationEngine, IterationError
+
+    test_report = {"success": False, "node_statuses": {}, "logs": ["error"], "blackboard": {}}
+    tree_data = {"nodes": {}}
+
+    with patch("bt_cli.ai.iteration_engine.LLMClient") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.chat.side_effect = RuntimeError("connection refused")
+        mock_client_cls.from_config.return_value = mock_client
+
+        engine = IterationEngine()
+        with pytest.raises(IterationError, match="LLM 请求失败"):
+            engine.analyze_failure(test_report, tree_data, "测试")
+
+
+def test_analyze_failure_invalid_json():
+    """测试 LLM 返回无效 JSON 时抛出 IterationError"""
+    from bt_cli.ai.iteration_engine import IterationEngine, IterationError
+
+    mock_llm_response = {
+        "content": "这不是JSON格式",
+        "model": "gpt-4o",
+        "usage": {},
+    }
+
+    test_report = {"success": False, "node_statuses": {}, "logs": ["error"], "blackboard": {}}
+    tree_data = {"nodes": {}}
+
+    with patch("bt_cli.ai.iteration_engine.LLMClient") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.chat.return_value = mock_llm_response
+        mock_client_cls.from_config.return_value = mock_client
+
+        engine = IterationEngine()
+        with pytest.raises(IterationError, match="JSON 无效"):
+            engine.analyze_failure(test_report, tree_data, "测试")
+
+
+def test_apply_fixes_skips_invalid_fix():
+    """测试 apply_fixes 跳过不规范的 fix 条目"""
+    from bt_cli.ai.iteration_engine import IterationEngine
+
+    engine = IterationEngine()
+    tree_data = {
+        "nodes": {
+            "node_1": {"id": "node_1", "type": "DelayNode",
+                       "config": {"duration_ms": 1000}, "children": []},
+        }
+    }
+    fixes = [
+        {"node_id": "node_1", "param": "duration_ms", "new_value": 2000},
+        {"node_id": "nonexistent", "param": "x", "new_value": 1},  # 不存在的节点
+        {"param": "missing_node_id"},  # 缺少 node_id
+        "not_a_dict",  # 不是字典
+    ]
+    fixed_tree = engine.apply_fixes(tree_data, fixes)
+    # 只有第一个 fix 被应用
+    assert fixed_tree["nodes"]["node_1"]["config"]["duration_ms"] == 2000

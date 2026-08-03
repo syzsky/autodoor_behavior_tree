@@ -7,11 +7,16 @@ AI 分析失败原因，提供修正建议，应用修正后重新试运行。
 import json
 import os
 import copy
+import shutil
 import subprocess
 import sys
 from typing import Dict, Any, List, Optional
 
 from bt_cli.ai.llm_client import LLMClient
+
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_CLI_PATH = os.path.join(_PROJECT_ROOT, "cli.py")
 
 
 class IterationError(Exception):
@@ -47,8 +52,7 @@ class IterationEngine:
         """
         # 通过 subprocess 调用 CLI run --headless
         cmd = [
-            sys.executable, os.path.join(os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__)))), "cli.py"),
+            sys.executable, _CLI_PATH,
             "run", tree_path, "--headless",
         ]
 
@@ -123,7 +127,9 @@ class IterationEngine:
         try:
             analysis = json.loads(result["content"])
         except json.JSONDecodeError as e:
-            raise IterationError(f"LLM 返回的 JSON 无效: {e}") from e
+            raise IterationError(
+                f"LLM 返回的 JSON 无效: {e}\n原始内容: {result['content'][:500]}"
+            ) from e
 
         return analysis
 
@@ -142,9 +148,13 @@ class IterationEngine:
         nodes = fixed.get("nodes", {})
 
         for fix in fixes:
-            node_id = fix["node_id"]
-            param = fix["param"]
-            new_value = fix["new_value"]
+            if not isinstance(fix, dict):
+                continue
+            node_id = fix.get("node_id")
+            param = fix.get("param")
+            new_value = fix.get("new_value")
+            if node_id is None or param is None or new_value is None:
+                continue
 
             if node_id in nodes:
                 if "config" not in nodes[node_id]:
@@ -157,6 +167,10 @@ class IterationEngine:
                 task_context: str = "") -> Dict[str, Any]:
         """完整迭代流程
 
+        在迭代开始前会备份原始 tree_path 文件为 ``tree_path + ".bak"``，
+        以便在迭代过程中出现异常或修正结果不理想时可手动恢复。
+        备份文件在方法返回后保留，不会自动删除。
+
         Args:
             tree_path: tree.json 文件路径
             max_rounds: 最大迭代次数
@@ -167,6 +181,10 @@ class IterationEngine:
         """
         with open(tree_path, "r", encoding="utf-8") as f:
             tree_data = json.load(f)
+
+        # 备份原始文件，便于异常时手动恢复
+        backup_path = tree_path + ".bak"
+        shutil.copy2(tree_path, backup_path)
 
         reports = []
 
@@ -229,5 +247,6 @@ class IterationEngine:
         return summary
 
     def _load_prompt(self) -> str:
+        """加载系统提示词"""
         with open(self.PROMPT_FILE, "r", encoding="utf-8") as f:
             return f.read()
