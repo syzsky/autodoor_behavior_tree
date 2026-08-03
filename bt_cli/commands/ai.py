@@ -189,8 +189,13 @@ def _cmd_scan(args):
     if not os.path.exists(structure_path):
         exit_with_code(EXIT_CONFIG_ERROR, f"错误: 文件不存在: {structure_path}")
 
-    with open(structure_path, "r", encoding="utf-8") as f:
-        structure = json.load(f)
+    try:
+        with open(structure_path, "r", encoding="utf-8") as f:
+            structure = json.load(f)
+    except json.JSONDecodeError as e:
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: structure.json 解析失败: {e}")
+    except OSError as e:
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: 读取文件失败: {e}")
 
     # 截图
     screenshot_path = os.path.join(_ensure_ai_dir(), "screenshot.png")
@@ -201,9 +206,14 @@ def _cmd_scan(args):
     plan_path = os.path.join(os.path.dirname(structure_path), "plan.json")
     task_context = ""
     if os.path.exists(plan_path):
-        with open(plan_path, "r", encoding="utf-8") as f:
-            plan = json.load(f)
-            task_context = plan.get("task_summary", "")
+        try:
+            with open(plan_path, "r", encoding="utf-8") as f:
+                plan = json.load(f)
+                task_context = plan.get("task_summary", "")
+        except json.JSONDecodeError as e:
+            exit_with_code(EXIT_CONFIG_ERROR, f"错误: plan.json 解析失败: {e}")
+        except OSError as e:
+            exit_with_code(EXIT_CONFIG_ERROR, f"错误: 读取文件失败: {e}")
 
     print("VLM 正在分析截图...")
 
@@ -218,8 +228,11 @@ def _cmd_scan(args):
     # 保存
     ai_dir = _ensure_ai_dir()
     output_path = os.path.join(ai_dir, "structure_filled.json")
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(filled, f, ensure_ascii=False, indent=2)
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(filled, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"保存结构文件失败: {e}")
 
     print(f"\n参数填充完成: {output_path}")
     print(f"  填充建议数: {len(suggestions)}")
@@ -236,13 +249,17 @@ def _cmd_generate(args):
     if not os.path.exists(structure_path):
         exit_with_code(EXIT_CONFIG_ERROR, f"错误: 文件不存在: {structure_path}")
 
-    with open(structure_path, "r", encoding="utf-8") as f:
-        structure = json.load(f)
+    try:
+        with open(structure_path, "r", encoding="utf-8") as f:
+            structure = json.load(f)
+    except json.JSONDecodeError as e:
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: structure.json 解析失败: {e}")
+    except OSError as e:
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: 读取文件失败: {e}")
 
     print("正在生成行为树 JSON...")
 
     from bt_cli.ai.tree_generator import TreeGenerator
-    from bt_cli.ai.tree_validator import TreeValidator
 
     gen = TreeGenerator()
     tree_data, errors = gen.generate_and_validate(structure, canvas_name="AI生成流程")
@@ -258,8 +275,11 @@ def _cmd_generate(args):
     # 保存
     ai_dir = _ensure_ai_dir()
     output_path = os.path.join(ai_dir, "tree.json")
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(tree_data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(tree_data, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"保存行为树文件失败: {e}")
 
     print(f"\n行为树已生成: {output_path}")
     print(f"  节点数: {len(tree_data['nodes'])}")
@@ -274,8 +294,13 @@ def _cmd_validate(args):
     if not os.path.exists(tree_path):
         exit_with_code(EXIT_CONFIG_ERROR, f"错误: 文件不存在: {tree_path}")
 
-    with open(tree_path, "r", encoding="utf-8") as f:
-        tree_data = json.load(f)
+    try:
+        with open(tree_path, "r", encoding="utf-8") as f:
+            tree_data = json.load(f)
+    except json.JSONDecodeError as e:
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: tree.json 解析失败: {e}")
+    except OSError as e:
+        exit_with_code(EXIT_CONFIG_ERROR, f"错误: 读取文件失败: {e}")
 
     from bt_cli.ai.tree_validator import TreeValidator
 
@@ -286,7 +311,7 @@ def _cmd_validate(args):
         print(f"校验失败，发现 {len(errors)} 个问题:")
         for e in errors:
             print(f"  ✗ {e}")
-        exit_with_code(EXIT_GENERIC_ERROR)
+        exit_with_code(EXIT_GENERIC_ERROR, "校验失败")
     else:
         print("校验通过 ✓")
         print(f"  节点数: {len(tree_data.get('nodes', {}))}")
@@ -296,9 +321,12 @@ def _cmd_validate(args):
 def _take_screenshot(output_path: str):
     """截取屏幕并保存"""
     from bt_utils.screenshot import ScreenshotManager
-    sm = ScreenshotManager()
-    img = sm.get_full_screenshot()
-    img.save(output_path)
+    try:
+        sm = ScreenshotManager()
+        img = sm.get_full_screenshot()
+        img.save(output_path)
+    except Exception as e:
+        exit_with_code(EXIT_GENERIC_ERROR, f"截图失败: {e}")
 
 
 def _cmd_test(args):

@@ -168,3 +168,37 @@ def test_ai_generate_from_structure(cli_env, tmp_path):
     assert result.returncode == 0
     assert "tree.json" in result.stdout
     assert "校验通过" in result.stdout
+
+
+# ------------------------------------------------------------------
+# 异常路径测试
+# ------------------------------------------------------------------
+
+def test_ai_scan_no_vlm_api_key(cli_env):
+    """测试 ai scan 命令在未配置 VLM API Key 时的错误提示"""
+    result = _run_cli(["ai", "scan", "nonexistent.json"], cli_env)
+    assert result.returncode == 2  # EXIT_CONFIG_ERROR
+    assert "VLM API Key" in result.stderr or "VLM API Key" in result.stdout
+
+
+def test_ai_validate_file_not_found(cli_env):
+    """测试 validate 命令文件不存在时的错误提示"""
+    result = _run_cli(["ai", "validate", "nonexistent.json"], cli_env)
+    assert result.returncode == 2  # EXIT_CONFIG_ERROR
+    assert "文件不存在" in result.stderr or "文件不存在" in result.stdout
+
+
+def test_ai_generate_file_not_found(cli_env):
+    """测试 generate 命令文件不存在时的错误提示"""
+    result = _run_cli(["ai", "generate", "nonexistent.json"], cli_env)
+    assert result.returncode == 2  # EXIT_CONFIG_ERROR
+    assert "文件不存在" in result.stderr or "文件不存在" in result.stdout
+
+
+def test_ai_validate_invalid_json(cli_env, tmp_path):
+    """测试 validate 命令 JSON 格式错误时的错误提示"""
+    bad_json = tmp_path / "bad.json"
+    bad_json.write_text("{invalid json", encoding="utf-8")
+    result = _run_cli(["ai", "validate", str(bad_json)], cli_env)
+    assert result.returncode == 2  # EXIT_CONFIG_ERROR
+    assert "解析失败" in result.stderr or "解析失败" in result.stdout
