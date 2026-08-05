@@ -5,12 +5,27 @@ from typing import Dict, Any, Optional, Callable
 from ..theme import Theme
 
 
+# AI 助手面板专属字体（比全局主题大一号，提升可读性）
+AI_FONTS = {
+    'xs': 12,
+    'sm': 13,
+    'md': 14,
+    'lg': 16,
+    'xl': 18,
+}
+
+
+def get_ai_font(size_key: str = 'sm'):
+    """AI 助手面板字体（仅影响本面板，不改变全局主题）"""
+    return (Theme.FONTS['family'], AI_FONTS.get(size_key, 13))
+
+
 def _create_section_label(parent, text, colors):
     """创建分区标题"""
     return ctk.CTkLabel(
         parent,
         text=text,
-        font=Theme.get_font('md'),
+        font=get_ai_font('md'),
         text_color=colors.get('text_primary', '#FFFFFF'),
     )
 
@@ -23,7 +38,7 @@ def create_stage1_view(parent, state, colors, **kwargs):
         ctk.CTkLabel(
             parent,
             text="暂无分析结果",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(pady=20)
         return
@@ -33,7 +48,7 @@ def create_stage1_view(parent, state, colors, **kwargs):
     ctk.CTkLabel(
         parent,
         text=plan.get("task_summary", "N/A"),
-        font=Theme.get_font('sm'),
+        font=get_ai_font('sm'),
         text_color=colors.get('text_muted', '#888'),
         wraplength=320,
         justify="left",
@@ -49,7 +64,7 @@ def create_stage1_view(parent, state, colors, **kwargs):
         ctk.CTkLabel(
             parent,
             text=f"间隔: {interval}ms | 次数: {iter_str}",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(anchor="w", pady=(0, 15))
 
@@ -62,7 +77,7 @@ def create_stage1_view(parent, state, colors, **kwargs):
             ctk.CTkLabel(
                 parent,
                 text=phase_text,
-                font=Theme.get_font('sm'),
+                font=get_ai_font('sm'),
                 text_color=colors.get('text_muted', '#888'),
                 anchor="w",
             ).pack(anchor="w", padx=10)
@@ -76,7 +91,7 @@ def create_stage2_view(parent, state, colors, **kwargs):
         ctk.CTkLabel(
             parent,
             text="暂无节点结构",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(pady=20)
         return
@@ -114,7 +129,7 @@ def create_stage2_view(parent, state, colors, **kwargs):
         ctk.CTkLabel(
             card,
             text=header_text,
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_primary', '#FFF'),
             anchor="w",
         ).pack(anchor="w", padx=10, pady=(5, 2))
@@ -128,7 +143,7 @@ def create_stage2_view(parent, state, colors, **kwargs):
             ctk.CTkLabel(
                 card,
                 text=" | ".join(info_parts),
-                font=Theme.get_font('xs'),
+                font=get_ai_font('xs'),
                 text_color=colors.get('text_muted', '#888'),
                 anchor="w",
             ).pack(anchor="w", padx=10, pady=(0, 5))
@@ -144,7 +159,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
         ctk.CTkLabel(
             parent,
             text="点击下方按钮截取屏幕\nVLM 将分析截图并自动填充参数",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(pady=20)
 
@@ -153,7 +168,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
                 parent,
                 text="截图并分析",
                 height=32,
-                font=Theme.get_font('sm'),
+                font=get_ai_font('sm'),
                 fg_color=colors.get('primary', '#3B82F6'),
                 hover_color=colors.get('primary_hover', '#2563EB'),
                 command=on_screenshot,
@@ -164,7 +179,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
         ctk.CTkLabel(
             parent,
             text="无需填充的参数",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(pady=20)
         return
@@ -185,7 +200,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
         ctk.CTkLabel(
             card,
             text=header,
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_primary', '#FFF'),
             anchor="w",
         ).pack(anchor="w", padx=10, pady=(5, 2))
@@ -194,7 +209,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
         ctk.CTkLabel(
             card,
             text=f"值: {value}",
-            font=Theme.get_font('xs'),
+            font=get_ai_font('xs'),
             text_color=colors.get('text_muted', '#888'),
             anchor="w",
         ).pack(anchor="w", padx=10)
@@ -204,7 +219,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
             ctk.CTkLabel(
                 card,
                 text=f"说明: {note}",
-                font=Theme.get_font('xs'),
+                font=get_ai_font('xs'),
                 text_color=colors.get('text_muted', '#888'),
                 anchor="w",
             ).pack(anchor="w", padx=10)
@@ -212,7 +227,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
         ctk.CTkLabel(
             card,
             text=f"置信度: {confidence:.0%}",
-            font=Theme.get_font('xs'),
+            font=get_ai_font('xs'),
             text_color=conf_color,
             anchor="w",
         ).pack(anchor="w", padx=10, pady=(0, 5))
@@ -226,14 +241,14 @@ def create_stage4_view(parent, state, colors, **kwargs):
         ctk.CTkLabel(
             parent,
             text="点击下方按钮生成行为树 JSON",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(pady=20)
         ctk.CTkButton(
             parent,
             text="生成 JSON",
             height=32,
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             fg_color=colors.get('primary', '#3B82F6'),
             hover_color=colors.get('primary_hover', '#2563EB'),
             command=kwargs.get('on_generate', lambda: None),
@@ -253,7 +268,7 @@ def create_stage4_view(parent, state, colors, **kwargs):
     ctk.CTkLabel(
         summary_card,
         text="✓ 校验通过",
-        font=Theme.get_font('sm'),
+        font=get_ai_font('sm'),
         text_color=colors.get('success', '#22C55E'),
         anchor="w",
     ).pack(anchor="w", padx=10, pady=(8, 4))
@@ -261,7 +276,7 @@ def create_stage4_view(parent, state, colors, **kwargs):
     ctk.CTkLabel(
         summary_card,
         text=f"节点数: {len(nodes)}",
-        font=Theme.get_font('sm'),
+        font=get_ai_font('sm'),
         text_color=colors.get('text_muted', '#888'),
         anchor="w",
     ).pack(anchor="w", padx=10)
@@ -269,7 +284,7 @@ def create_stage4_view(parent, state, colors, **kwargs):
     ctk.CTkLabel(
         summary_card,
         text=f"连接数: {len(connections)}",
-        font=Theme.get_font('sm'),
+        font=get_ai_font('sm'),
         text_color=colors.get('text_muted', '#888'),
         anchor="w",
     ).pack(anchor="w", padx=10)
@@ -277,7 +292,7 @@ def create_stage4_view(parent, state, colors, **kwargs):
     ctk.CTkLabel(
         summary_card,
         text=f"版本: {tree_data.get('version', '?')}",
-        font=Theme.get_font('xs'),
+        font=get_ai_font('xs'),
         text_color=colors.get('text_muted', '#888'),
         anchor="w",
     ).pack(anchor="w", padx=10, pady=(0, 8))
@@ -285,7 +300,7 @@ def create_stage4_view(parent, state, colors, **kwargs):
     ctk.CTkLabel(
         parent,
         text="行为树已加载到画布",
-        font=Theme.get_font('xs'),
+        font=get_ai_font('xs'),
         text_color=colors.get('text_muted', '#888'),
     ).pack(pady=10)
 
@@ -299,7 +314,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
         ctk.CTkLabel(
             parent,
             text="点击下方按钮开始试运行",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(pady=20)
 
@@ -308,7 +323,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
                 parent,
                 text="开始试运行",
                 height=32,
-                font=Theme.get_font('sm'),
+                font=get_ai_font('sm'),
                 fg_color=colors.get('primary', '#3B82F6'),
                 hover_color=colors.get('primary_hover', '#2563EB'),
                 command=on_rerun,
@@ -322,7 +337,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
     ctk.CTkLabel(
         parent,
         text=status_text,
-        font=Theme.get_font('lg'),
+        font=get_ai_font('lg'),
         text_color=status_color,
     ).pack(anchor="w", pady=(0, 10))
 
@@ -335,7 +350,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
         log_box = ctk.CTkTextbox(
             parent,
             height=120,
-            font=Theme.get_font('xs'),
+            font=get_ai_font('xs'),
             fg_color=colors.get('bg_primary', '#1A1A1A'),
             text_color=colors.get('text_muted', '#888'),
         )
@@ -356,7 +371,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
             ctk.CTkLabel(
                 card,
                 text=f"节点: {fix.get('node_id', '?')}",
-                font=Theme.get_font('sm'),
+                font=get_ai_font('sm'),
                 text_color=colors.get('text_primary', '#FFF'),
                 anchor="w",
             ).pack(anchor="w", padx=10, pady=(5, 2))
@@ -364,7 +379,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
             ctk.CTkLabel(
                 card,
                 text=f"参数: {fix.get('param', '?')}",
-                font=Theme.get_font('xs'),
+                font=get_ai_font('xs'),
                 text_color=colors.get('text_muted', '#888'),
                 anchor="w",
             ).pack(anchor="w", padx=10)
@@ -372,7 +387,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
             ctk.CTkLabel(
                 card,
                 text=f"建议值: {fix.get('new_value', '?')}",
-                font=Theme.get_font('xs'),
+                font=get_ai_font('xs'),
                 text_color=colors.get('text_muted', '#888'),
                 anchor="w",
             ).pack(anchor="w", padx=10)
@@ -382,7 +397,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
                 ctk.CTkLabel(
                     card,
                     text=f"原因: {reason}",
-                    font=Theme.get_font('xs'),
+                    font=get_ai_font('xs'),
                     text_color=colors.get('text_muted', '#888'),
                     anchor="w",
                 ).pack(anchor="w", padx=10)
@@ -397,7 +412,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
                     text="应用",
                     width=60,
                     height=26,
-                    font=Theme.get_font('xs'),
+                    font=get_ai_font('xs'),
                     fg_color=colors.get('primary', '#3B82F6'),
                     command=lambda f=fix: on_apply_fix(f),
                 ).pack(side="left", padx=2)
@@ -407,7 +422,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
                 text="跳过",
                 width=60,
                 height=26,
-                font=Theme.get_font('xs'),
+                font=get_ai_font('xs'),
                 fg_color="transparent",
                 hover_color=colors.get('border', '#444'),
             ).pack(side="left", padx=2)
@@ -418,7 +433,7 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
             parent,
             text="重新试运行",
             height=32,
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             fg_color=colors.get('primary', '#3B82F6'),
             hover_color=colors.get('primary_hover', '#2563EB'),
             command=on_rerun,

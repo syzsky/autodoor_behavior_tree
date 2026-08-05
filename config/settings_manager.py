@@ -196,7 +196,7 @@ class SettingsManager:
                 "base_url": "https://api.openai.com/v1",
                 "api_key": "",
                 "model": "gpt-4o",
-                "timeout_ms": 30000,
+                "timeout_ms": 300000,
                 "max_tokens": 4096,
             },
             "vlm": {

@@ -13,6 +13,7 @@ import tempfile
 from unittest.mock import patch, MagicMock
 
 import pytest
+import requests
 
 # ------------------------------------------------------------------
 # 在导入 LLMClient / SettingsManager 之前,为环境中缺失的可选重型依赖注入 Mock,
@@ -170,3 +171,103 @@ def test_llm_client_from_config():
     assert client.base_url == "http://localhost:11434/v1"
     assert client.api_key == "test-key"
     assert client.model == "qwen2.5"
+
+
+def test_llm_client_json_object_auto_retry_without_response_format():
+    """auto 模式下，模型不支持 json_object 时自动降级重试"""
+    from bt_cli.ai.llm_client import LLMClient, LLMClientError
+
+    # 第一次请求返回 400（json_object 不支持），第二次正常返回
+    error_resp = MagicMock()
+    error_resp.status_code = 400
+    error_resp.text = ('{"error":{"code":"InvalidParameter",'
+                       '"message":"The parameter `response_format.type` specified in the request '
+                       'are not valid: `json_object` is not supported by this model.",'
+                       '"param":"response_format.type","type":"BadRequest"}}')
+    error_resp.raise_for_status.side_effect = requests.exceptions.HTTPError("400 Bad Request")
+
+    ok_resp = MagicMock()
+    ok_resp.status_code = 200
+    ok_resp.json.return_value = {
+        "choices": [{"message": {"role": "assistant", "content": '{"plan": "ok"}'}}],
+        "usage": {"total_tokens": 10},
+    }
+    ok_resp.raise_for_status = MagicMock()
+
+    calls = {"n": 0}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return error_resp
+        return ok_resp
+
+    with patch("bt_cli.ai.llm_client.requests.post", side_effect=fake_post):
+        client = LLMClient(
+            base_url="https://api.openai.com/v1",
+            api_key="test-key",
+            model="local-model",
+            json_mode="auto",
+        )
+        result = client.chat(
+            messages=[{"role": "user", "content": "test"}],
+            response_format={"type": "json_object"},
+        )
+
+    assert calls["n"] == 2
+    assert result["content"] == '{"plan": "ok"}'
+
+
+def test_llm_client_json_object_none_never_sends_response_format():
+    """none 模式下不发送 response_format 参数"""
+    from bt_cli.ai.llm_client import LLMClient
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [{"message": {"role": "assistant", "content": '{"ok": true}'}}],
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    sent_payload = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        sent_payload.update(json or {})
+        return mock_response
+
+    with patch("bt_cli.ai.llm_client.requests.post", side_effect=fake_post):
+        client = LLMClient(
+            base_url="https://api.openai.com/v1",
+            api_key="test-key",
+            model="local-model",
+            json_mode="none",
+        )
+        client.chat(
+            messages=[{"role": "user", "content": "test"}],
+            response_format={"type": "json_object"},
+        )
+
+    assert "response_format" not in sent_payload
+
+
+def test_llm_client_json_object_auto_forwards_other_errors():
+    """auto 模式下非 json_object 相关错误应原样抛出，不降级"""
+    from bt_cli.ai.llm_client import LLMClient, LLMClientError
+
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
+    mock_response.raise_for_status.side_effect = Exception("500 Internal Server Error")
+
+    with patch("bt_cli.ai.llm_client.requests.post", return_value=mock_response):
+        client = LLMClient(
+            base_url="https://api.openai.com/v1",
+            api_key="test-key",
+            model="local-model",
+            json_mode="auto",
+        )
+        with pytest.raises(LLMClientError):
+            client.chat(
+                messages=[{"role": "user", "content": "test"}],
+                response_format={"type": "json_object"},
+            )

@@ -63,6 +63,7 @@ class SettingsTab(ctk.CTkFrame):
         self._create_alarm_section(self._scroll_frame)
         self._create_shortcut_section(self._scroll_frame)
         self._create_input_method_section(self._scroll_frame)
+        self._create_ai_section(self._scroll_frame)
     
     def _create_project_section(self, parent):
         project_frame = CardFrame(parent)
@@ -916,3 +917,204 @@ class SettingsTab(ctk.CTkFrame):
                     label = self._method_key_to_label.get(input_settings["mouse_method"], "")
                     if label:
                         self._ms_combo_var.set(label)
+
+    def _create_ai_section(self, parent):
+        """创建 AI 配置区域"""
+        from config.settings_manager import SettingsManager
+
+        sm = SettingsManager.get_instance()
+
+        ai_frame = CardFrame(parent)
+        ai_frame.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
+
+        ai_header = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        ai_header.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                        pady=(Theme.DIMENSIONS['spacing_md'], Theme.DIMENSIONS['spacing_sm']))
+        create_section_title(ai_header, "AI 助手配置", level=1).pack(side="left")
+
+        ctk.CTkLabel(
+            ai_header,
+            text="配置 LLM/VLM 接口以启用 AI 自动生成行为树",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted'],
+        ).pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        create_divider(ai_frame)
+
+        # --- LLM 配置 ---
+        llm_section = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        llm_section.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                          pady=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        ctk.CTkLabel(
+            llm_section,
+            text="LLM（文本模型 — 意图分析、节点选型、JSON 生成）",
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_primary'],
+        ).pack(anchor="w", pady=(0, 5))
+
+        # base_url
+        llm_url_row = ctk.CTkFrame(llm_section, fg_color="transparent")
+        llm_url_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            llm_url_row, text="API 地址:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_llm_url_var = tk.StringVar(
+            value=sm.get("ai.llm.base_url", "https://api.openai.com/v1"))
+        ctk.CTkEntry(
+            llm_url_row, textvariable=self._ai_llm_url_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # api_key
+        llm_key_row = ctk.CTkFrame(llm_section, fg_color="transparent")
+        llm_key_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            llm_key_row, text="API Key:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_llm_key_var = tk.StringVar(
+            value=sm.get("ai.llm.api_key", ""))
+        ctk.CTkEntry(
+            llm_key_row, textvariable=self._ai_llm_key_var,
+            height=28, show="*",
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # model
+        llm_model_row = ctk.CTkFrame(llm_section, fg_color="transparent")
+        llm_model_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            llm_model_row, text="模型:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_llm_model_var = tk.StringVar(
+            value=sm.get("ai.llm.model", "gpt-4o"))
+        ctk.CTkEntry(
+            llm_model_row, textvariable=self._ai_llm_model_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        create_divider(ai_frame)
+
+        # --- VLM 配置 ---
+        vlm_section = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        vlm_section.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                          pady=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        ctk.CTkLabel(
+            vlm_section,
+            text="VLM（视觉模型 — 屏幕截图分析、参数自动填充）",
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_primary'],
+        ).pack(anchor="w", pady=(0, 5))
+
+        ctk.CTkLabel(
+            vlm_section,
+            text="留空则跳过屏幕感知阶段，使用 LLM 生成的结构直接生成行为树",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted'],
+        ).pack(anchor="w", pady=(0, 5))
+
+        # base_url
+        vlm_url_row = ctk.CTkFrame(vlm_section, fg_color="transparent")
+        vlm_url_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            vlm_url_row, text="API 地址:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_vlm_url_var = tk.StringVar(
+            value=sm.get("ai.vlm.base_url", "https://api.openai.com/v1"))
+        ctk.CTkEntry(
+            vlm_url_row, textvariable=self._ai_vlm_url_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # api_key
+        vlm_key_row = ctk.CTkFrame(vlm_section, fg_color="transparent")
+        vlm_key_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            vlm_key_row, text="API Key:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_vlm_key_var = tk.StringVar(
+            value=sm.get("ai.vlm.api_key", ""))
+        ctk.CTkEntry(
+            vlm_key_row, textvariable=self._ai_vlm_key_var,
+            height=28, show="*",
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # model
+        vlm_model_row = ctk.CTkFrame(vlm_section, fg_color="transparent")
+        vlm_model_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            vlm_model_row, text="模型:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_vlm_model_var = tk.StringVar(
+            value=sm.get("ai.vlm.model", "gpt-4o"))
+        ctk.CTkEntry(
+            vlm_model_row, textvariable=self._ai_vlm_model_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # --- 保存按钮 ---
+        btn_row = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        btn_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                      pady=(Theme.DIMENSIONS['spacing_sm'], Theme.DIMENSIONS['spacing_md']))
+
+        AnimatedButton(
+            btn_row, text="保存 AI 配置",
+            font=Theme.get_font("sm"), width=120, height=30,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=Theme.COLORS['primary'],
+            hover_color=Theme.COLORS['primary_hover'],
+            command=self._save_ai_settings,
+        ).pack(side="left")
+
+        self._ai_status_label = ctk.CTkLabel(
+            btn_row, text="",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted'],
+        )
+        self._ai_status_label.pack(side="left", padx=10)
+
+    def _save_ai_settings(self):
+        """保存 AI 配置"""
+        from config.settings_manager import SettingsManager
+        sm = SettingsManager.get_instance()
+
+        sm.set("ai.enabled", True, auto_save=False)
+        sm.set("ai.llm.base_url", self._ai_llm_url_var.get().strip(), auto_save=False)
+        sm.set("ai.llm.api_key", self._ai_llm_key_var.get().strip(), auto_save=False)
+        sm.set("ai.llm.model", self._ai_llm_model_var.get().strip(), auto_save=False)
+        sm.set("ai.vlm.base_url", self._ai_vlm_url_var.get().strip(), auto_save=False)
+        sm.set("ai.vlm.api_key", self._ai_vlm_key_var.get().strip(), auto_save=False)
+        sm.set("ai.vlm.model", self._ai_vlm_model_var.get().strip(), auto_save=True)
+
+        has_llm = bool(self._ai_llm_key_var.get().strip())
+        has_vlm = bool(self._ai_vlm_key_var.get().strip())
+        if has_llm and has_vlm:
+            status = "已保存 — LLM + VLM 均已配置"
+            color = self._dark_colors.get('success', '#22C55E')
+        elif has_llm:
+            status = "已保存 — 仅 LLM（VLM 未配置，将跳过屏幕感知）"
+            color = self._dark_colors.get('warning', '#F59E0B')
+        else:
+            status = "已保存 — 未配置 API Key，AI 助手不可用"
+            color = self._dark_colors.get('error', '#EF4444')
+        self._ai_status_label.configure(text=status, text_color=color)

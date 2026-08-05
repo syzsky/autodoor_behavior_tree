@@ -17,12 +17,15 @@ class LLMClient:
     """通用 LLM/VLM API 客户端（OpenAI 兼容协议）"""
 
     def __init__(self, base_url: str, api_key: str, model: str,
-                 timeout_ms: int = 30000, max_tokens: int = 4096):
+                 timeout_ms: int = 30000, max_tokens: int = 4096,
+                 json_mode: str = "auto"):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout_ms = timeout_ms
         self.max_tokens = max_tokens
+        # json_mode: "auto"（自动降级）/ "json_object"（始终启用）/ "none"（禁用）
+        self.json_mode = (json_mode or "auto").lower()
 
     @classmethod
     def from_config(cls, config_key: str = "llm") -> "LLMClient":
@@ -38,8 +41,9 @@ class LLMClient:
             base_url=sm.get(f"ai.{config_key}.base_url", "https://api.openai.com/v1"),
             api_key=sm.get(f"ai.{config_key}.api_key", ""),
             model=sm.get(f"ai.{config_key}.model", "gpt-4o"),
-            timeout_ms=sm.get(f"ai.{config_key}.timeout_ms", 30000),
+            timeout_ms=sm.get(f"ai.{config_key}.timeout_ms", 300000),
             max_tokens=sm.get(f"ai.{config_key}.max_tokens", 4096),
+            json_mode=sm.get(f"ai.{config_key}.json_mode", "auto"),
         )
 
     def chat(self, messages: List[Dict[str, Any]],
@@ -61,10 +65,24 @@ class LLMClient:
             "temperature": temperature,
             "max_tokens": self.max_tokens,
         }
-        if response_format:
-            payload["response_format"] = response_format
+        resp_format = response_format
+        # json_mode 为 "none" 时禁用 response_format
+        if self.json_mode == "none":
+            resp_format = None
+        if resp_format:
+            payload["response_format"] = resp_format
 
-        resp = self._post("/chat/completions", payload)
+        try:
+            resp = self._post("/chat/completions", payload)
+        except LLMClientError as e:
+            # auto 模式下，若模型不支持 json_object 则去除该参数重试一次
+            if (self.json_mode == "auto" and resp_format
+                    and resp_format.get("type") == "json_object"
+                    and self._is_json_object_unsupported(e)):
+                payload.pop("response_format", None)
+                resp = self._post("/chat/completions", payload)
+            else:
+                raise
         choice = resp["choices"][0]
         return {
             "content": choice["message"]["content"],
@@ -72,6 +90,13 @@ class LLMClient:
             "usage": resp.get("usage", {}),
             "raw": resp,
         }
+
+    @staticmethod
+    def _is_json_object_unsupported(error: LLMClientError) -> bool:
+        """判断错误是否为模型不支持 json_object"""
+        msg = str(error).lower()
+        return ("json_object" in msg and
+                ("not supported" in msg or "not valid" in msg or "invalidparameter" in msg))
 
     def chat_with_image(self, text_prompt: str, image_base64: str,
                         image_detail: str = "high",

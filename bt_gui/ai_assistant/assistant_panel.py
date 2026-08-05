@@ -4,18 +4,29 @@ from typing import Optional, Callable, Dict, Any
 
 from ..theme import Theme
 from .state import AssistantState
+from .stage_views import get_ai_font
+
+
+# 阶段步骤元数据：序号 + 标题 + 简短说明
+STEPS_INFO = [
+    (1, "意图分析：", "理解任务，拆解执行步骤"),
+    (2, "节点选型：", "匹配行为树的节点组合"),
+    (3, "屏幕感知：", "截图并识别界面元素"),
+    (4, "生成脚本：", "输出完整自动化脚本"),
+    (5, "试运行：", "实际执行并自动修正"),
+]
 
 
 class AssistantPanel(ctk.CTkFrame):
     """AI 助手主面板
 
-    可折叠的右侧侧栏，包含：
+    固定右侧侧栏，包含：
     - 阶段进度指示器
     - 当前阶段内容区
     - 导航按钮（上一步/下一步）
     """
 
-    PANEL_WIDTH = 380
+    PANEL_WIDTH = 460
 
     def __init__(self, master, editor, **kwargs):
         super().__init__(master, **kwargs)
@@ -44,8 +55,8 @@ class AssistantPanel(ctk.CTkFrame):
         self._title_label = ctk.CTkLabel(
             self._header,
             text="AI 助手",
-            font=Theme.get_font('lg'),
-            text_color=self._dark_colors['text_primary']
+            font=get_ai_font('lg'),
+            text_color=self._dark_colors['text_primary'],
         )
         self._title_label.pack(side="left")
 
@@ -54,7 +65,7 @@ class AssistantPanel(ctk.CTkFrame):
             text="×",
             width=30,
             height=30,
-            font=Theme.get_font('xl'),
+            font=get_ai_font('xl'),
             fg_color="transparent",
             hover_color=self._dark_colors['border'],
             command=self.hide
@@ -86,7 +97,7 @@ class AssistantPanel(ctk.CTkFrame):
             text="上一步",
             width=80,
             height=32,
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             fg_color=self._dark_colors['bg_tertiary'],
             hover_color=self._dark_colors['border'],
             command=self._go_back
@@ -98,7 +109,7 @@ class AssistantPanel(ctk.CTkFrame):
             text="确认并下一步",
             width=120,
             height=32,
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             fg_color=self._dark_colors['primary'],
             hover_color=self._dark_colors['primary_hover'],
             command=self._go_next
@@ -108,43 +119,92 @@ class AssistantPanel(ctk.CTkFrame):
         self._update_nav_buttons()
 
     def _create_progress_indicator(self):
-        """创建阶段进度指示器"""
-        self._progress_labels = []
-        stages = ["①意图", "②选型", "③感知", "④生成", "⑤试运行"]
+        """创建竖直步骤条：序号圆点 + 标题 + 简短说明
 
-        for i, name in enumerate(stages):
-            color = self._dark_colors['text_muted']  # 灰色（未开始）
-            label = ctk.CTkLabel(
+        每步单行（标题与说明同行），圆点列用连接线串联，
+        整体紧凑，突出显示当前/已完成步骤。
+        """
+        self._progress_frame.grid_columnconfigure(0, minsize=26)
+        self._progress_frame.grid_columnconfigure(1, weight=1)
+
+        self._step_widgets = []
+        for i, (num, title, desc) in enumerate(STEPS_INFO):
+            r = i * 2
+
+            # 圆形序号圆点
+            circle = ctk.CTkLabel(
                 self._progress_frame,
-                text=name,
-                font=Theme.get_font('xs'),
-                text_color=color,
+                text=str(num),
+                width=22,
+                height=22,
+                corner_radius=11,
+                font=get_ai_font('xs'),
+                text_color='#FFFFFF',
+                fg_color=self._dark_colors['bg_tertiary'],
             )
-            label.pack(side="left", padx=2)
-            self._progress_labels.append(label)
+            circle.grid(row=r, column=0, sticky="n", pady=(3, 0))
 
-            if i < len(stages) - 1:
-                arrow = ctk.CTkLabel(
+            # 标题 + 简短说明（同行）
+            text_col = ctk.CTkFrame(self._progress_frame, fg_color="transparent")
+            text_col.grid(row=r, column=1, sticky="nw", padx=(8, 0), pady=(2, 0))
+
+            title_label = ctk.CTkLabel(
+                text_col,
+                text=title,
+                font=get_ai_font('sm'),
+                text_color=self._dark_colors['text_primary'],
+                anchor="w",
+            )
+            title_label.pack(side="left")
+
+            desc_label = ctk.CTkLabel(
+                text_col,
+                text=desc,
+                font=get_ai_font('xs'),
+                text_color=self._dark_colors['text_muted'],
+                anchor="w",
+            )
+            desc_label.pack(side="left", padx=(8, 0))
+
+            self._step_widgets.append({
+                'circle': circle,
+                'title': title_label,
+                'desc': desc_label,
+            })
+
+            # 步骤间连接线（除最后一行）
+            if i < len(STEPS_INFO) - 1:
+                line = ctk.CTkFrame(
                     self._progress_frame,
-                    text="→",
-                    font=Theme.get_font('xs'),
-                    text_color=self._dark_colors['text_muted'],
+                    fg_color=self._dark_colors['border'],
                 )
-                arrow.pack(side="left", padx=1)
+                line.configure(width=2, height=10)
+                line.grid(row=r + 1, column=0, sticky="n")
 
     def _update_progress(self):
-        """更新进度指示器"""
-        for i, label in enumerate(self._progress_labels):
+        """更新步骤条（已完成=绿色，当前=蓝色高亮，待完成=灰色）"""
+        for i, w in enumerate(self._step_widgets):
             stage_num = i + 1
+            circle = w['circle']
+            title = w['title']
             if stage_num < self._state.stage:
                 # 已完成
-                label.configure(text_color=self._dark_colors.get('success', '#22C55E'))
+                circle.configure(
+                    fg_color=self._dark_colors.get('success', '#22C55E'))
+                title.configure(text_color=self._dark_colors['text_primary'])
+                w['desc'].configure(text_color=self._dark_colors['text_muted'])
             elif stage_num == self._state.stage:
                 # 当前
-                label.configure(text_color=self._dark_colors['primary'])
+                circle.configure(
+                    fg_color=self._dark_colors['primary'])
+                title.configure(text_color='#FFFFFF')
+                w['desc'].configure(
+                    text_color=self._dark_colors['text_secondary'])
             else:
                 # 未开始
-                label.configure(text_color=self._dark_colors['text_muted'])
+                circle.configure(fg_color=self._dark_colors['bg_tertiary'])
+                title.configure(text_color=self._dark_colors['text_muted'])
+                w['desc'].configure(text_color=self._dark_colors['text_muted'])
 
     def _update_nav_buttons(self):
         """更新导航按钮状态"""
@@ -197,27 +257,39 @@ class AssistantPanel(ctk.CTkFrame):
         ctk.CTkLabel(
             self._content_frame,
             text="输入任务描述开始创建行为树",
-            font=Theme.get_font('md'),
+            font=get_ai_font('md'),
+            text_color=self._dark_colors['text_primary'],
+        ).pack(pady=(20, 5))
+
+        ctk.CTkLabel(
+            self._content_frame,
+            text="例：打开网站，登录后点击签到按钮\n并循环检测签到是否成功",
+            font=get_ai_font('xs'),
             text_color=self._dark_colors['text_muted'],
-        ).pack(pady=40)
+            justify="center",
+        ).pack(pady=(0, 15))
 
         self._desc_entry = ctk.CTkTextbox(
             self._content_frame,
-            height=80,
-            font=Theme.get_font('sm'),
+            height=150,
+            font=get_ai_font('sm'),
             fg_color=self._dark_colors['bg_primary'],
+            border_width=1,
+            border_color=self._dark_colors.get('border', '#333'),
+            text_color=self._dark_colors['text_primary'],
         )
         self._desc_entry.pack(fill="x", pady=10)
 
-        ctk.CTkButton(
+        self._start_btn = ctk.CTkButton(
             self._content_frame,
             text="开始分析",
             height=32,
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             fg_color=self._dark_colors['primary'],
             hover_color=self._dark_colors['primary_hover'],
             command=self._start_analysis
-        ).pack(pady=10)
+        )
+        self._start_btn.pack(pady=10)
 
     def _show_stage1(self):
         """阶段①视图：意图分析结果"""
@@ -264,6 +336,24 @@ class AssistantPanel(ctk.CTkFrame):
         # 否则自动开始试运行
         self._run_test()
 
+    def _log_ai_error(self, stage_name: str, error: str):
+        """将 AI 助手面板错误输出到控制台
+
+        Args:
+            stage_name: 出错的阶段名称
+            error: 错误信息
+        """
+        msg = f"[AI助手][{stage_name}] 错误: {error}"
+        # 统一通过 LogManager.debug_print 输出（内部负责 print + 写文件），避免重复打印
+        try:
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(msg)
+        except Exception:
+            try:
+                print(msg, flush=True)
+            except Exception:
+                pass
+
     def _start_analysis(self):
         """开始意图分析"""
         desc = self._desc_entry.get("1.0", "end").strip()
@@ -274,15 +364,38 @@ class AssistantPanel(ctk.CTkFrame):
         from config.settings_manager import get_settings_manager
         sm = get_settings_manager()
         if not sm.get("ai.llm.api_key", ""):
+            self._log_ai_error("意图分析", "未配置 LLM API Key")
+            for widget in self._content_frame.winfo_children():
+                widget.destroy()
             ctk.CTkLabel(
                 self._content_frame,
-                text="未配置 AI API Key\n请在设置中配置",
+                text="未配置 LLM API Key",
+                font=get_ai_font('md'),
                 text_color=self._dark_colors.get('error', '#EF4444'),
-            ).pack(pady=20)
+            ).pack(pady=(30, 10))
+            ctk.CTkLabel(
+                self._content_frame,
+                text="请前往「设置」→「AI 助手配置」\n填写 API 地址、API Key 和模型名称\n保存后重新打开 AI 助手",
+                font=get_ai_font('sm'),
+                text_color=self._dark_colors['text_muted'],
+                justify="center",
+            ).pack(pady=(0, 15))
+            # 尝试切换到设置页
+            if self._editor and hasattr(self._editor, 'app') and hasattr(self._editor.app, '_switch_tab'):
+                ctk.CTkButton(
+                    self._content_frame,
+                    text="前往设置",
+                    height=32,
+                    font=get_ai_font('sm'),
+                    fg_color=self._dark_colors['primary'],
+                    hover_color=self._dark_colors['primary_hover'],
+                    command=lambda: self._editor.app._switch_tab('settings'),
+                ).pack(pady=5)
             return
 
         self._state.is_processing = True
-        self._next_btn.configure(state="disabled", text="分析中...")
+        # 置灰"开始分析"按钮并显示"分析中..."（右下角导航按钮保持原样）
+        self._start_btn.configure(state="disabled", text="分析中...")
 
         # 异步执行
         import threading
@@ -318,15 +431,22 @@ class AssistantPanel(ctk.CTkFrame):
     def _on_analysis_error(self):
         """意图分析失败"""
         self._state.is_processing = False
-        self._next_btn.configure(state="normal", text="确认并下一步")
+        # 恢复"开始分析"按钮（此时内容区即将被错误视图替换，按钮随后被销毁，此处仅兜底）
+        try:
+            self._start_btn.configure(state="normal", text="开始分析")
+        except Exception:
+            pass
         error = getattr(self._state, '_error', '未知错误')
+        self._log_ai_error("意图分析", error)
         for widget in self._content_frame.winfo_children():
             widget.destroy()
         ctk.CTkLabel(
             self._content_frame,
             text=f"分析失败: {error}",
             text_color=self._dark_colors.get('error', '#EF4444'),
-        ).pack(pady=20)
+            wraplength=320,
+            justify="left",
+        ).pack(pady=20, fill="x")
         ctk.CTkButton(
             self._content_frame,
             text="重试",
@@ -393,13 +513,16 @@ class AssistantPanel(ctk.CTkFrame):
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         error = getattr(self._state, '_error', '未知错误')
+        self._log_ai_error("屏幕感知", error)
         for widget in self._content_frame.winfo_children():
             widget.destroy()
         ctk.CTkLabel(
             self._content_frame,
             text=f"VLM 分析失败: {error}",
             text_color=self._dark_colors.get('error', '#EF4444'),
-        ).pack(pady=20)
+            wraplength=320,
+            justify="left",
+        ).pack(pady=20, fill="x")
         ctk.CTkButton(
             self._content_frame,
             text="重试",
@@ -451,17 +574,18 @@ class AssistantPanel(ctk.CTkFrame):
         for widget in self._content_frame.winfo_children():
             widget.destroy()
         errors = getattr(self._state, '_errors', [])
+        self._log_ai_error("JSON生成", "校验错误: " + "; ".join(errors))
         ctk.CTkLabel(
             self._content_frame,
             text=f"校验发现 {len(errors)} 个问题:",
-            font=Theme.get_font('sm'),
+            font=get_ai_font('sm'),
             text_color=self._dark_colors.get('error', '#EF4444'),
         ).pack(anchor="w", pady=10)
         for e in errors:
             ctk.CTkLabel(
                 self._content_frame,
                 text=f"  - {e}",
-                font=Theme.get_font('xs'),
+                font=get_ai_font('xs'),
                 text_color=self._dark_colors.get('error', '#EF4444'),
             ).pack(anchor="w")
 
@@ -470,13 +594,16 @@ class AssistantPanel(ctk.CTkFrame):
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         error = getattr(self._state, '_error', '未知错误')
+        self._log_ai_error("JSON生成", error)
         for widget in self._content_frame.winfo_children():
             widget.destroy()
         ctk.CTkLabel(
             self._content_frame,
             text=f"生成失败: {error}",
             text_color=self._dark_colors.get('error', '#EF4444'),
-        ).pack(pady=20)
+            wraplength=320,
+            justify="left",
+        ).pack(pady=20, fill="x")
 
     def _run_test(self):
         """执行试运行"""
@@ -527,13 +654,16 @@ class AssistantPanel(ctk.CTkFrame):
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="完成")
         error = getattr(self._state, '_error', '未知错误')
+        self._log_ai_error("试运行", error)
         for widget in self._content_frame.winfo_children():
             widget.destroy()
         ctk.CTkLabel(
             self._content_frame,
             text=f"试运行失败: {error}",
             text_color=self._dark_colors.get('error', '#EF4444'),
-        ).pack(pady=20)
+            wraplength=320,
+            justify="left",
+        ).pack(pady=20, fill="x")
         ctk.CTkButton(
             self._content_frame,
             text="重试",
@@ -560,6 +690,8 @@ class AssistantPanel(ctk.CTkFrame):
         """显示面板"""
         self._visible = True
         self.pack(side="right", fill="y")
+        # 渲染当前阶段视图（首次显示时为欢迎页）
+        self._show_stage_view()
 
     def hide(self):
         """隐藏面板"""
