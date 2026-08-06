@@ -3,7 +3,7 @@ import customtkinter as ctk
 from typing import Optional, Callable, Dict, Any
 
 from ..theme import Theme
-from .state import AssistantState
+from .state import AssistantState, AssistantMode
 from .stage_views import get_ai_font
 
 
@@ -75,6 +75,17 @@ class AssistantPanel(ctk.CTkFrame):
         )
         self._close_btn.pack(side="right")
 
+        # 模式切换（创建 / 分析修改）
+        self._mode_btn = ctk.CTkSegmentedButton(
+            self,
+            values=["创建", "分析修改"],
+            command=self._on_mode_change,
+            font=get_ai_font('sm'),
+        )
+        self._mode_btn.set("创建" if self._state.mode == AssistantMode.CREATE else "分析修改")
+        self._mode_btn.pack(fill="x", padx=Theme.DIMENSIONS['spacing_sm'],
+                            pady=(0, Theme.DIMENSIONS['spacing_sm']))
+
         # 阶段进度指示器
         self._progress_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._progress_frame.pack(fill="x", padx=Theme.DIMENSIONS['spacing_sm'],
@@ -120,6 +131,21 @@ class AssistantPanel(ctk.CTkFrame):
         self._next_btn.pack(side="right")
 
         self._update_nav_buttons()
+
+    def _on_mode_change(self, value):
+        """切换工作模式（创建 / 分析修改）"""
+        if value == "分析修改":
+            new_mode = AssistantMode.ANALYZE
+        else:
+            new_mode = AssistantMode.CREATE
+        self._state.mode = new_mode
+        self._state.stage = 0
+        # 清空模式专属字段
+        self._state.source_tree = None
+        self._state.modification_plan = None
+        self._state.analyze_result = None
+        self._update_nav_buttons()
+        self._show_stage_view()
 
     def _create_progress_indicator(self):
         """创建竖直步骤条：序号圆点 + 标题 + 简短说明
@@ -243,18 +269,32 @@ class AssistantPanel(ctk.CTkFrame):
 
         stage = self._state.stage
         try:
-            if stage == 0:
-                self._show_welcome()
-            elif stage == 1:
-                self._show_stage1()
-            elif stage == 2:
-                self._show_stage2()
-            elif stage == 3:
-                self._show_stage3()
-            elif stage == 4:
-                self._show_stage4()
-            elif stage == 5:
-                self._show_stage5()
+            if self._state.mode == AssistantMode.ANALYZE:
+                # 分析修改模式：0=读取树, 1=意图, 2=方案, 3=应用
+                if stage == 0:
+                    self._show_analyze_stage0()
+                elif stage == 1:
+                    self._show_analyze_stage1()
+                elif stage == 2:
+                    self._show_analyze_stage2()
+                elif stage == 3:
+                    self._show_analyze_stage3()
+                else:
+                    self._show_welcome()
+            else:
+                # 创建模式
+                if stage == 0:
+                    self._show_welcome()
+                elif stage == 1:
+                    self._show_stage1()
+                elif stage == 2:
+                    self._show_stage2()
+                elif stage == 3:
+                    self._show_stage3()
+                elif stage == 4:
+                    self._show_stage4()
+                elif stage == 5:
+                    self._show_stage5()
         except Exception as e:
             # 视图渲染异常：绝不能静默导致面板空白，输出日志并显示可见错误
             self._log_ai_error("视图渲染", repr(e))
@@ -330,7 +370,8 @@ class AssistantPanel(ctk.CTkFrame):
         from .stage_views import create_stage3_view
         create_stage3_view(
             self._content_frame, self._state, self._dark_colors,
-            on_screenshot=self._run_vlm_analysis
+            on_screenshot=self._run_vlm_analysis,
+            on_dialogue=self._run_dialogue_fill,
         )
 
     def _show_stage4(self):
@@ -359,6 +400,292 @@ class AssistantPanel(ctk.CTkFrame):
             return
         # 否则自动开始试运行
         self._run_test()
+
+    # ============ 分析修改模式 ============
+
+    def _show_analyze_stage0(self):
+        """分析阶段⓪：读取行为树"""
+        from .stage_views import create_analyze_stage0_view
+        create_analyze_stage0_view(
+            self._content_frame, self._state, self._dark_colors,
+            on_load_tree=self._load_source_tree,
+        )
+
+    def _load_source_tree(self):
+        """从画布读取当前行为树作为分析源"""
+        tree = None
+        if self._editor and hasattr(self._editor, 'get_tree_data'):
+            try:
+                tree = self._editor.get_tree_data()
+            except Exception as e:
+                self._log_ai_error("读取行为树", repr(e))
+                tree = None
+        if not tree:
+            self._log_ai_error("读取行为树", "当前画布为空，无法读取行为树")
+            return
+        self._state.source_tree = tree
+        self._show_stage_view()
+
+    def _show_analyze_stage1(self):
+        """分析阶段①：意图描述输入"""
+        from .stage_views import create_analyze_stage1_view
+        self._analyze_desc_entry = create_analyze_stage1_view(
+            self._content_frame, self._state, self._dark_colors,
+            on_start=self._start_tree_modify,
+        )
+
+    def _start_tree_modify(self):
+        """执行行为树修改"""
+        intent = self._analyze_desc_entry.get("1.0", "end").strip()
+        if not intent:
+            return
+        self._state.is_processing = True
+        self._next_btn.configure(state="disabled", text="分析中...")
+        source_tree = self._state.source_tree
+
+        import threading
+        def _run():
+            try:
+                from bt_cli.ai.tree_modifier import TreeModifier
+                plan = TreeModifier().modify(source_tree, intent)
+                self._state.modification_plan = plan
+                self.after(0, self._on_tree_modify_done)
+            except Exception as e:
+                self._state._error = str(e)
+                self.after(0, self._on_tree_modify_error)
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+    def _on_tree_modify_done(self):
+        """行为树修改完成"""
+        self._next_btn.configure(state="normal", text="确认并下一步")
+        self._state.is_processing = False
+        self._state.advance()  # 前进到阶段 2（方案）
+        self._update_nav_buttons()
+        self._show_stage_view()
+        summary = self._state.modification_plan.get("summary", "") if self._state.modification_plan else ""
+        self._log_ai_error("分析修改", f"修改完成: {summary}")
+
+    def _on_tree_modify_error(self):
+        """行为树修改失败"""
+        self._next_btn.configure(state="normal", text="确认并下一步")
+        self._state.is_processing = False
+        error = getattr(self._state, '_error', '未知错误')
+        self._log_ai_error("分析修改", error)
+        for widget in self._content_frame.winfo_children():
+            widget.destroy()
+        ctk.CTkLabel(
+            self._content_frame,
+            text=f"修改失败: {error}",
+            text_color=self._dark_colors.get('error', '#EF4444'),
+            wraplength=320,
+            justify="left",
+        ).pack(pady=20, fill="x")
+        ctk.CTkButton(
+            self._content_frame,
+            text="重试",
+            command=self._show_analyze_stage1,
+        ).pack(pady=10)
+
+    def _show_analyze_stage2(self):
+        """分析阶段②：修改方案"""
+        from .stage_views import create_analyze_stage2_view
+        create_analyze_stage2_view(self._content_frame, self._state, self._dark_colors)
+
+    def _show_analyze_stage3(self):
+        """分析阶段③：应用到画布"""
+        from .stage_views import create_analyze_stage3_view
+        create_analyze_stage3_view(
+            self._content_frame, self._state, self._dark_colors,
+            on_apply=self._apply_modified_tree,
+        )
+
+    def _apply_modified_tree(self):
+        """将修改后的行为树加载到画布"""
+        plan = self._state.modification_plan
+        if plan and plan.get("tree"):
+            if self._callbacks.get("on_tree_generated"):
+                self._callbacks["on_tree_generated"](plan["tree"])
+            self._log_ai_error("分析修改", "已应用修改后的行为树到画布")
+        else:
+            self._log_ai_error("分析修改", "没有可应用的修改方案")
+
+    # ============ 创建模式：语言补全回退 ============
+
+    def _run_dialogue_fill(self):
+        """用语言描述补全空参数（VLM 不可用时回退）"""
+        structure = self._state.structure
+        if not structure:
+            return
+        self._state.is_processing = True
+        self._next_btn.configure(state="disabled", text="生成问题中...")
+        task_context = self._state.plan.get("task_summary", "") if self._state.plan else ""
+
+        import threading
+        def _run():
+            try:
+                from bt_cli.ai.dialogue_filler import DialogueFiller
+                questions = DialogueFiller().propose_questions(structure, task_context)
+                self._state._dialogue_questions = questions
+                self.after(0, self._show_dialogue_form)
+            except Exception as e:
+                self._state._error = str(e)
+                self.after(0, self._on_dialogue_error)
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+    def _show_dialogue_form(self):
+        """渲染语言补全表单"""
+        self._state.is_processing = False
+        self._next_btn.configure(state="normal", text="确认并下一步")
+        questions = getattr(self._state, '_dialogue_questions', [])
+        for widget in self._content_frame.winfo_children():
+            widget.destroy()
+
+        if not questions:
+            # 没有空参数，直接前进到阶段④
+            self._state.filled_structure = self._state.structure
+            self._state.advance()
+            self._update_nav_buttons()
+            self._show_stage_view()
+            return
+
+        ctk.CTkLabel(
+            self._content_frame,
+            text="请用语言描述以下参数，AI 将据此补全",
+            font=get_ai_font('md'),
+            text_color=self._dark_colors['text_primary'],
+        ).pack(pady=(10, 10))
+
+        self._dialogue_entries = []
+        for q in questions:
+            card = ctk.CTkFrame(
+                self._content_frame,
+                fg_color=self._dark_colors['bg_tertiary'],
+                corner_radius=8,
+            )
+            card.pack(fill="x", pady=3)
+
+            header = f"{q.get('node_id', '?')}.{q.get('param', '?')}"
+            ctk.CTkLabel(
+                card,
+                text=header,
+                font=get_ai_font('sm'),
+                text_color=self._dark_colors['text_primary'],
+                anchor="w",
+            ).pack(anchor="w", padx=10, pady=(6, 2))
+
+            question = q.get("question", "")
+            if question:
+                ctk.CTkLabel(
+                    card,
+                    text=question,
+                    font=get_ai_font('xs'),
+                    text_color=self._dark_colors['text_muted'],
+                    anchor="w",
+                    wraplength=300,
+                ).pack(anchor="w", padx=10)
+
+            entry = ctk.CTkTextbox(
+                card,
+                height=60,
+                font=get_ai_font('sm'),
+                fg_color=self._dark_colors['bg_primary'],
+                border_width=1,
+                border_color=self._dark_colors.get('border', '#333'),
+                text_color=self._dark_colors['text_primary'],
+            )
+            entry.pack(fill="x", padx=10, pady=(4, 8))
+            hint = q.get("hint", "")
+            if hint:
+                entry.insert("1.0", hint)
+            self._dialogue_entries.append(entry)
+
+        ctk.CTkButton(
+            self._content_frame,
+            text="确认补全",
+            height=32,
+            font=get_ai_font('sm'),
+            fg_color=self._dark_colors['primary'],
+            hover_color=self._dark_colors['primary_hover'],
+            command=self._confirm_dialogue,
+        ).pack(pady=10)
+
+    def _confirm_dialogue(self):
+        """收集答案并补全结构"""
+        questions = getattr(self._state, '_dialogue_questions', [])
+        answers = []
+        for i, q in enumerate(questions):
+            raw = ""
+            if i < len(self._dialogue_entries):
+                raw = self._dialogue_entries[i].get("1.0", "end").strip()
+            if not raw:
+                continue
+            answers.append({
+                "node_id": q.get("node_id"),
+                "param": q.get("param"),
+                "suggested_value": self._parse_answer(raw),
+            })
+
+        try:
+            from bt_cli.ai.dialogue_filler import DialogueFiller
+            filled = DialogueFiller().resolve_from_answers(self._state.structure, answers)
+        except Exception as e:
+            self._state._error = str(e)
+            self._log_ai_error("语言补全", str(e))
+            self.after(0, self._on_dialogue_error)
+            return
+
+        self._state.filled_structure = filled
+        self._state.advance()  # 前进到阶段④
+        self._update_nav_buttons()
+        self._show_stage_view()
+
+    def _on_dialogue_error(self):
+        """语言补全失败"""
+        self._state.is_processing = False
+        self._next_btn.configure(state="normal", text="确认并下一步")
+        error = getattr(self._state, '_error', '未知错误')
+        for widget in self._content_frame.winfo_children():
+            widget.destroy()
+        ctk.CTkLabel(
+            self._content_frame,
+            text=f"语言补全失败: {error}",
+            text_color=self._dark_colors.get('error', '#EF4444'),
+            wraplength=320,
+            justify="left",
+        ).pack(pady=20, fill="x")
+        ctk.CTkButton(
+            self._content_frame,
+            text="重试",
+            command=self._run_dialogue_fill,
+        ).pack(pady=10)
+
+    @staticmethod
+    def _parse_answer(value):
+        """尝试将答案解析为 int/float/list，否则保留为字符串"""
+        s = str(value).strip()
+        if not s:
+            return s
+        import json
+        # 尝试 JSON（可覆盖 int/float/list/dict）
+        try:
+            return json.loads(s)
+        except (ValueError, TypeError):
+            pass
+        # 尝试 int
+        try:
+            return int(s)
+        except ValueError:
+            pass
+        # 尝试 float
+        try:
+            return float(s)
+        except ValueError:
+            pass
+        return s
 
     def _log_ai_error(self, stage_name: str, error: str):
         """将 AI 助手面板错误输出到控制台
