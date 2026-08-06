@@ -50,13 +50,17 @@
   "questions": [
     {
       "node_id": "node_detect",
+      "node_type": "OCRConditionNode",
       "param": "region",
-      "question": "检测区域在哪里？请描述该区域在屏幕上的大致位置（例如：左上角、右上角、某个按钮所在区域）。"
+      "question": "检测区域在哪里？请描述该区域在屏幕上的大致位置（例如：左上角、右上角、某个按钮所在区域）。",
+      "hint": "请描述该目标元素在屏幕上的位置，例如左上角、右上角或某个按钮所在区域。"
     },
     {
       "node_id": "node_detect",
+      "node_type": "OCRConditionNode",
       "param": "keywords",
-      "question": "要识别什么文字？请描述需要识别到的按钮或文字内容（例如：签到、登录）。"
+      "question": "要识别什么文字？请描述需要识别到的按钮或文字内容（例如：签到、登录）。",
+      "hint": "请描述需要识别到的按钮或文字内容，例如签到、登录。"
     }
   ]
 }
@@ -66,7 +70,9 @@
 
 - `node_id`（string）：节点 ID，必须与参数清单中的 node_id 一致
 - `param`（string）：参数名，必须与参数清单中的 param 一致
+- `node_type`（string）：节点类型，必须与参数清单中的 node_type 一致
 - `question`（string）：引导用户用语言描述该参数的问题，问题应具体、可回答，并可给出示例格式
+- `hint`（string）：引导提示/示例，用简短一句话提示用户应如何描述该参数（如"请描述该目标元素在屏幕上的位置"、"请列出需要识别的文字内容"）
 
 ## 问题生成规则
 

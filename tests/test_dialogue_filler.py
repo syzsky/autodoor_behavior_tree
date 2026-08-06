@@ -25,6 +25,10 @@ def test_propose_questions_returns_one_per_empty_param():
         out = filler.propose_questions(_structure(), "任务")
         assert len(out) == 2
         assert out[0]["param"] == "region"
+        assert "node_type" in out[0]
+        assert "hint" in out[0]
+        assert out[0]["node_type"] == "OCRConditionNode"
+        assert out[1]["node_type"] == "OCRConditionNode"
 
 
 def test_resolve_from_answers_fills_and_clears_empty():

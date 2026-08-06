@@ -30,7 +30,7 @@ class DialogueFiller:
             task_context: 任务上下文描述
 
         Returns:
-            引导问题列表 [{"node_id", "param", "question"}]
+            引导问题列表 [{"node_id", "node_type", "param", "question", "hint"}]
 
         Raises:
             DialogueFillError: 补全失败
@@ -59,9 +59,29 @@ class DialogueFiller:
             raise DialogueFillError(f"LLM 请求失败: {e}") from e
         try:
             data = json.loads(result["content"])
-            return data.get("questions", [])
+            raw_questions = data.get("questions", [])
         except json.JSONDecodeError as e:
             raise DialogueFillError(f"LLM 返回的 JSON 无效: {e}") from e
+        return self._backfill(raw_questions, fill_requests)
+
+    def _backfill(self, questions: List[Dict[str, Any]],
+                  fill_requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """将 LLM 输出的问题回填为稳定的五字段契约。
+
+        以 (node_id, param) 为键，从 fill_requests 中补齐 node_type；
+        hint 缺失时生成默认引导提示。
+        """
+        meta = {(r["node_id"], r["param"]): r for r in fill_requests}
+        for q in questions:
+            if not isinstance(q, dict):
+                continue
+            node_id = q.get("node_id")
+            param = q.get("param")
+            req = meta.get((node_id, param), {})
+            q.setdefault("node_type", req.get("node_type", ""))
+            if not q.get("hint"):
+                q["hint"] = "请描述该目标元素的位置或特征"
+        return [q for q in questions if isinstance(q, dict)]
 
     def resolve_from_answers(self, structure: Dict[str, Any],
                              answers: List[Dict[str, Any]]) -> Dict[str, Any]:
