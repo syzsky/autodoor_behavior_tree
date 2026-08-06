@@ -203,7 +203,7 @@ class SettingsManager:
                 "base_url": "https://api.openai.com/v1",
                 "api_key": "",
                 "model": "gpt-4o",
-                "timeout_ms": 30000,
+                "timeout_ms": 300000,
                 "max_tokens": 4096,
                 "image_detail": "high",
             },
@@ -308,6 +308,12 @@ class SettingsManager:
                 input_settings["keyboard_method"] = old_method
             if "mouse_method" not in input_settings:
                 input_settings["mouse_method"] = old_method
+
+        # 迁移 AI LLM/VLM 超时：旧版本默认 30000ms 过短，升级为 300000ms（5 分钟）
+        for ai_key in ("llm", "vlm"):
+            section = self.settings.get("ai", {}).get(ai_key)
+            if isinstance(section, dict) and section.get("timeout_ms") == 30000:
+                section["timeout_ms"] = 300000
 
         if config_version != self.VERSION:
             self.settings["version"] = self.VERSION

@@ -26,7 +26,7 @@ class AssistantPanel(ctk.CTkFrame):
     - 导航按钮（上一步/下一步）
     """
 
-    PANEL_WIDTH = 460
+    PANEL_WIDTH = 400
 
     def __init__(self, master, editor, **kwargs):
         super().__init__(master, **kwargs)
@@ -42,6 +42,9 @@ class AssistantPanel(ctk.CTkFrame):
             corner_radius=0,
             width=self.PANEL_WIDTH,
         )
+        # 固定面板宽度：关闭 pack 尺寸传播，使 configure(width=...) 真正生效，
+        # 否则面板实际宽度会塌缩为内容自然宽度（约 258px），导致 VLM 等阶段布局错乱。
+        self.pack_propagate(False)
 
         self._create_ui()
 
@@ -239,21 +242,38 @@ class AssistantPanel(ctk.CTkFrame):
             widget.destroy()
 
         stage = self._state.stage
-        if stage == 0:
-            self._show_welcome()
-        elif stage == 1:
-            self._show_stage1()
-        elif stage == 2:
-            self._show_stage2()
-        elif stage == 3:
-            self._show_stage3()
-        elif stage == 4:
-            self._show_stage4()
-        elif stage == 5:
-            self._show_stage5()
+        try:
+            if stage == 0:
+                self._show_welcome()
+            elif stage == 1:
+                self._show_stage1()
+            elif stage == 2:
+                self._show_stage2()
+            elif stage == 3:
+                self._show_stage3()
+            elif stage == 4:
+                self._show_stage4()
+            elif stage == 5:
+                self._show_stage5()
+        except Exception as e:
+            # 视图渲染异常：绝不能静默导致面板空白，输出日志并显示可见错误
+            self._log_ai_error("视图渲染", repr(e))
+            try:
+                ctk.CTkLabel(
+                    self._content_frame,
+                    text=f"视图渲染失败: {e}",
+                    text_color=self._dark_colors.get('error', '#EF4444'),
+                    wraplength=320,
+                    justify="left",
+                ).pack(pady=20, fill="x")
+            except Exception:
+                pass
 
     def _show_welcome(self):
-        """显示欢迎页"""
+        """显示欢迎页（先清空内容区，避免叠加残留报错）"""
+        for widget in self._content_frame.winfo_children():
+            widget.destroy()
+
         ctk.CTkLabel(
             self._content_frame,
             text="输入任务描述开始创建行为树",
@@ -279,6 +299,10 @@ class AssistantPanel(ctk.CTkFrame):
             text_color=self._dark_colors['text_primary'],
         )
         self._desc_entry.pack(fill="x", pady=10)
+
+        # 恢复上次输入的任务描述（重试时保留内容）
+        if getattr(self, '_last_desc', None):
+            self._desc_entry.insert("1.0", self._last_desc)
 
         self._start_btn = ctk.CTkButton(
             self._content_frame,
@@ -359,6 +383,8 @@ class AssistantPanel(ctk.CTkFrame):
         desc = self._desc_entry.get("1.0", "end").strip()
         if not desc:
             return
+        # 缓存本次输入，重试时保留内容
+        self._last_desc = desc
 
         # 检查 API Key
         from config.settings_manager import get_settings_manager

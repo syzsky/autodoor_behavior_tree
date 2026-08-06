@@ -86,10 +86,11 @@ def test_ai_config_defaults():
     assert sm.get("ai.enabled") == False
     assert sm.get("ai.llm.base_url") == "https://api.openai.com/v1"
     assert sm.get("ai.llm.model") == "gpt-4o"
-    assert sm.get("ai.llm.timeout_ms") == 30000
+    assert sm.get("ai.llm.timeout_ms") == 300000
     assert sm.get("ai.llm.max_tokens") == 4096
     assert sm.get("ai.vlm.base_url") == "https://api.openai.com/v1"
     assert sm.get("ai.vlm.model") == "gpt-4o"
+    assert sm.get("ai.vlm.timeout_ms") == 300000
     assert sm.get("ai.vlm.image_detail") == "high"
     assert sm.get("ai.iteration.max_rounds") == 3
     assert sm.get("ai.iteration.test_timeout_ms") == 30000
@@ -109,3 +110,30 @@ def test_ai_config_set_and_get():
 
     assert sm.get("ai.llm.base_url") == "http://localhost:11434/v1"
     assert sm.get("ai.llm.model") == "qwen2.5"
+
+
+def test_ai_timeout_migration_from_30000():
+    """旧版本残留的 ai.llm/ai.vlm.timeout_ms=30000 应自动升级为 300000"""
+    import json
+    from config.settings_manager import SettingsManager
+
+    _reset_settings_singleton()
+
+    config_dir = _test_config_dir()
+    shutil.rmtree(config_dir, ignore_errors=True)
+    os.makedirs(config_dir, exist_ok=True)
+
+    # 写入一份含旧超时值 30000 的配置文件
+    legacy = {
+        "version": "1.0.0",
+        "ai": {
+            "llm": {"timeout_ms": 30000},
+            "vlm": {"timeout_ms": 30000},
+        },
+    }
+    with open(os.path.join(config_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump(legacy, f, ensure_ascii=False)
+
+    sm = SettingsManager(config_dir=config_dir)
+    assert sm.get("ai.llm.timeout_ms") == 300000
+    assert sm.get("ai.vlm.timeout_ms") == 300000

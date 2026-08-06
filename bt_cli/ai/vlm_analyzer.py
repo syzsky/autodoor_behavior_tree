@@ -56,6 +56,13 @@ class VLMAnalyzer:
         system_prompt = self._load_prompt()
         user_prompt = self._build_user_prompt(fill_requests, task_context)
 
+        self._debug("[VLM] 开始屏幕感知分析")
+        self._debug(
+            f"[VLM] 配置: base_url={self._vlm.base_url} | model={self._vlm.model}"
+        )
+        self._debug(f"[VLM] 待填充参数数={len(fill_requests)} | 截图={screenshot_path}")
+        self._debug(f"[VLM] 图片大小={len(image_base64)}字符 | user_prompt={user_prompt[:200]}")
+
         try:
             result = self._vlm.chat_with_image(
                 text_prompt=user_prompt,
@@ -64,16 +71,20 @@ class VLMAnalyzer:
                 system_prompt=system_prompt,
             )
         except Exception as e:
+            self._debug(f"[VLM] 请求失败: {e}")
             raise VLMAnalysisError(f"VLM 请求失败: {e}") from e
 
+        self._debug(f"[VLM] 请求成功，原始返回内容: {result['content'][:300]}")
         try:
             data = json.loads(result["content"])
             suggestions = data.get("suggestions", [])
         except json.JSONDecodeError as e:
+            self._debug(f"[VLM] JSON 解析失败: {e}")
             raise VLMAnalysisError(
                 f"VLM 返回的 JSON 无效: {e}\n原始内容: {result['content'][:500]}"
             ) from e
 
+        self._debug(f"[VLM] 解析到建议值 {len(suggestions)} 条")
         return suggestions
 
     def fill_structure(self, structure: Dict[str, Any],
@@ -153,3 +164,14 @@ class VLMAnalyzer:
         """加载系统提示词"""
         with open(self.PROMPT_FILE, "r", encoding="utf-8") as f:
             return f.read()
+
+    def _debug(self, message: str) -> None:
+        """输出 VLM 调试日志"""
+        try:
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(message)
+        except Exception:
+            try:
+                print(message, flush=True)
+            except Exception:
+                pass

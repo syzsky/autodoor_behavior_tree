@@ -161,7 +161,7 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
             text="点击下方按钮截取屏幕\nVLM 将分析截图并自动填充参数",
             font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
-        ).pack(pady=20)
+        ).pack(pady=(30, 10))
 
         if on_screenshot:
             ctk.CTkButton(
@@ -193,6 +193,12 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
         card.pack(fill="x", pady=3)
 
         confidence = sug.get("confidence", 0)
+        # 健壮性：VLM 返回的 confidence 可能是字符串（如 "0.95"），
+        # 直接与数值比较会抛 TypeError，导致整个阶段视图渲染中断、面板空白。
+        try:
+            confidence = float(confidence)
+        except (ValueError, TypeError):
+            confidence = 0.0
         conf_color = colors.get('success', '#22C55E') if confidence >= 0.8 else colors.get('warning', '#F59E0B')
         conf_mark = "✓" if confidence >= 0.8 else "⚠"
 

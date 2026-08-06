@@ -84,12 +84,37 @@ class LLMClient:
             else:
                 raise
         choice = resp["choices"][0]
+        content = choice["message"]["content"] or ""
         return {
-            "content": choice["message"]["content"],
+            "content": self._strip_code_fence(content),
             "model": resp.get("model", self.model),
             "usage": resp.get("usage", {}),
             "raw": resp,
         }
+
+    @staticmethod
+    def _strip_code_fence(text: str) -> str:
+        """剥离 LLM 返回内容中的 markdown 代码围栏（```json / ``` 等）
+
+        部分模型即使指定了 json_object 仍会返回 ```json ... ``` 包裹的内容，
+        直接 json.loads 会因首字符是反引号而失败。此函数提取围栏内的 JSON 文本。
+        """
+        if not isinstance(text, str):
+            return text
+        stripped = text.strip()
+        fence = "```"
+        if stripped.startswith(fence):
+            # 去掉开头的 ``` 及紧随其后的语言标识（如 json）
+            first_nl = stripped.find("\n")
+            if first_nl == -1:
+                end = stripped.find(fence, len(fence))
+                return stripped[len(fence):end].strip() if end != -1 else stripped
+            body = stripped[first_nl + 1:]
+            end = body.rfind(fence)
+            if end != -1:
+                body = body[:end]
+            return body.strip()
+        return text
 
     @staticmethod
     def _is_json_object_unsupported(error: LLMClientError) -> bool:
@@ -135,24 +160,50 @@ class LLMClient:
         return self.chat(messages, temperature=temperature)
 
     def _post(self, path: str, payload: dict) -> dict:
-        """发送 POST 请求"""
-        url = f"{self.base_url}{path}"
+        """发送 POST 请求
+
+        Args:
+            path: 端点路径，如 "/chat/completions"
+            payload: 请求体
+
+        当 base_url 已包含完整端点（如以 /chat/completions 或 /images/generations
+        结尾）时，直接使用整个 base_url，避免重复拼接路径。
+        """
+        url = self.base_url if self.base_url.endswith(path) else f"{self.base_url}{path}"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
+        self._debug(f"[LLM] POST {url} | model={self.model} | timeout={self.timeout_ms}ms")
         try:
             resp = requests.post(
                 url, json=payload, headers=headers,
                 timeout=self.timeout_ms / 1000,
             )
+            self._debug(f"[LLM] HTTP {resp.status_code} | body={resp.text[:300]}")
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.HTTPError as e:
-            raise LLMClientError(f"API 返回错误: {resp.status_code} {resp.text[:500]}") from e
+            detail = f"{resp.status_code} {resp.text[:500]}"
+            self._debug(f"[LLM] HTTPError {detail}")
+            raise LLMClientError(f"API 返回错误: {detail}") from e
         except requests.exceptions.ConnectionError as e:
+            self._debug(f"[LLM] ConnectionError 无法连接到 API: {url}")
             raise LLMClientError(f"无法连接到 API: {url}") from e
         except requests.exceptions.Timeout as e:
+            self._debug(f"[LLM] Timeout ({self.timeout_ms}ms)")
             raise LLMClientError(f"API 请求超时 ({self.timeout_ms}ms)") from e
         except Exception as e:
+            self._debug(f"[LLM] {type(e).__name__}: {e}")
             raise LLMClientError(f"API 请求失败: {e}") from e
+
+    def _debug(self, message: str) -> None:
+        """输出调试日志（LLM/VLM 请求链路）"""
+        try:
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(message)
+        except Exception:
+            try:
+                print(message, flush=True)
+            except Exception:
+                pass
