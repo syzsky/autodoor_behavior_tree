@@ -16,6 +16,10 @@ STEPS_INFO = [
     (5, "试运行：", "实际执行并自动修正"),
 ]
 
+# 模式标签常量（用于分段按钮取值、初始设置及模式切换比较）
+MODE_LABEL_CREATE = "创建"
+MODE_LABEL_ANALYZE = "分析修改"
+
 
 class AssistantPanel(ctk.CTkFrame):
     """AI 助手主面板
@@ -35,6 +39,8 @@ class AssistantPanel(ctk.CTkFrame):
         self._callbacks: Dict[str, Optional[Callable]] = {}
         self._visible = False
         self._stage_views = {}
+        # 流程令牌：切换模式时自增，用于忽略过期后台线程的回调
+        self._flow_token = 0
 
         self._dark_colors = Theme.get_dark_colors()
         self.configure(
@@ -78,11 +84,11 @@ class AssistantPanel(ctk.CTkFrame):
         # 模式切换（创建 / 分析修改）
         self._mode_btn = ctk.CTkSegmentedButton(
             self,
-            values=["创建", "分析修改"],
+            values=[MODE_LABEL_CREATE, MODE_LABEL_ANALYZE],
             command=self._on_mode_change,
             font=get_ai_font('sm'),
         )
-        self._mode_btn.set("创建" if self._state.mode == AssistantMode.CREATE else "分析修改")
+        self._mode_btn.set(MODE_LABEL_CREATE if self._state.mode == AssistantMode.CREATE else MODE_LABEL_ANALYZE)
         self._mode_btn.pack(fill="x", padx=Theme.DIMENSIONS['spacing_sm'],
                             pady=(0, Theme.DIMENSIONS['spacing_sm']))
 
@@ -134,10 +140,14 @@ class AssistantPanel(ctk.CTkFrame):
 
     def _on_mode_change(self, value):
         """切换工作模式（创建 / 分析修改）"""
-        if value == "分析修改":
+        if value == MODE_LABEL_ANALYZE:
             new_mode = AssistantMode.ANALYZE
         else:
             new_mode = AssistantMode.CREATE
+        # 递增流程令牌，使在途后台线程的回调（_on_*_done/_on_*_error）被忽略，
+        # 避免旧模式的回调污染新模式的阶段/导航状态或泄漏 is_processing。
+        self._flow_token += 1
+        self._state.is_processing = False
         self._state.mode = new_mode
         self._state.stage = 0
         # 清空模式专属字段
@@ -418,8 +428,9 @@ class AssistantPanel(ctk.CTkFrame):
             try:
                 tree = self._editor.get_tree_data()
             except Exception as e:
+                # 异常已有专属日志，不再走下方"画布为空"的通用提示
                 self._log_ai_error("读取行为树", repr(e))
-                tree = None
+                return
         if not tree:
             self._log_ai_error("读取行为树", "当前画布为空，无法读取行为树")
             return
@@ -442,6 +453,7 @@ class AssistantPanel(ctk.CTkFrame):
         self._state.is_processing = True
         self._next_btn.configure(state="disabled", text="分析中...")
         source_tree = self._state.source_tree
+        token = self._flow_token
 
         import threading
         def _run():
@@ -449,30 +461,34 @@ class AssistantPanel(ctk.CTkFrame):
                 from bt_cli.ai.tree_modifier import TreeModifier
                 plan = TreeModifier().modify(source_tree, intent)
                 self._state.modification_plan = plan
-                self.after(0, self._on_tree_modify_done)
+                self.after(0, self._on_tree_modify_done, token)
             except Exception as e:
                 self._state._error = str(e)
-                self.after(0, self._on_tree_modify_error)
+                self.after(0, self._on_tree_modify_error, token)
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
 
-    def _on_tree_modify_done(self):
+    def _on_tree_modify_done(self, token=None):
         """行为树修改完成"""
+        if token is not None and token != self._flow_token:
+            return
         self._next_btn.configure(state="normal", text="确认并下一步")
         self._state.is_processing = False
         self._state.advance()  # 前进到阶段 2（方案）
         self._update_nav_buttons()
         self._show_stage_view()
         summary = self._state.modification_plan.get("summary", "") if self._state.modification_plan else ""
-        self._log_ai_error("分析修改", f"修改完成: {summary}")
+        self._log_ai_info(MODE_LABEL_ANALYZE, f"修改完成: {summary}")
 
-    def _on_tree_modify_error(self):
+    def _on_tree_modify_error(self, token=None):
         """行为树修改失败"""
+        if token is not None and token != self._flow_token:
+            return
         self._next_btn.configure(state="normal", text="确认并下一步")
         self._state.is_processing = False
         error = getattr(self._state, '_error', '未知错误')
-        self._log_ai_error("分析修改", error)
+        self._log_ai_error(MODE_LABEL_ANALYZE, error)
         for widget in self._content_frame.winfo_children():
             widget.destroy()
         ctk.CTkLabel(
@@ -505,11 +521,14 @@ class AssistantPanel(ctk.CTkFrame):
         """将修改后的行为树加载到画布"""
         plan = self._state.modification_plan
         if plan and plan.get("tree"):
+            tree = plan["tree"]
+            # 与 _on_generate_done 保持一致，先写入 tree_data 再触发回调
+            self._state.tree_data = tree
             if self._callbacks.get("on_tree_generated"):
-                self._callbacks["on_tree_generated"](plan["tree"])
-            self._log_ai_error("分析修改", "已应用修改后的行为树到画布")
+                self._callbacks["on_tree_generated"](tree)
+            self._log_ai_info(MODE_LABEL_ANALYZE, "已应用修改后的行为树到画布")
         else:
-            self._log_ai_error("分析修改", "没有可应用的修改方案")
+            self._log_ai_error(MODE_LABEL_ANALYZE, "没有可应用的修改方案")
 
     # ============ 创建模式：语言补全回退 ============
 
@@ -521,6 +540,7 @@ class AssistantPanel(ctk.CTkFrame):
         self._state.is_processing = True
         self._next_btn.configure(state="disabled", text="生成问题中...")
         task_context = self._state.plan.get("task_summary", "") if self._state.plan else ""
+        token = self._flow_token
 
         import threading
         def _run():
@@ -528,16 +548,18 @@ class AssistantPanel(ctk.CTkFrame):
                 from bt_cli.ai.dialogue_filler import DialogueFiller
                 questions = DialogueFiller().propose_questions(structure, task_context)
                 self._state._dialogue_questions = questions
-                self.after(0, self._show_dialogue_form)
+                self.after(0, self._show_dialogue_form, token)
             except Exception as e:
                 self._state._error = str(e)
-                self.after(0, self._on_dialogue_error)
+                self.after(0, self._on_dialogue_error, token)
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
 
-    def _show_dialogue_form(self):
+    def _show_dialogue_form(self, token=None):
         """渲染语言补全表单"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         questions = getattr(self._state, '_dialogue_questions', [])
@@ -634,8 +656,8 @@ class AssistantPanel(ctk.CTkFrame):
             filled = DialogueFiller().resolve_from_answers(self._state.structure, answers)
         except Exception as e:
             self._state._error = str(e)
-            self._log_ai_error("语言补全", str(e))
-            self.after(0, self._on_dialogue_error)
+            self._log_ai_error(MODE_LABEL_CREATE, str(e))
+            self.after(0, self._on_dialogue_error, self._flow_token)
             return
 
         self._state.filled_structure = filled
@@ -643,8 +665,10 @@ class AssistantPanel(ctk.CTkFrame):
         self._update_nav_buttons()
         self._show_stage_view()
 
-    def _on_dialogue_error(self):
+    def _on_dialogue_error(self, token=None):
         """语言补全失败"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         error = getattr(self._state, '_error', '未知错误')
@@ -695,6 +719,20 @@ class AssistantPanel(ctk.CTkFrame):
             error: 错误信息
         """
         msg = f"[AI助手][{stage_name}] 错误: {error}"
+        self._log_plain(stage_name, msg)
+
+    def _log_ai_info(self, stage_name: str, message: str):
+        """将 AI 助手面板的信息级日志输出到控制台（无"错误:"前缀）
+
+        Args:
+            stage_name: 阶段名称
+            message: 信息内容
+        """
+        msg = f"[AI助手][{stage_name}] {message}"
+        self._log_plain(stage_name, msg)
+
+    def _log_plain(self, stage_name: str, msg: str):
+        """统一输出日志：优先 LogManager.debug_print，失败回退到 print"""
         # 统一通过 LogManager.debug_print 输出（内部负责 print + 写文件），避免重复打印
         try:
             from bt_utils.log_manager import LogManager
@@ -751,6 +789,7 @@ class AssistantPanel(ctk.CTkFrame):
         self._start_btn.configure(state="disabled", text="分析中...")
 
         # 异步执行
+        token = self._flow_token
         import threading
         def _run():
             try:
@@ -766,23 +805,27 @@ class AssistantPanel(ctk.CTkFrame):
                 self._state.structure = structure
 
                 # 回到主线程更新 UI
-                self.after(0, self._on_analysis_done)
+                self.after(0, self._on_analysis_done, token)
             except Exception as e:
                 self._state._error = str(e)
-                self.after(0, self._on_analysis_error)
+                self.after(0, self._on_analysis_error, token)
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
 
-    def _on_analysis_done(self):
+    def _on_analysis_done(self, token=None):
         """意图分析完成"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._state.advance()  # 自动前进到阶段 0 → 1
         self._update_nav_buttons()
         self._show_stage_view()
 
-    def _on_analysis_error(self):
+    def _on_analysis_error(self, token=None):
         """意图分析失败"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         # 恢复"开始分析"按钮（此时内容区即将被错误视图替换，按钮随后被销毁，此处仅兜底）
         try:
@@ -820,6 +863,7 @@ class AssistantPanel(ctk.CTkFrame):
 
         self._state.is_processing = True
         self._next_btn.configure(state="disabled", text="分析中...")
+        token = self._flow_token
 
         import threading
         def _run():
@@ -843,16 +887,18 @@ class AssistantPanel(ctk.CTkFrame):
                 filled = analyzer.fill_structure(self._state.structure, suggestions)
                 self._state.filled_structure = filled
 
-                self.after(0, self._on_vlm_done)
+                self.after(0, self._on_vlm_done, token)
             except Exception as e:
                 self._state._error = str(e)
-                self.after(0, self._on_vlm_error)
+                self.after(0, self._on_vlm_error, token)
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
 
-    def _on_vlm_done(self):
+    def _on_vlm_done(self, token=None):
         """VLM 分析完成"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         self._show_stage_view()
@@ -861,8 +907,10 @@ class AssistantPanel(ctk.CTkFrame):
         if self._callbacks.get("on_vlm_suggestions"):
             self._callbacks["on_vlm_suggestions"](getattr(self._state, '_suggestions', []))
 
-    def _on_vlm_error(self):
+    def _on_vlm_error(self, token=None):
         """VLM 分析失败"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         error = getattr(self._state, '_error', '未知错误')
@@ -890,6 +938,7 @@ class AssistantPanel(ctk.CTkFrame):
 
         self._state.is_processing = True
         self._next_btn.configure(state="disabled", text="生成中...")
+        token = self._flow_token
 
         import threading
         def _run():
@@ -899,19 +948,21 @@ class AssistantPanel(ctk.CTkFrame):
                 tree_data, errors = gen.generate_and_validate(structure)
                 if errors:
                     self._state._errors = errors
-                    self.after(0, self._on_generate_errors)
+                    self.after(0, self._on_generate_errors, token)
                 else:
                     self._state.tree_data = tree_data
-                    self.after(0, self._on_generate_done)
+                    self.after(0, self._on_generate_done, token)
             except Exception as e:
                 self._state._error = str(e)
-                self.after(0, self._on_generate_error)
+                self.after(0, self._on_generate_error, token)
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
 
-    def _on_generate_done(self):
+    def _on_generate_done(self, token=None):
         """生成完成"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         self._show_stage_view()
@@ -920,8 +971,10 @@ class AssistantPanel(ctk.CTkFrame):
         if self._callbacks.get("on_tree_generated"):
             self._callbacks["on_tree_generated"](self._state.tree_data)
 
-    def _on_generate_errors(self):
+    def _on_generate_errors(self, token=None):
         """生成有校验错误"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         for widget in self._content_frame.winfo_children():
@@ -942,8 +995,10 @@ class AssistantPanel(ctk.CTkFrame):
                 text_color=self._dark_colors.get('error', '#EF4444'),
             ).pack(anchor="w")
 
-    def _on_generate_error(self):
+    def _on_generate_error(self, token=None):
         """生成异常"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="确认并下一步")
         error = getattr(self._state, '_error', '未知错误')
@@ -965,6 +1020,7 @@ class AssistantPanel(ctk.CTkFrame):
 
         self._state.is_processing = True
         self._next_btn.configure(state="disabled", text="试运行中...")
+        token = self._flow_token
 
         import threading, tempfile, os, json
         def _run():
@@ -988,22 +1044,26 @@ class AssistantPanel(ctk.CTkFrame):
                     self._state._fixes = analysis.get("fixes", [])
                     self._state._analysis = analysis.get("analysis", "")
 
-                self.after(0, self._on_test_done)
+                self.after(0, self._on_test_done, token)
             except Exception as e:
                 self._state._error = str(e)
-                self.after(0, self._on_test_error)
+                self.after(0, self._on_test_error, token)
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
 
-    def _on_test_done(self):
+    def _on_test_done(self, token=None):
         """试运行完成"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="完成")
         self._show_stage_view()
 
-    def _on_test_error(self):
+    def _on_test_error(self, token=None):
         """试运行失败"""
+        if token is not None and token != self._flow_token:
+            return
         self._state.is_processing = False
         self._next_btn.configure(state="normal", text="完成")
         error = getattr(self._state, '_error', '未知错误')
