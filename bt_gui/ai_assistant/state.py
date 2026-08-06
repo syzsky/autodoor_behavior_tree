@@ -34,6 +34,26 @@ class AssistantState:
         self.source_tree: Optional[Dict[str, Any]] = None
         self.modification_plan: Optional[Dict[str, Any]] = None
         self.analyze_result: Optional[Dict[str, Any]] = None
+        # 瞬时下划线属性（后台线程写入的临时态，模式切换/重置前由 clear_transient 清理）
+        self._suggestions: Optional[Any] = None
+        self._dialogue_questions: Optional[Any] = None
+        self._fixes: Optional[Any] = None
+        self._errors: Optional[Any] = None
+        self._error: Optional[Any] = None
+        self._analysis: Optional[Any] = None
+
+    def clear_transient(self) -> None:
+        """清空瞬时下划线属性，保留 plan/structure/tree_data 等永久字段。
+
+        永久字段（如 plan/structure/filled_structure/tree_data/test_report）
+        由面板在模式切换时单独重置，此处不动。
+        """
+        self._suggestions = None
+        self._dialogue_questions = None
+        self._fixes = None
+        self._errors = None
+        self._error = None
+        self._analysis = None
 
     def _max_stage(self) -> int:
         """返回当前模式的最大阶段编号"""

@@ -92,6 +92,9 @@ class TreeModifier:
         tree = data.get("tree")
         if not tree:
             raise TreeModifyError("LLM 未返回修改后的行为树")
+        # 防御：tree 必须是 dict 形态，否则下方 .get 会抛 AttributeError 而非 TreeModifyError
+        if not isinstance(tree, dict):
+            raise TreeModifyError("修改后的行为树格式错误")
 
         # 防御：nodes 必须是 dict 形态，否则 TreeValidator.validate 可能抛原生 TypeError
         if not isinstance(tree.get("nodes"), dict):

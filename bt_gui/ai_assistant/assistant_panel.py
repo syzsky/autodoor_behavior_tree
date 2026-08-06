@@ -160,9 +160,8 @@ class AssistantPanel(ctk.CTkFrame):
         self._state.filled_structure = None
         self._state.tree_data = None
         self._state.test_report = None
-        # 移除瞬时下划线属性（后台线程写入的临时态）
-        for attr in ('_suggestions', '_dialogue_questions', '_fixes', '_errors', '_error'):
-            self._state.__dict__.pop(attr, None)
+        # 清理瞬时下划线属性（后台线程写入的临时态）
+        self._state.clear_transient()
         self._update_nav_buttons()
         self._show_stage_view()
 

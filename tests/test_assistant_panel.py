@@ -198,9 +198,9 @@ def test_mode_change_clears_create_fields():
         assert panel._state.filled_structure is None
         assert panel._state.tree_data is None
         assert panel._state.test_report is None
-        # 瞬时下划线属性被移除
-        for attr in ('_suggestions', '_dialogue_questions', '_fixes', '_errors', '_error'):
-            assert attr not in panel._state.__dict__, f"{attr} 未被清空"
+        # 瞬时下划线属性被清空（经由 clear_transient）
+        for attr in ('_suggestions', '_dialogue_questions', '_fixes', '_errors', '_error', '_analysis'):
+            assert getattr(panel._state, attr, None) is None, f"{attr} 未被清空"
         # 分析模式字段也被清空
         assert panel._state.source_tree is None
         assert panel._state.modification_plan is None
