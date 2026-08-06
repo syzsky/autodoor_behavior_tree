@@ -531,7 +531,7 @@ def create_analyze_stage1_view(parent, state, colors, **kwargs):
             wraplength=320,
             justify="left",
         ).pack(anchor="w", pady=(0, 15))
-        return
+        return None
 
     # 初始状态：意图描述输入框
     _create_section_label(parent, "描述修改意图", colors).pack(anchor="w", pady=(0, 5))
@@ -554,6 +554,9 @@ def create_analyze_stage1_view(parent, state, colors, **kwargs):
         hover_color=colors.get('primary_hover', '#2563EB'),
         command=kwargs.get('on_start', lambda: None),
     ).pack(pady=10)
+
+    # 返回意图输入框，供面板存储并读取用户输入的意图文本
+    return textbox
 
 
 def create_analyze_stage2_view(parent, state, colors, **kwargs):
