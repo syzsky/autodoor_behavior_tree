@@ -88,3 +88,108 @@ def test_summarize_tree_uses_dict_nodes():
     assert by_id["node_start"]["type"] == "StartNode"
     assert by_id["node_start"]["children"] == ["node_click"]
     assert by_id["node_click"]["config"] == {"position": [100, 200]}
+
+
+def test_modify_uses_summarized_tree_not_full_tree():
+    """modify 应把精简树传给 LLM,而非完整 tree_data(剔除 name/enabled/position 展示字段)"""
+    new_tree = {
+        "version": "2.1", "format_type": "behavior_tree",
+        "root_node": "node_start",
+        "nodes": {
+            "node_start": {"id": "node_start", "type": "StartNode",
+                           "config": {}, "children": ["node_click"]},
+            "node_click": {"id": "node_click", "type": "MouseClickNode",
+                           "config": {"position": [100, 200]}, "children": []},
+        },
+        "connections": [{"parent_id": "node_start", "child_id": "node_click"}],
+    }
+    # 带展示性字段(name/enabled/position)的完整树,用于验证被精简剔除
+    display_tree = {
+        "version": "2.1", "format_type": "behavior_tree",
+        "root_node": "node_start",
+        "nodes": {
+            "node_start": {"id": "node_start", "type": "StartNode",
+                           "name": "UNIQUE_NAME_START", "enabled": True,
+                           "position": {"x": 1, "y": 2},
+                           "config": {}, "children": ["node_click"]},
+            "node_click": {"id": "node_click", "type": "MouseClickNode",
+                           "name": "UNIQUE_NAME_CLICK", "enabled": True,
+                           "position": {"x": 3, "y": 4},
+                           "config": {"position": [100, 200]}, "children": []},
+        },
+        "connections": [{"parent_id": "node_start", "child_id": "node_click"}],
+    }
+    with patch("bt_cli.ai.tree_modifier.LLMClient") as cls:
+        mock = MagicMock()
+        mock.chat.return_value = {"content": json.dumps({
+            "tree": new_tree, "changes": [], "summary": "",
+        }), "model": "m", "usage": {}}
+        cls.from_config.return_value = mock
+        mod = TreeModifier()
+        mod.modify(display_tree, "改动")
+        user_content = mock.chat.call_args[0][0][1]["content"]
+        # 精简树结构:含 id/type,剔除展示性字段
+        assert "精简结构" in user_content
+        assert '"StartNode"' in user_content
+        assert "UNIQUE_NAME_START" not in user_content
+        assert "UNIQUE_NAME_CLICK" not in user_content
+        assert '"enabled"' not in user_content
+        assert '"position": {"x"' not in user_content
+
+
+def test_modify_raises_on_llm_exception():
+    """LLM chat 抛异常 → 抛 TreeModifyError"""
+    with patch("bt_cli.ai.tree_modifier.LLMClient") as cls:
+        mock = MagicMock()
+        mock.chat.side_effect = RuntimeError("network down")
+        cls.from_config.return_value = mock
+        mod = TreeModifier()
+        try:
+            mod.modify(_tree(), "改动")
+            assert False, "应抛出 TreeModifyError"
+        except TreeModifyError:
+            pass
+
+
+def test_modify_raises_on_invalid_json():
+    """LLM 返回非法 JSON → 抛 TreeModifyError"""
+    with patch("bt_cli.ai.tree_modifier.LLMClient") as cls:
+        mock = MagicMock()
+        mock.chat.return_value = {"content": "{ this is not json", "model": "m", "usage": {}}
+        cls.from_config.return_value = mock
+        mod = TreeModifier()
+        try:
+            mod.modify(_tree(), "改动")
+            assert False, "应抛出 TreeModifyError"
+        except TreeModifyError:
+            pass
+
+
+def test_modify_raises_on_missing_tree_field():
+    """LLM 返回缺 tree 字段 → 抛 TreeModifyError"""
+    with patch("bt_cli.ai.tree_modifier.LLMClient") as cls:
+        mock = MagicMock()
+        mock.chat.return_value = {"content": json.dumps({
+            "changes": [], "summary": "",
+        }), "model": "m", "usage": {}}
+        cls.from_config.return_value = mock
+        mod = TreeModifier()
+        try:
+            mod.modify(_tree(), "改动")
+            assert False, "应抛出 TreeModifyError"
+        except TreeModifyError:
+            pass
+
+
+def test_modify_raises_on_non_dict_top_level():
+    """LLM 返回顶层非 dict(数组) → 抛 TreeModifyError(而非 AttributeError)"""
+    with patch("bt_cli.ai.tree_modifier.LLMClient") as cls:
+        mock = MagicMock()
+        mock.chat.return_value = {"content": json.dumps([1, 2, 3]), "model": "m", "usage": {}}
+        cls.from_config.return_value = mock
+        mod = TreeModifier()
+        try:
+            mod.modify(_tree(), "改动")
+            assert False, "应抛出 TreeModifyError"
+        except TreeModifyError:
+            pass

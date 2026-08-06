@@ -2,8 +2,9 @@
 """分析模式核心 — 根据用户意图结构级修改已有行为树
 
 读入一棵已有行为树（tree.json，nodes 为 dict 形态）+ 用户修改意图，
-交由 LLM 返回修改后的整棵新树 + 人类可读改动清单，并经 TreeValidator
-校验通过后返回。校验失败时抛出 TreeModifyError。
+先精简要发送给 LLM 的树结构以控制 prompt 体积，交由 LLM 返回修改后的
+整棵新树 + 人类可读改动清单，并经 TreeValidator 校验通过后返回。
+校验失败时抛出 TreeModifyError。
 """
 import json
 import os
@@ -11,6 +12,7 @@ from typing import Dict, Any, List
 
 from bt_cli.ai.llm_client import LLMClient
 from bt_cli.ai.node_spec_exporter import NodeSpecExporter
+from bt_cli.ai.tree_validator import TreeValidator
 
 
 class TreeModifyError(Exception):
@@ -47,10 +49,12 @@ class TreeModifier:
 
         system_prompt = self._load_prompt()
         spec_text = self._spec_exporter.export_for_prompt()
+        # 精简树仅含 [{id,type,config,children}]，控制发送给 LLM 的 prompt 体积
+        tree_summary = self._summarize_tree(tree_data)
 
         user_content = (
-            f"## 现有行为树\n```json\n"
-            f"{json.dumps(tree_data, ensure_ascii=False, indent=2)}\n```\n\n"
+            f"## 现有行为树（精简结构）\n```json\n"
+            f"{json.dumps(tree_summary, ensure_ascii=False, indent=2)}\n```\n\n"
             f"## 用户修改意图\n{intent}\n\n"
             f"## 任务上下文\n{task_context}\n\n"
             f"## 可用节点规格\n{spec_text}\n\n"
@@ -78,24 +82,41 @@ class TreeModifier:
                 f"LLM 返回的 JSON 无效: {e}\n原始内容: {result['content'][:500]}"
             ) from e
 
+        # 顶层必须是 dict，否则 data.get 会抛 AttributeError 而非 TreeModifyError
+        if not isinstance(data, dict):
+            raise TreeModifyError(
+                f"LLM 返回的 JSON 顶层必须是对象，实际为 {type(data).__name__}: "
+                f"{json.dumps(data, ensure_ascii=False)[:500]}"
+            )
+
         tree = data.get("tree")
         if not tree:
             raise TreeModifyError("LLM 未返回修改后的行为树")
 
         # 结构校验
-        from bt_cli.ai.tree_validator import TreeValidator
         errors = TreeValidator().validate(tree)
         if errors:
             raise TreeModifyError("修改后的行为树校验失败: " + "; ".join(errors))
 
+        changes = data.get("changes", [])
+        if not isinstance(changes, list):
+            changes = []
+        summary = data.get("summary", "")
+        if not isinstance(summary, str):
+            summary = str(summary)
+
         return {
             "tree": tree,
-            "changes": data.get("changes", []),
-            "summary": data.get("summary", ""),
+            "changes": changes,
+            "summary": summary,
         }
 
     def _summarize_tree(self, tree_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """精简行为树用于 AI 分析（真实 tree.json 的 nodes 为 dict 形态）"""
+        """精简行为树用于 AI 分析（真实 tree.json 的 nodes 为 dict 形态）
+
+        返回 [{id, type, config, children}]，不含 name/enabled/position 等
+        展示性字段，以控制发送给 LLM 的 prompt 体积。
+        """
         summary = []
         for node_id, node in tree_data.get("nodes", {}).items():
             summary.append({

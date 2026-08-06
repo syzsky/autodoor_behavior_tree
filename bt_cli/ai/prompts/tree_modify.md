@@ -68,10 +68,15 @@
 ## 输入
 
 你会收到：
-1. **现有行为树**（tree.json）
+1. **现有行为树（精简结构）**：一棵树的**精简表示**，为数组，每项只含 `id`、`type`、`config`、`children` 四个字段，形如 `[{"id","type","config","children"}, ...]`。精简结构**不含** `name`、`enabled`、`position` 等展示性字段，仅用于理解现有节点组成与连接关系。
 2. **用户修改意图**：自然语言描述（如"点击前加个延时"、"把图片检测改成 OCR 检测"）
 3. **任务上下文**：可选，补充背景信息
 4. **可用节点规格**：系统动态导出的所有节点类型及参数说明
+
+**重建完整字段**：精简输入不含 `name`/`enabled`/`position`，但输出必须是完整 tree.json，因此请为每个节点补全这些字段：
+- `name`：可用节点类型的中文名或保留简短描述；
+- `enabled`：默认 `true`；
+- `position`：可用默认值 `{"x": 0, "y": 0}`。
 
 ## 输出格式
 
@@ -131,7 +136,7 @@
 ## 重要约束
 
 - `nodes` 必须是 dict（node_id → node），**不要输出数组**
-- `tree` 必须包含 `root_node`（指向 StartNode）、`nodes`（dict）、`connections`（list）
+- **输出必须是完整的、自洽的整棵 tree.json**：`tree` 必须包含 `root_node`（指向 StartNode）、`nodes`（dict）、`connections`（list），三者缺一不可；不要输出精简数组，也不要只输出补丁或差异
 - 根节点必须是 StartNode
 - 条件节点必须有至少一个子节点
 - `connections` 与各节点 `children` 引用必须一致
