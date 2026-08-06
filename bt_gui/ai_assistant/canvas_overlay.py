@@ -94,6 +94,18 @@ class CanvasOverlay:
         ann_type = ann.get("type", "region")
         value = ann.get("value", [])
         confidence = ann.get("confidence", 1.0)
+        # 健壮性：VLM 返回的 confidence 可能是字符串（如 "0.95"），
+        # 直接用于 {:.0%} 格式化会抛 ValueError，导致画布标注中断。
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        # 健壮性：VLM 返回的 value 可能是 None 或非列表（脏数据），
+        # 直接对其调用 len() 会抛 TypeError，导致画布标注中断。
+        # 统一转为列表，后续按长度判断是否足以绘制。
+        if not isinstance(value, (list, tuple)):
+            value = []
 
         if ann_type == "region" and len(value) >= 4:
             x1, y1, x2, y2 = value[:4]
@@ -174,6 +186,10 @@ class CanvasOverlay:
 
     def _get_color(self, confidence: float) -> str:
         """根据置信度获取颜色"""
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            confidence = 0.0
         if confidence >= 0.8:
             return self.COLOR_HIGH_CONFIDENCE
         return self.COLOR_LOW_CONFIDENCE

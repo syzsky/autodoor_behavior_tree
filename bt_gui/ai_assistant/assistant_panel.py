@@ -280,13 +280,18 @@ class AssistantPanel(ctk.CTkFrame):
             self._callbacks["on_stage_change"](self._state.stage)
 
     def _show_stage_view(self):
-        """显示当前阶段视图"""
-        # 清除当前内容
-        for widget in self._content_frame.winfo_children():
-            widget.destroy()
+        """显示当前阶段视图
 
+        保障：无论渲染是否成功，内容区都绝不为空。
+        - 渲染异常：捕获并显示可见错误（而非静默空白）。
+        - 渲染成功但内容区为空（异常数据导致无任何子组件）：给出可见兜底提示。
+        - 先在内容区填充可见内容，再定位到顶部，避免滚动残留导致"看似空白"。
+        """
         stage = self._state.stage
         try:
+            for widget in self._content_frame.winfo_children():
+                widget.destroy()
+
             if self._state.mode == AssistantMode.ANALYZE:
                 # 分析修改模式：0=读取树, 1=意图, 2=方案, 3=应用
                 if stage == 0:
@@ -313,9 +318,28 @@ class AssistantPanel(ctk.CTkFrame):
                     self._show_stage4()
                 elif stage == 5:
                     self._show_stage5()
+
+            # 渲染完成后兜底：内容区为空（异常数据导致无任何子组件）时给出可见提示，
+            # 绝不静默导致面板空白。
+            if not self._content_frame.winfo_children():
+                self._log_ai_info(
+                    "视图渲染",
+                    f"完成渲染但内容区为空 (mode={self._state.mode.value}, stage={stage})",
+                )
+                ctk.CTkLabel(
+                    self._content_frame,
+                    text="（该阶段暂无可用内容）",
+                    font=get_ai_font('sm'),
+                    text_color=self._dark_colors.get('text_muted', '#888'),
+                ).pack(pady=20, fill="x")
         except Exception as e:
             # 视图渲染异常：绝不能静默导致面板空白，输出日志并显示可见错误
             self._log_ai_error("视图渲染", repr(e))
+            try:
+                for widget in self._content_frame.winfo_children():
+                    widget.destroy()
+            except Exception:
+                pass
             try:
                 ctk.CTkLabel(
                     self._content_frame,
@@ -917,8 +941,13 @@ class AssistantPanel(ctk.CTkFrame):
         self._show_stage_view()
 
         # 通知画布绘制标注
+        # 隔离异常：画布标注失败不应影响面板 UI（面板已渲染完成），
+        # 记录日志并继续，避免未捕获异常中断 Tk 主线程的后续 UI 更新。
         if self._callbacks.get("on_vlm_suggestions"):
-            self._callbacks["on_vlm_suggestions"](getattr(self._state, '_suggestions', []))
+            try:
+                self._callbacks["on_vlm_suggestions"](getattr(self._state, '_suggestions', []))
+            except Exception as e:
+                self._log_ai_error("画布标注", repr(e))
 
     def _on_vlm_error(self, token=None):
         """VLM 分析失败"""

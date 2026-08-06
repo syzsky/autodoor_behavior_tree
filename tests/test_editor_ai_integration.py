@@ -84,3 +84,37 @@ def test_editor_load_tree_data_callback():
         # 在实际实现中，此回调会调用画布加载方法
         # 这里验证 mock 可行性
         assert tree_data["version"] == "2.1"
+
+
+def test_editor_vlm_suggestions_none_no_crash():
+    """VLM 完成且 suggestions 为 None 时，画布标注回调不应崩溃"""
+    with patch("bt_gui.bt_editor.editor.ctk"):
+        from bt_gui.bt_editor.editor import BehaviorTreeEditor
+
+        editor = BehaviorTreeEditor.__new__(BehaviorTreeEditor)
+        editor._canvas_overlay = MagicMock()
+        # 不应抛异常
+        editor._on_ai_vlm_suggestions(None)
+        editor._canvas_overlay.clear.assert_not_called()
+
+
+def test_editor_vlm_suggestions_mixed_invalid_no_crash():
+    """画布标注遇到 None value / 非 dict 建议 / 异常条目时，跳过脏数据并绘制合法项"""
+    with patch("bt_gui.bt_editor.editor.ctk"):
+        from bt_gui.bt_editor.editor import BehaviorTreeEditor
+
+        editor = BehaviorTreeEditor.__new__(BehaviorTreeEditor)
+        overlay = MagicMock()
+        editor._canvas_overlay = overlay
+
+        suggestions = [
+            None,  # 非 dict
+            {"node_id": "n1", "param": "region", "suggested_value": None, "confidence": 0.9},
+            {"node_id": "n2", "param": "position", "suggested_value": [1, 2], "confidence": 0.85},
+            {"node_id": "n3", "param": "region", "suggested_value": [0, 0, 10, 10], "confidence": 0.95},
+        ]
+        # 不应抛异常
+        editor._on_ai_vlm_suggestions(suggestions)
+        # 合法项（n2 position、n3 region）被添加，None value 的 n1 也被传入（由 overlay 内部跳绘）
+        assert overlay.add_annotation.call_count == 3
+        overlay.show.assert_called_once()

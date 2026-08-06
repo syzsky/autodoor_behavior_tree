@@ -200,7 +200,10 @@ class Scheduler:
             cmd = ["python", "cli.py", "run", task.tree_file]
             if task.headless:
                 cmd.append("--headless")
-            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=300,
+            )
             task.last_run_status = "success" if result.returncode == 0 else f"failed({result.returncode})"
         except subprocess.TimeoutExpired:
             task.last_run_status = "timeout"

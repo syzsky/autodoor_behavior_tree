@@ -208,55 +208,63 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, on_dialogue=No
     _create_section_label(parent, f"参数填充建议（{len(suggestions)} 个）", colors).pack(anchor="w", pady=(0, 10))
 
     for sug in suggestions:
-        card = ctk.CTkFrame(parent, fg_color=colors.get('bg_tertiary', '#2A2A2A'),
-                            corner_radius=8)
-        card.pack(fill="x", pady=3)
-
-        confidence = sug.get("confidence", 0)
-        # 健壮性：VLM 返回的 confidence 可能是字符串（如 "0.95"），
-        # 直接与数值比较会抛 TypeError，导致整个阶段视图渲染中断、面板空白。
+        # 健壮性：单条建议数据异常（非 dict / 字段类型异常）时跳过该条，绝不中断整个视图，
+        # 避免因单条脏数据导致面板空白。
+        if not isinstance(sug, dict):
+            continue
         try:
-            confidence = float(confidence)
-        except (ValueError, TypeError):
-            confidence = 0.0
-        conf_color = colors.get('success', '#22C55E') if confidence >= 0.8 else colors.get('warning', '#F59E0B')
-        conf_mark = "✓" if confidence >= 0.8 else "⚠"
+            card = ctk.CTkFrame(parent, fg_color=colors.get('bg_tertiary', '#2A2A2A'),
+                                corner_radius=8)
+            card.pack(fill="x", pady=3)
 
-        header = f"{conf_mark} {sug.get('node_id', '?')}.{sug.get('param', '?')}"
-        ctk.CTkLabel(
-            card,
-            text=header,
-            font=get_ai_font('sm'),
-            text_color=colors.get('text_primary', '#FFF'),
-            anchor="w",
-        ).pack(anchor="w", padx=10, pady=(5, 2))
+            confidence = sug.get("confidence", 0)
+            # 健壮性：VLM 返回的 confidence 可能是字符串（如 "0.95"），
+            # 直接与数值比较会抛 TypeError，导致整个阶段视图渲染中断、面板空白。
+            try:
+                confidence = float(confidence)
+            except (ValueError, TypeError):
+                confidence = 0.0
+            conf_color = colors.get('success', '#22C55E') if confidence >= 0.8 else colors.get('warning', '#F59E0B')
+            conf_mark = "✓" if confidence >= 0.8 else "⚠"
 
-        value = sug.get("suggested_value", "")
-        ctk.CTkLabel(
-            card,
-            text=f"值: {value}",
-            font=get_ai_font('xs'),
-            text_color=colors.get('text_muted', '#888'),
-            anchor="w",
-        ).pack(anchor="w", padx=10)
-
-        note = sug.get("note", "")
-        if note:
+            header = f"{conf_mark} {sug.get('node_id', '?')}.{sug.get('param', '?')}"
             ctk.CTkLabel(
                 card,
-                text=f"说明: {note}",
+                text=header,
+                font=get_ai_font('sm'),
+                text_color=colors.get('text_primary', '#FFF'),
+                anchor="w",
+            ).pack(anchor="w", padx=10, pady=(5, 2))
+
+            value = sug.get("suggested_value", "")
+            ctk.CTkLabel(
+                card,
+                text=f"值: {value}",
                 font=get_ai_font('xs'),
                 text_color=colors.get('text_muted', '#888'),
                 anchor="w",
             ).pack(anchor="w", padx=10)
 
-        ctk.CTkLabel(
-            card,
-            text=f"置信度: {confidence:.0%}",
-            font=get_ai_font('xs'),
-            text_color=conf_color,
-            anchor="w",
-        ).pack(anchor="w", padx=10, pady=(0, 5))
+            note = sug.get("note", "")
+            if note:
+                ctk.CTkLabel(
+                    card,
+                    text=f"说明: {note}",
+                    font=get_ai_font('xs'),
+                    text_color=colors.get('text_muted', '#888'),
+                    anchor="w",
+                ).pack(anchor="w", padx=10)
+
+            ctk.CTkLabel(
+                card,
+                text=f"置信度: {confidence:.0%}",
+                font=get_ai_font('xs'),
+                text_color=conf_color,
+                anchor="w",
+            ).pack(anchor="w", padx=10, pady=(0, 5))
+        except Exception:
+            # 单条建议渲染失败：跳过该条，继续渲染其余建议，避免整页空白
+            continue
 
 
 def create_stage4_view(parent, state, colors, **kwargs):

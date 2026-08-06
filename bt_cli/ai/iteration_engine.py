@@ -59,6 +59,7 @@ class IterationEngine:
         try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True,
+                encoding='utf-8', errors='replace',
                 timeout=timeout_ms / 1000,
             )
             success = result.returncode == 0

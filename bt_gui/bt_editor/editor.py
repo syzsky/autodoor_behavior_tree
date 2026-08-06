@@ -658,30 +658,42 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         if not hasattr(self, '_canvas_overlay'):
             return
 
+        # 健壮性：suggestions 可能为 None 或非列表（脏数据），
+        # 直接迭代会抛 TypeError，导致画布标注中断。
+        if not suggestions or not isinstance(suggestions, (list, tuple)):
+            return
+
         self._canvas_overlay.clear()
         for sug in suggestions:
-            value = sug.get("suggested_value", [])
-            param = sug.get("param", "")
-            node_id = sug.get("node_id", "")
-            confidence = sug.get("confidence", 0)
-
-            # 根据参数类型确定标注类型
-            if param in ("region",):
-                ann_type = "region"
-            elif param in ("position",):
-                ann_type = "position"
-            elif param in ("template_path",):
-                ann_type = "template"
-            else:
+            # 健壮性：单条建议数据异常时跳过该条，绝不中断整批标注。
+            if not isinstance(sug, dict):
                 continue
+            try:
+                value = sug.get("suggested_value", [])
+                param = sug.get("param", "")
+                node_id = sug.get("node_id", "")
+                confidence = sug.get("confidence", 0)
 
-            self._canvas_overlay.add_annotation(
-                node_id=node_id,
-                param=param,
-                value=value,
-                confidence=confidence,
-                annotation_type=ann_type,
-            )
+                # 根据参数类型确定标注类型
+                if param in ("region",):
+                    ann_type = "region"
+                elif param in ("position",):
+                    ann_type = "position"
+                elif param in ("template_path",):
+                    ann_type = "template"
+                else:
+                    continue
+
+                self._canvas_overlay.add_annotation(
+                    node_id=node_id,
+                    param=param,
+                    value=value,
+                    confidence=confidence,
+                    annotation_type=ann_type,
+                )
+            except Exception:
+                # 单条建议标注失败：跳过该条，避免因单条脏数据中断整批标注
+                continue
 
         self._canvas_overlay.show()
     

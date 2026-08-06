@@ -367,3 +367,58 @@ def test_flow_callback_ignored_without_token_arg():
         assert panel._state.stage == 1
         panel._show_stage_view.assert_called_once()
         panel._log_ai_info.assert_called_once()
+
+
+def test_on_vlm_done_isolates_canvas_annotation_error():
+    """VLM 完成后面板已渲染，画布标注回调抛异常不应中断 UI 更新（被隔离并记录日志）"""
+    from bt_gui.ai_assistant.assistant_panel import AssistantPanel
+    from bt_gui.ai_assistant.state import AssistantState
+
+    with patch("bt_gui.ai_assistant.assistant_panel.ctk"):
+        panel = AssistantPanel.__new__(AssistantPanel)
+        panel._state = AssistantState()
+        panel._state.stage = 3
+        panel._state._suggestions = [{"node_id": "n1"}]
+        panel._callbacks = {}
+        panel._flow_token = 1
+        panel._next_btn = MagicMock()
+        panel._show_stage_view = MagicMock()
+        panel._log_ai_error = MagicMock()
+
+        # 画布标注回调抛异常（模拟 editor 内部 value=None 等脏数据）
+        def boom(suggestions):
+            raise TypeError("object of type 'NoneType' has no len()")
+        panel._callbacks["on_vlm_suggestions"] = boom
+
+        # 不应抛出异常，面板正常完成渲染
+        panel._on_vlm_done(panel._flow_token)
+
+        assert panel._state.is_processing is False
+        panel._next_btn.configure.assert_called_once()
+        panel._show_stage_view.assert_called_once()
+        # 异常被记录为日志而非中断
+        panel._log_ai_error.assert_called_once()
+        assert "画布标注" in panel._log_ai_error.call_args[0][0]
+
+
+def test_on_vlm_done_without_callback_ok():
+    """VLM 完成且未注册画布标注回调时正常完成，不产生异常"""
+    from bt_gui.ai_assistant.assistant_panel import AssistantPanel
+    from bt_gui.ai_assistant.state import AssistantState
+
+    with patch("bt_gui.ai_assistant.assistant_panel.ctk"):
+        panel = AssistantPanel.__new__(AssistantPanel)
+        panel._state = AssistantState()
+        panel._state.stage = 3
+        panel._state._suggestions = [{"node_id": "n1"}]
+        panel._callbacks = {}
+        panel._flow_token = 1
+        panel._next_btn = MagicMock()
+        panel._show_stage_view = MagicMock()
+        panel._log_ai_error = MagicMock()
+
+        panel._on_vlm_done(panel._flow_token)
+
+        assert panel._state.is_processing is False
+        panel._show_stage_view.assert_called_once()
+        panel._log_ai_error.assert_not_called()
