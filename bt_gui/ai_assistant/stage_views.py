@@ -189,9 +189,16 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, on_dialogue=No
         return
 
     if not suggestions:
+        # 无建议时区分两种语义：
+        # - 此前通过语言描述补全（_dialogue_questions 已设置）→ 显示补全完成提示
+        # - 真正已无空参数（无建议、无对话、filled 已设置）→ 显示"无需填充的参数"
+        if filled and getattr(state, '_dialogue_questions', None):
+            text = "已通过语言描述补全参数"
+        else:
+            text = "无需填充的参数"
         ctk.CTkLabel(
             parent,
-            text="无需填充的参数",
+            text=text,
             font=get_ai_font('sm'),
             text_color=colors.get('text_muted', '#888'),
         ).pack(pady=20)

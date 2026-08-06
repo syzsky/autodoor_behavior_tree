@@ -154,6 +154,15 @@ class AssistantPanel(ctk.CTkFrame):
         self._state.source_tree = None
         self._state.modification_plan = None
         self._state.analyze_result = None
+        # 同时清空创建模式专属字段，避免跨模式残留（如 create 阶段写入的 plan/structure 等）
+        self._state.plan = None
+        self._state.structure = None
+        self._state.filled_structure = None
+        self._state.tree_data = None
+        self._state.test_report = None
+        # 移除瞬时下划线属性（后台线程写入的临时态）
+        for attr in ('_suggestions', '_dialogue_questions', '_fixes', '_errors', '_error'):
+            self._state.__dict__.pop(attr, None)
         self._update_nav_buttons()
         self._show_stage_view()
 
@@ -431,7 +440,7 @@ class AssistantPanel(ctk.CTkFrame):
                 # 异常已有专属日志，不再走下方"画布为空"的通用提示
                 self._log_ai_error("读取行为树", repr(e))
                 return
-        if not tree:
+        if not tree or not tree.get("nodes"):
             self._log_ai_error("读取行为树", "当前画布为空，无法读取行为树")
             return
         self._state.source_tree = tree
@@ -444,12 +453,17 @@ class AssistantPanel(ctk.CTkFrame):
             self._content_frame, self._state, self._dark_colors,
             on_start=self._start_tree_modify,
         )
+        # 重试时恢复上次输入的意图文本（与 _show_welcome 恢复 _last_desc 保持一致）
+        if getattr(self, '_last_analyze_desc', None) and self._analyze_desc_entry is not None:
+            self._analyze_desc_entry.insert("1.0", self._last_analyze_desc)
 
     def _start_tree_modify(self):
         """执行行为树修改"""
         intent = self._analyze_desc_entry.get("1.0", "end").strip()
         if not intent:
             return
+        # 缓存本次意图，重试时保留内容
+        self._last_analyze_desc = intent
         self._state.is_processing = True
         self._next_btn.configure(state="disabled", text="分析中...")
         source_tree = self._state.source_tree

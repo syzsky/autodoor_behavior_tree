@@ -116,6 +116,48 @@ def test_stage3_view_no_suggestions():
         create_stage3_view(mock_frame, state, mock_colors)
 
 
+def test_stage3_view_dialogue_filled_shows_completion_message():
+    """测试阶段③视图对话补全完成后显示'已通过语言描述补全参数'而非'无需填充的参数'"""
+    from bt_gui.ai_assistant.stage_views import create_stage3_view
+    from bt_gui.ai_assistant.state import AssistantState
+
+    state = AssistantState()
+    state.filled_structure = {"nodes": []}
+    state._dialogue_questions = [{"node_id": "n1", "param": "text", "question": "文本?"}]
+    # _suggestions 为空（None），filled 已设置 → 应显示补全完成提示
+    # 用 getattr 暴露的 _dialogue_questions 区分对话补全场景
+    mock_frame = MagicMock()
+    mock_colors = {"text_primary": "#fff", "text_muted": "#aaa"}
+
+    with patch("bt_gui.ai_assistant.stage_views.ctk") as mock_ctk:
+        create_stage3_view(mock_frame, state, mock_colors)
+
+    label_texts = [kwargs.get("text", "") for call in mock_ctk.CTkLabel.call_args_list
+                   for kwargs in [call[1]]]
+    assert any("已通过语言描述补全参数" in t for t in label_texts), "未显示补全完成提示"
+    assert not any("无需填充的参数" in t for t in label_texts), "误显示'无需填充的参数'"
+
+
+def test_stage3_view_genuine_no_params_shows_no_params():
+    """测试阶段③视图真正无空参数（无建议、无对话、filled 已设置）时仍显示'无需填充的参数'"""
+    from bt_gui.ai_assistant.stage_views import create_stage3_view
+    from bt_gui.ai_assistant.state import AssistantState
+
+    state = AssistantState()
+    state.filled_structure = {"nodes": []}
+    # 无 _dialogue_questions、无 _suggestions → 真正无需填充
+    mock_frame = MagicMock()
+    mock_colors = {"text_primary": "#fff", "text_muted": "#aaa"}
+
+    with patch("bt_gui.ai_assistant.stage_views.ctk") as mock_ctk:
+        create_stage3_view(mock_frame, state, mock_colors)
+
+    label_texts = [kwargs.get("text", "") for call in mock_ctk.CTkLabel.call_args_list
+                   for kwargs in [call[1]]]
+    assert any("无需填充的参数" in t for t in label_texts), "未显示'无需填充的参数'"
+    assert not any("已通过语言描述补全参数" in t for t in label_texts), "误显示补全完成提示"
+
+
 def test_stage4_view_with_tree_data():
     """测试阶段④视图显示生成结果"""
     from bt_gui.ai_assistant.stage_views import create_stage4_view

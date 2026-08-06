@@ -93,6 +93,10 @@ class TreeModifier:
         if not tree:
             raise TreeModifyError("LLM 未返回修改后的行为树")
 
+        # 防御：nodes 必须是 dict 形态，否则 TreeValidator.validate 可能抛原生 TypeError
+        if not isinstance(tree.get("nodes"), dict):
+            raise TreeModifyError("修改后的行为树 nodes 格式错误")
+
         # 结构校验
         errors = TreeValidator().validate(tree)
         if errors:

@@ -193,3 +193,40 @@ def test_modify_raises_on_non_dict_top_level():
             assert False, "应抛出 TreeModifyError"
         except TreeModifyError:
             pass
+
+
+def test_modify_raises_on_non_dict_nodes():
+    """LLM 返回的 tree.nodes 为列表(而非 dict) → 抛 TreeModifyError(而非原生 TypeError)"""
+    with patch("bt_cli.ai.tree_modifier.LLMClient") as cls:
+        mock = MagicMock()
+        mock.chat.return_value = {"content": json.dumps({
+            "tree": {
+                "root_node": "node_start",
+                "nodes": [{"id": "node_start", "type": "StartNode"}],  # 非 dict 形态
+            },
+            "changes": [], "summary": "",
+        }), "model": "m", "usage": {}}
+        cls.from_config.return_value = mock
+        mod = TreeModifier()
+        try:
+            mod.modify(_tree(), "改动")
+            assert False, "应抛出 TreeModifyError"
+        except TreeModifyError as e:
+            assert "nodes 格式错误" in str(e), "错误信息应说明 nodes 格式错误"
+
+
+def test_modify_raises_on_empty_nodes_list():
+    """LLM 返回空 list 的 nodes(非 dict) → 抛 TreeModifyError"""
+    with patch("bt_cli.ai.tree_modifier.LLMClient") as cls:
+        mock = MagicMock()
+        mock.chat.return_value = {"content": json.dumps({
+            "tree": {"root_node": "node_start", "nodes": []},
+            "changes": [], "summary": "",
+        }), "model": "m", "usage": {}}
+        cls.from_config.return_value = mock
+        mod = TreeModifier()
+        try:
+            mod.modify(_tree(), "改动")
+            assert False, "应抛出 TreeModifyError"
+        except TreeModifyError:
+            pass
