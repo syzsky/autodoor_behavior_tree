@@ -149,7 +149,7 @@ def create_stage2_view(parent, state, colors, **kwargs):
             ).pack(anchor="w", padx=10, pady=(0, 5))
 
 
-def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
+def create_stage3_view(parent, state, colors, on_screenshot=None, on_dialogue=None, **kwargs):
     """阶段③视图：VLM 屏幕感知"""
     suggestions = getattr(state, '_suggestions', None)
     filled = state.filled_structure
@@ -173,6 +173,19 @@ def create_stage3_view(parent, state, colors, on_screenshot=None, **kwargs):
                 hover_color=colors.get('primary_hover', '#2563EB'),
                 command=on_screenshot,
             ).pack(pady=10)
+
+        # 二级入口：跳过截图，改用语言描述补全
+        if on_dialogue:
+            ctk.CTkButton(
+                parent,
+                text="跳过，用语言描述补全",
+                height=28,
+                font=get_ai_font('sm'),
+                fg_color="transparent",
+                hover_color=colors.get('border', '#444'),
+                text_color=colors.get('text_muted', '#888'),
+                command=on_dialogue,
+            ).pack(pady=(0, 10))
         return
 
     if not suggestions:
@@ -443,4 +456,179 @@ def create_stage5_view(parent, state, colors, on_apply_fix=None, on_rerun=None, 
             fg_color=colors.get('primary', '#3B82F6'),
             hover_color=colors.get('primary_hover', '#2563EB'),
             command=on_rerun,
+        ).pack(pady=10)
+
+
+# ============ ANALYZE 模式视图（0=读取树, 1=意图, 2=方案, 3=应用） ============
+
+
+def create_analyze_stage0_view(parent, state, colors, on_load_tree=None, **kwargs):
+    """分析阶段⓪视图：读取行为树"""
+    source_tree = getattr(state, 'source_tree', None)
+
+    if source_tree:
+        _create_section_label(parent, "当前行为树", colors).pack(anchor="w", pady=(0, 5))
+        nodes = source_tree.get("nodes", {})
+        if isinstance(nodes, list):
+            node_count = len(nodes)
+        elif isinstance(nodes, dict):
+            node_count = len(nodes)
+        else:
+            node_count = 0
+        root_node = source_tree.get("root_node", "?")
+
+        info_card = ctk.CTkFrame(parent, fg_color=colors.get('bg_tertiary', '#2A2A2A'),
+                                 corner_radius=8)
+        info_card.pack(fill="x", pady=5)
+
+        ctk.CTkLabel(
+            info_card,
+            text=f"节点数: {node_count}",
+            font=get_ai_font('sm'),
+            text_color=colors.get('text_primary', '#FFF'),
+            anchor="w",
+        ).pack(anchor="w", padx=10, pady=(8, 4))
+
+        ctk.CTkLabel(
+            info_card,
+            text=f"根节点: {root_node}",
+            font=get_ai_font('sm'),
+            text_color=colors.get('text_muted', '#888'),
+            anchor="w",
+        ).pack(anchor="w", padx=10, pady=(0, 8))
+        return
+
+    # 未读取行为树
+    ctk.CTkLabel(
+        parent,
+        text="请先打开一棵行为树",
+        font=get_ai_font('sm'),
+        text_color=colors.get('text_muted', '#888'),
+    ).pack(pady=(30, 10))
+
+    if on_load_tree:
+        ctk.CTkButton(
+            parent,
+            text="读取当前画布树",
+            height=32,
+            font=get_ai_font('sm'),
+            fg_color=colors.get('primary', '#3B82F6'),
+            hover_color=colors.get('primary_hover', '#2563EB'),
+            command=on_load_tree,
+        ).pack(pady=10)
+
+
+def create_analyze_stage1_view(parent, state, colors, **kwargs):
+    """分析阶段①视图：意图描述输入"""
+    intent = getattr(state, 'analyze_result', None)
+    if intent:
+        _create_section_label(parent, "意图", colors).pack(anchor="w", pady=(0, 5))
+        ctk.CTkLabel(
+            parent,
+            text=intent.get("intent", "N/A"),
+            font=get_ai_font('sm'),
+            text_color=colors.get('text_muted', '#888'),
+            wraplength=320,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 15))
+        return
+
+    # 初始状态：意图描述输入框
+    _create_section_label(parent, "描述修改意图", colors).pack(anchor="w", pady=(0, 5))
+    textbox = ctk.CTkTextbox(
+        parent,
+        height=120,
+        font=get_ai_font('sm'),
+        fg_color=colors.get('bg_primary', '#1A1A1A'),
+        text_color=colors.get('text_primary', '#FFF'),
+    )
+    textbox.pack(fill="x", pady=(0, 10))
+
+    # 开始按钮：面板通过回调驱动真实逻辑，此处默认为 no-op
+    ctk.CTkButton(
+        parent,
+        text="开始分析",
+        height=32,
+        font=get_ai_font('sm'),
+        fg_color=colors.get('primary', '#3B82F6'),
+        hover_color=colors.get('primary_hover', '#2563EB'),
+        command=kwargs.get('on_start', lambda: None),
+    ).pack(pady=10)
+
+
+def create_analyze_stage2_view(parent, state, colors, **kwargs):
+    """分析阶段②视图：修改方案"""
+    modification_plan = getattr(state, 'modification_plan', None)
+
+    if not modification_plan:
+        ctk.CTkLabel(
+            parent,
+            text="暂无修改方案",
+            font=get_ai_font('sm'),
+            text_color=colors.get('text_muted', '#888'),
+        ).pack(pady=20)
+        return
+
+    changes = modification_plan.get("changes", [])
+    _create_section_label(parent, f"修改方案（{len(changes)} 项）", colors).pack(anchor="w", pady=(0, 10))
+
+    for change in changes:
+        card = ctk.CTkFrame(parent, fg_color=colors.get('bg_tertiary', '#2A2A2A'),
+                            corner_radius=8)
+        card.pack(fill="x", pady=3)
+
+        change_type = change.get("type", "?")
+        node_id = change.get("node_id", "?")
+        description = change.get("description", "")
+
+        ctk.CTkLabel(
+            card,
+            text=f"[{change_type}] {node_id}",
+            font=get_ai_font('sm'),
+            text_color=colors.get('text_primary', '#FFF'),
+            anchor="w",
+        ).pack(anchor="w", padx=10, pady=(5, 2))
+
+        if description:
+            ctk.CTkLabel(
+                card,
+                text=description,
+                font=get_ai_font('xs'),
+                text_color=colors.get('text_muted', '#888'),
+                anchor="w",
+                wraplength=300,
+            ).pack(anchor="w", padx=10, pady=(0, 5))
+
+    summary = modification_plan.get("summary", "")
+    if summary:
+        _create_section_label(parent, "方案说明", colors).pack(anchor="w", pady=(10, 5))
+        ctk.CTkLabel(
+            parent,
+            text=summary,
+            font=get_ai_font('sm'),
+            text_color=colors.get('text_muted', '#888'),
+            anchor="w",
+            wraplength=320,
+            justify="left",
+        ).pack(anchor="w")
+
+
+def create_analyze_stage3_view(parent, state, colors, on_apply=None, **kwargs):
+    """分析阶段③视图：应用到画布"""
+    ctk.CTkLabel(
+        parent,
+        text="确认将修改方案应用到画布行为树",
+        font=get_ai_font('sm'),
+        text_color=colors.get('text_muted', '#888'),
+    ).pack(pady=(30, 10))
+
+    if on_apply:
+        ctk.CTkButton(
+            parent,
+            text="应用到画布",
+            height=32,
+            font=get_ai_font('sm'),
+            fg_color=colors.get('primary', '#3B82F6'),
+            hover_color=colors.get('primary_hover', '#2563EB'),
+            command=on_apply,
         ).pack(pady=10)

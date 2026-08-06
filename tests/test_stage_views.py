@@ -209,3 +209,26 @@ def test_stage5_view_empty():
 
     with patch("bt_gui.ai_assistant.stage_views.ctk"):
         create_stage5_view(mock_frame, state, mock_colors)
+
+
+def test_analyze_stage0_view_no_tree():
+    from bt_gui.ai_assistant.stage_views import create_analyze_stage0_view
+    from bt_gui.ai_assistant.state import AssistantState
+    state = AssistantState()
+    mock_frame = MagicMock()
+    mock_colors = {}
+    with patch("bt_gui.ai_assistant.stage_views.ctk"):
+        create_analyze_stage0_view(mock_frame, state, mock_colors)
+
+
+def test_analyze_stage2_view_with_plan():
+    from bt_gui.ai_assistant.stage_views import create_analyze_stage2_view
+    from bt_gui.ai_assistant.state import AssistantState
+    state = AssistantState()
+    state.modification_plan = {"tree": {"nodes": {}}, "changes": [
+        {"type": "add", "node_id": "node_delay", "description": "插入延时"}],
+        "summary": "插入延时节点"}
+    mock_frame = MagicMock()
+    mock_colors = {}
+    with patch("bt_gui.ai_assistant.stage_views.ctk"):
+        create_analyze_stage2_view(mock_frame, state, mock_colors)
