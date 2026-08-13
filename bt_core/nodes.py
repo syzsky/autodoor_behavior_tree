@@ -30,6 +30,7 @@ class Node(ABC):
         self.name = self.config.name
         self.description = self.config.description
         self.enabled = self.config.enabled
+        self.skip = self.config.skip
         self.status = NodeStatus.SUCCESS
         self.children: List["Node"] = []
         self.parent: Optional["Node"] = None
@@ -59,6 +60,16 @@ class Node(ABC):
     def _execute_with_decorators(self, context: "ExecutionContext", 
                                    execute_func: callable) -> NodeStatus:
         if not self.config.enabled:
+            return NodeStatus.SUCCESS
+
+        # 跳过模式：跳过节点自身逻辑，透传执行其子节点（无子节点则视为成功）
+        if self.config.skip:
+            if self.children:
+                status = self._execute_children(context)
+                if status != NodeStatus.RUNNING:
+                    self.status = status
+                return status
+            self.status = NodeStatus.SUCCESS
             return NodeStatus.SUCCESS
 
         if self.status != NodeStatus.RUNNING:
@@ -280,6 +291,7 @@ class Node(ABC):
             "type": self.NODE_TYPE,
             "name": self.name,
             "enabled": self.enabled,
+            "skip": self.skip,
             "config": self.config.to_dict(),
             "children": [child.node_id for child in self.children],
         }

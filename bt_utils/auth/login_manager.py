@@ -9,13 +9,26 @@ from .credential_store import CredentialStore
 class LoginManager:
     def __init__(self, api_client: Optional[PlatformAPIClient] = None,
                  credential_store: Optional[CredentialStore] = None):
-        self._api_client = api_client or PlatformAPIClient()
+        self._api_client = api_client or PlatformAPIClient(self._load_base_url())
         self._credential_store = credential_store or CredentialStore()
         self._current_user: Optional[str] = None
         self._is_authenticated: bool = False
         self._is_offline: bool = False
         self._on_login: Optional[Callable] = None
         self._on_logout: Optional[Callable] = None
+
+    @staticmethod
+    def _load_base_url() -> str:
+        """从配置读取登录服务器地址（auth.platform.base_url），未配置返回空串。
+
+        开源仓库不包含真实服务器地址，用户需在配置中自行填写。
+        """
+        try:
+            from config.settings_manager import SettingsManager
+            return str(SettingsManager.get_instance().get(
+                "auth.platform.base_url", "") or "").strip()
+        except Exception:
+            return ""
 
     def login(self, username: str, password: str, remember: bool = False) -> bool:
         result = self._api_client.login(username, password)

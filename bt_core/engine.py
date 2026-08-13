@@ -23,7 +23,7 @@ class BehaviorTreeEngine:
         self._running = False
         self._paused = False
         self._thread: Optional[threading.Thread] = None
-        self._tick_interval = 0.01
+        self._tick_interval = 0.033  # 默认 33ms，与配置层 behavior_tree.tick_interval 保持一致
         self._on_status_change: Optional[Callable] = None
         self._on_node_status: Optional[Callable] = None
         self._lock = threading.Lock()

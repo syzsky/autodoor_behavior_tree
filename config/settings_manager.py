@@ -106,7 +106,7 @@ class SettingsManager:
             ]
         },
         "behavior_tree": {
-            "tick_interval": 50,
+            "tick_interval": 33,
             "auto_save_interval": 30,
             "default_format": "json",
             "default_check_interval_ms": 300,
@@ -179,7 +179,7 @@ class SettingsManager:
             "api_key": {"keys": []},
             "token_expiry_seconds": 3600,
             "platform": {
-                "base_url": "https://autodoor.lizhileyun.com",
+                "base_url": "",
                 "api_namespace": "/wp-json/bt/v1/executor",
                 "connect_timeout": 10,
                 "read_timeout": 30,

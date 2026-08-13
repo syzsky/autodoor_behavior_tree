@@ -183,6 +183,14 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         LogManager.instance().set_stopped(False, tab_name=instance.name)
         
         engine = BehaviorTreeEngine(root_node)
+        # 应用全局 tick 间隔（设置中为毫秒，引擎为秒）控制整体运行频率
+        try:
+            from config.settings_manager import SettingsManager
+            tick_ms = int(SettingsManager.get_instance().get("behavior_tree.tick_interval", 33))
+            if tick_ms > 0:
+                engine._tick_interval = tick_ms / 1000.0
+        except (ValueError, TypeError):
+            pass
         engine._on_status_change = lambda status, node_status=None: self._on_tab_engine_status_change(tab_id, status, node_status)
         
         context = ExecutionContext(project_root=instance.project_root)
@@ -903,7 +911,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 "type": node_type,
                 "name": node.name,
                 "config": node_config,
-                "enabled": node.enabled
+                "enabled": node.enabled,
+                "skip": getattr(node, 'skip', bool((node_config or {}).get('skip', False)))
             }
             self.property_panel.load_node(node_id, node_type, node_data)
     
@@ -955,9 +964,13 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         node.config[key] = value
         
-        if key in ["name", "enabled"]:
+        if key in ["name", "enabled", "skip"]:
             setattr(node, key, value)
             if key == "name":
+                self.canvas.redraw_node(node_id)
+            elif key == "skip":
+                node.config[key] = bool(value)
+                node.skip = bool(value)
                 self.canvas.redraw_node(node_id)
         
         self._set_modified(True)

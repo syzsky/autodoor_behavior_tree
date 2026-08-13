@@ -245,7 +245,24 @@ class LoginDialog(ctk.CTkToplevel):
         self.status_label.configure(text=text, height=20)
 
     def _on_register(self):
-        webbrowser.open("https://autodoor.lizhileyun.com/login/?tab=register")
+        base_url = self._get_base_url()
+        if base_url:
+            webbrowser.open(f"{base_url}/login/?tab=register")
+        else:
+            self._show_error("未配置服务器地址，无法打开注册页面")
+
+    @staticmethod
+    def _get_base_url() -> str:
+        """从配置读取登录服务器地址（auth.platform.base_url）。
+
+        开源仓库不包含真实服务器地址，用户需在配置中自行填写。
+        """
+        try:
+            from config.settings_manager import SettingsManager
+            return str(SettingsManager.get_instance().get(
+                "auth.platform.base_url", "") or "").strip()
+        except Exception:
+            return ""
 
     def _on_cancel(self):
         self.destroy()

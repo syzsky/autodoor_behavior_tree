@@ -180,7 +180,7 @@ def _create_behavior_tree_section(parent, app, dialog) -> None:
     ctk.CTkLabel(row1, text="Tick间隔(ms):", font=Theme.get_font('sm'),
                  text_color=Theme.COLORS['text_secondary']).pack(side='left')
     app._settings_tick_interval = tk.StringVar(
-        value=str(app.settings_manager.get("behavior_tree.tick_interval", 50))
+        value=str(app.settings_manager.get("behavior_tree.tick_interval", 33))
     )
     ctk.CTkEntry(row1, textvariable=app._settings_tick_interval, width=60,
                  font=Theme.get_font('mono'), height=Theme.SIZES['input_height']).pack(side='left', padx=4)

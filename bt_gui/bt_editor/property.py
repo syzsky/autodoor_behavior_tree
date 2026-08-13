@@ -11,6 +11,37 @@ from .constants import CONDITION_NODES, ACTION_NODES, COMPOSITE_NODES, INTERFACE
 from bt_utils.log_manager import LogManager
 
 
+def _subtree_dirs_identical(src_dir: str, dst_dir: str) -> bool:
+    """判断两个目录内容是否一致（相对路径 + 文件大小）
+
+    用于子树引用的幂等判断：同一子树重复引用时，若目标已存在且内容一致，
+    则直接复用，避免重复复制导致后缀堆叠或覆盖破坏。
+
+    Args:
+        src_dir: 源目录
+        dst_dir: 目标目录
+
+    Returns:
+        内容一致返回 True，否则 False
+    """
+    try:
+        def _snapshot(root: str) -> dict:
+            result = {}
+            for dirpath, _dirs, files in os.walk(root):
+                for f in files:
+                    full = os.path.join(dirpath, f)
+                    rel = os.path.relpath(full, root).replace(os.sep, "/")
+                    try:
+                        result[rel] = os.path.getsize(full)
+                    except OSError:
+                        result[rel] = -1
+            return result
+
+        return _snapshot(src_dir) == _snapshot(dst_dir)
+    except Exception:
+        return False
+
+
 NODE_CONFIG_SCHEMAS = {
     "OCRConditionNode": [
         {"key": "region_mode", "label": "区域选择方式", "type": "select", "options": ["fixed", "dynamic"], "display_names": {"fixed": "固定区域检测", "dynamic": "动态区域检测"}, "default": "fixed"},
@@ -1142,7 +1173,29 @@ class FolderField(FieldWidget):
             subtrees_dir = os.path.join(project_root, "subtrees")
             os.makedirs(subtrees_dir, exist_ok=True)
 
+            abs_project_root = os.path.abspath(project_root)
+            abs_subtrees_dir = os.path.abspath(subtrees_dir)
+            abs_source = os.path.abspath(folder_path)
+
+            # 自复制防护：源文件夹已在项目 subtrees 目录内，直接引用，避免复制到自己内部
+            if abs_source.startswith(abs_subtrees_dir + os.sep):
+                rel_path = os.path.relpath(abs_source, abs_project_root).replace(os.sep, "/")
+                if not rel_path.startswith("./"):
+                    rel_path = "./" + rel_path
+                self.full_path = rel_path
+                self.var.set(folder_name)
+                self.on_change(self.key, rel_path)
+                return
+
             dest_dir = os.path.join(subtrees_dir, folder_name)
+
+            # 幂等：目标已存在且与源内容一致 → 直接复用，不重复复制
+            if os.path.exists(dest_dir) and _subtree_dirs_identical(folder_path, dest_dir):
+                rel_path = "./subtrees/" + folder_name
+                self.full_path = rel_path
+                self.var.set(folder_name)
+                self.on_change(self.key, rel_path)
+                return
 
             if os.path.exists(dest_dir):
                 from tkinter import messagebox
@@ -1156,16 +1209,32 @@ class FolderField(FieldWidget):
                     self.var.set(folder_name)
                     self.on_change(self.key, rel_path)
                     return
-                # 将旧目录移到缓存而非直接删除，以便误操作时恢复
-                from bt_utils.resource_service import ResourceService
-                ResourceService.move_dir_to_cache(dest_dir, project_root)
-
-            try:
-                shutil.copytree(folder_path, dest_dir)
-            except Exception as e:
-                from tkinter import messagebox
-                messagebox.showerror("复制失败", f"复制子树项目文件夹失败: {e}")
-                return
+                # 安全覆盖：先复制到临时目录，成功后再替换旧目录，避免源目录被误删导致子树丢失
+                tmp_dir = os.path.join(subtrees_dir, f".{folder_name}.tmp_{os.getpid()}")
+                try:
+                    if os.path.exists(tmp_dir):
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                    shutil.copytree(folder_path, tmp_dir)
+                    from bt_utils.resource_service import ResourceService
+                    ResourceService.move_dir_to_cache(dest_dir, project_root)
+                    shutil.copytree(tmp_dir, dest_dir)
+                except Exception as e:
+                    from tkinter import messagebox
+                    messagebox.showerror("复制失败", f"复制子树项目文件夹失败: {e}")
+                    return
+                finally:
+                    if os.path.exists(tmp_dir):
+                        try:
+                            shutil.rmtree(tmp_dir, ignore_errors=True)
+                        except Exception:
+                            pass
+            else:
+                try:
+                    shutil.copytree(folder_path, dest_dir)
+                except Exception as e:
+                    from tkinter import messagebox
+                    messagebox.showerror("复制失败", f"复制子树项目文件夹失败: {e}")
+                    return
 
             rel_path = "./subtrees/" + folder_name
             self.full_path = rel_path
@@ -2875,10 +2944,13 @@ class PropertyPanel(ctk.CTkFrame):
         enabled_widget = self.widgets.get("enabled")
         if enabled_widget:
             enabled_widget.set_value(node_data.get("enabled", True))
+        skip_widget = self.widgets.get("skip")
+        if skip_widget:
+            skip_widget.set_value(node_data.get("skip", False))
 
         # 更新配置字段值
         for key, widget in self.widgets.items():
-            if key in ("name", "enabled"):
+            if key in ("name", "enabled", "skip"):
                 continue  # 基本信息已单独处理
 
             # TreeSelectField 需要刷新选项列表
@@ -3323,6 +3395,16 @@ class PropertyPanel(ctk.CTkFrame):
         enabled_field.set_value(node_data.get("enabled", True))
         enabled_field.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'])
         self.widgets["enabled"] = enabled_field
+
+        skip_field = BoolField(
+            self.content_frame,
+            label="跳过",
+            key="skip",
+            on_change=self._on_field_change
+        )
+        skip_field.set_value(node_data.get("skip", False))
+        skip_field.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'])
+        self.widgets["skip"] = skip_field
     
     def _create_field(self, field: Dict[str, Any], value: Any, parent_frame=None):
         field_type = field.get("type", "text")

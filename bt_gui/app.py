@@ -299,27 +299,31 @@ class BehaviorTreeApp(ctk.CTk):
         except ImportError:
             pass
 
-        self._auth_btn = ctk.CTkButton(
-            left_section,
-            text="登录",
-            width=60,
-            height=28,
-            font=Theme.get_font('xs'),
-            fg_color=self._dark_colors['primary'],
-            hover_color=self._dark_colors['primary_hover'],
-            corner_radius=4,
-            command=self._on_auth_click
-        )
-        self._auth_btn.pack(side='left', padx=Theme.DIMENSIONS['spacing_sm'])
-
-        self._auth_status_var = StringVar(value="未登录")
-        self._auth_status_label = ctk.CTkLabel(
-            left_section,
-            textvariable=self._auth_status_var,
-            font=Theme.get_font('xs'),
-            text_color=self._dark_colors['text_muted']
-        )
-        self._auth_status_label.pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_sm']))
+        # ============================================================
+        # 登录 UI 暂不对外开放（注释保留，后端登录接口仍可用）
+        # 如需恢复，取消下方注释即可
+        # ============================================================
+        # self._auth_btn = ctk.CTkButton(
+        #     left_section,
+        #     text="登录",
+        #     width=60,
+        #     height=28,
+        #     font=Theme.get_font('xs'),
+        #     fg_color=self._dark_colors['primary'],
+        #     hover_color=self._dark_colors['primary_hover'],
+        #     corner_radius=4,
+        #     command=self._on_auth_click
+        # )
+        # self._auth_btn.pack(side='left', padx=Theme.DIMENSIONS['spacing_sm'])
+        #
+        # self._auth_status_var = StringVar(value="未登录")
+        # self._auth_status_label = ctk.CTkLabel(
+        #     left_section,
+        #     textvariable=self._auth_status_var,
+        #     font=Theme.get_font('xs'),
+        #     text_color=self._dark_colors['text_muted']
+        # )
+        # self._auth_status_label.pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_sm']))
         
         center_section = ctk.CTkFrame(top_bar_content, fg_color='transparent')
         center_section.pack(side='left', expand=True)

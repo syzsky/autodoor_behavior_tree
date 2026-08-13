@@ -25,7 +25,7 @@ class MultiTreeManager:
 
     def add_tree(self, name: str, root_node: Node,
                  blackboard: Blackboard = None,
-                 tick_interval: float = 0.01) -> TreeInstance:
+                 tick_interval: float = 0.033) -> TreeInstance:
         """添加行为树实例
 
         Args:
@@ -62,7 +62,7 @@ class MultiTreeManager:
 
     def add_tree_from_file(self, name: str, filepath: str,
                            blackboard: Blackboard = None,
-                           tick_interval: float = 0.01) -> TreeInstance:
+                           tick_interval: float = 0.033) -> TreeInstance:
         """从文件添加行为树实例"""
         from .serializer import Serializer
         root_node, _, _ = Serializer.load_from_file(filepath)

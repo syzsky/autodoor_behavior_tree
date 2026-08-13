@@ -4,7 +4,7 @@ from typing import Dict, Any, FrozenSet
 
 _KNOWN_FIELDS: FrozenSet[str] = frozenset({
     "name", "description", "enabled", "retry_count",
-    "repeat_count", "repeat_interval_ms", "timeout_ms", "extra"
+    "repeat_count", "repeat_interval_ms", "timeout_ms", "extra", "skip"
 })
 
 
@@ -16,6 +16,7 @@ class NodeConfig:
         name: 节点名称
         description: 节点描述
         enabled: 是否启用
+        skip: 是否跳过（跳过节点自身逻辑，仍执行其子节点）
         retry_count: 重试次数（-1表示无限）
         repeat_count: 重复次数（-1表示无限）
         repeat_interval_ms: 重复间隔（毫秒）
@@ -25,6 +26,7 @@ class NodeConfig:
     name: str = ""
     description: str = ""
     enabled: bool = True
+    skip: bool = False
     retry_count: int = 0
     repeat_count: int = 0
     repeat_interval_ms: int = 100
@@ -55,6 +57,7 @@ class NodeConfig:
         if self.description:
             result["description"] = self.description
         result["enabled"] = self.enabled
+        result["skip"] = self.skip
         if self.retry_count != 0:
             result["retry_count"] = self.retry_count
         if self.repeat_count != 0:
@@ -103,7 +106,7 @@ class NodeConfig:
         
         known_keys = {
             "name", "description", "enabled", "retry_count", 
-            "repeat_count", "repeat_interval_ms", "timeout_ms", "extra"
+            "repeat_count", "repeat_interval_ms", "timeout_ms", "extra", "skip"
         }
         
         extra = data.get("extra", {})
@@ -116,6 +119,7 @@ class NodeConfig:
             name=str(data.get("name", "")),
             description=str(data.get("description", "")),
             enabled=to_bool(data.get("enabled", True)),
+            skip=to_bool(data.get("skip", False)),
             retry_count=to_int(data.get("retry_count", 0)),
             repeat_count=to_int(data.get("repeat_count", 0)),
             repeat_interval_ms=to_int(data.get("repeat_interval_ms", 100)),

@@ -1,4 +1,5 @@
 import hashlib
+import os
 import socket
 import time
 from typing import Any, Dict, Optional
@@ -8,9 +9,42 @@ import requests
 from bt_utils.log_manager import LogManager
 
 
+def _load_dotenv() -> None:
+    """加载项目根目录的 .env 文件到环境变量（不覆盖已存在的环境变量）。
+
+    仅解析简单的 KEY=VALUE 行，忽略空行与 # 注释，避免引入额外依赖。
+    """
+    try:
+        env_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            ".env")
+        if not os.path.isfile(env_path):
+            return
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+_load_dotenv()
+
+
 class PlatformAPIClient:
-    DEFAULT_BASE_URL = "https://autodoor.lizhileyun.com"
-    API_NAMESPACE = "/wp-json/bt/v1/executor"
+    # 登录服务器地址：优先从环境变量 AUTODOOR_BT_SERVER_URL 读取。
+    # 开源仓库不包含真实服务器地址，未配置时使用占位符（需自行配置）。
+    DEFAULT_BASE_URL = os.environ.get(
+        "AUTODOOR_BT_SERVER_URL", "https://your-server.example.com")
+    # API 命名空间：优先从环境变量 AUTODOOR_BT_API_NAMESPACE 读取。
+    API_NAMESPACE = os.environ.get(
+        "AUTODOOR_BT_API_NAMESPACE", "/wp-json/bt/v1/executor")
     CONNECT_TIMEOUT = 10
     READ_TIMEOUT = 30
 

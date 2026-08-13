@@ -7,6 +7,11 @@ from .theme import Theme
 from .widgets import CardFrame, AnimatedButton, create_section_title, create_divider
 from bt_utils.resource_manager import ResourceManager
 
+# 全局 tick 间隔（毫秒）预设与边界，与应用其它层保持一致
+TICK_PRESETS_MS = (33, 100, 200, 500, 1000)
+TICK_DEFAULT_MS = 33
+TICK_MIN_MS = 33
+
 
 class SettingsTab(ctk.CTkFrame):
     def __init__(self, master, app, **kwargs):
@@ -34,11 +39,14 @@ class SettingsTab(ctk.CTkFrame):
         self.start_shortcut_var = tk.StringVar(value="F10")
         self.stop_shortcut_var = tk.StringVar(value="F12")
         self.record_hotkey_var = tk.StringVar(value="F11")
-        
+
         from config.settings_manager import SettingsManager
         settings = SettingsManager()
         self._current_keyboard_method = settings.get("input.keyboard_method", "pyautogui")
         self._current_mouse_method = settings.get("input.mouse_method", "pyautogui")
+
+        # 全局运行频率（tick 间隔，毫秒）
+        self.tick_interval_ms = tk.IntVar(value=TICK_DEFAULT_MS)
     
     def _get_default_project_path(self) -> str:
         """获取默认项目保存路径
@@ -60,6 +68,7 @@ class SettingsTab(ctk.CTkFrame):
         self._scroll_frame.pack(fill="both", expand=True, padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_md'])
 
         self._create_project_section(self._scroll_frame)
+        self._create_run_section(self._scroll_frame)
         self._create_alarm_section(self._scroll_frame)
         self._create_shortcut_section(self._scroll_frame)
         self._create_input_method_section(self._scroll_frame)
@@ -102,6 +111,74 @@ class SettingsTab(ctk.CTkFrame):
             command=self._browse_project_path
         )
         self.browse_project_btn.pack(side="left")
+    
+    def _create_run_section(self, parent):
+        """创建运行频率设置区域（控制整体 tick 频率）"""
+        run_frame = CardFrame(parent)
+        run_frame.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
+
+        run_header = ctk.CTkFrame(run_frame, fg_color="transparent")
+        run_header.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_md'], Theme.DIMENSIONS['spacing_sm']))
+        create_section_title(run_header, "运行设置", level=1).pack(side="left")
+
+        create_divider(run_frame)
+
+        run_desc = ctk.CTkFrame(run_frame, fg_color="transparent")
+        run_desc.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'])
+        ctk.CTkLabel(
+            run_desc,
+            text=f"tick 间隔越小，执行频率越高",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted']
+        ).pack(side="left")
+
+        run_row = ctk.CTkFrame(run_frame, fg_color="transparent")
+        run_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_sm'], Theme.DIMENSIONS['spacing_md']))
+
+        ctk.CTkLabel(run_row, text="tick 间隔(ms):", font=Theme.get_font("sm"), text_color=self._dark_colors['text_secondary']).pack(side="left")
+
+        # 预设下拉：仅允许从预设值中选择，选择后立即保存应用
+        preset_values = [str(v) for v in TICK_PRESETS_MS]
+        from config.settings_manager import SettingsManager
+        _current_tick = int(SettingsManager.get_instance().get(
+            "behavior_tree.tick_interval", TICK_DEFAULT_MS))
+        if _current_tick not in TICK_PRESETS_MS:
+            _current_tick = TICK_DEFAULT_MS
+        self.tick_preset_var = tk.StringVar(value=str(_current_tick))
+
+        def _on_preset(*args):
+            val = int(self.tick_preset_var.get())
+            self.tick_interval_ms.set(val)
+            SettingsManager.get_instance().set("behavior_tree.tick_interval", val, auto_save=True)
+            self._tick_status_label.configure(
+                text=f"已保存 ({val} ms)",
+                text_color=self._dark_colors.get('success', '#22C55E')
+            )
+
+        self.tick_preset_var.trace_add("write", _on_preset)
+
+        preset_menu = ctk.CTkOptionMenu(
+            run_row,
+            values=preset_values,
+            variable=self.tick_preset_var,
+            width=110,
+            height=28,
+            font=Theme.get_font("sm"),
+            fg_color=self._dark_colors['bg_tertiary'],
+            button_color=self._dark_colors['bg_tertiary'],
+            button_hover_color=self._dark_colors.get('node_selected', '#3B82F6'),
+            text_color=self._dark_colors['text_primary'],
+            dropdown_fg_color=self._dark_colors['bg_tertiary'],
+            dropdown_hover_color=self._dark_colors.get('node_selected', '#3B82F6'),
+            dropdown_text_color=self._dark_colors['text_primary']
+        )
+        preset_menu.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], Theme.DIMENSIONS['spacing_sm']))
+
+        self._tick_status_label = ctk.CTkLabel(
+            run_row, text="", font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted']
+        )
+        self._tick_status_label.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
     
     def _create_alarm_section(self, parent):
         alarm_frame = CardFrame(parent)
@@ -847,6 +924,7 @@ class SettingsTab(ctk.CTkFrame):
             "alarm_sound_path": self.alarm_sound_path.get(),
             "alarm_volume": self.alarm_volume.get(),
             "default_project_path": self.default_project_path.get(),
+            "tick_interval_ms": self.tick_interval_ms.get(),
             "shortcuts": {
                 "start": self.start_shortcut_var.get(),
                 "stop": self.stop_shortcut_var.get(),
@@ -885,6 +963,23 @@ class SettingsTab(ctk.CTkFrame):
             self.default_project_path.set(default_project_path)
         
         self._ensure_workspace_exists()
+
+        if "tick_interval_ms" in settings:
+            try:
+                val = int(settings["tick_interval_ms"])
+                if val > 0:
+                    self.tick_interval_ms.set(val)
+                    if val in TICK_PRESETS_MS:
+                        self.tick_preset_var.set(str(val))
+            except (ValueError, TypeError):
+                pass
+        else:
+            from config.settings_manager import SettingsManager
+            saved = int(SettingsManager.get_instance().get("behavior_tree.tick_interval", TICK_DEFAULT_MS))
+            if saved not in TICK_PRESETS_MS:
+                saved = TICK_DEFAULT_MS
+            self.tick_interval_ms.set(saved)
+            self.tick_preset_var.set(str(saved))
         
         if "shortcuts" in settings:
             shortcuts = settings["shortcuts"]
