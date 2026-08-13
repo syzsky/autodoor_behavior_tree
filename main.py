@@ -2,20 +2,18 @@ import sys
 import os
 import traceback
 
-LOG_DIR = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "autodoor_behavior_tree")
-try:
-    os.makedirs(LOG_DIR, exist_ok=True)
-except Exception:
-    LOG_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(LOG_DIR, "startup_error.log")
-
 def write_log(msg):
+    """写入启动日志（与运行日志共用同一套逻辑，统一保存到项目 logs/ 目录）"""
     try:
-        with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            timestamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            f.write(f"[{timestamp}] {msg}\n")
+        from bt_utils.log_manager import LogManager
+        LogManager.write_startup_log(msg)
     except Exception:
-        pass
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "startup_error.log"), 'a', encoding='utf-8') as f:
+                timestamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                f.write(f"[{timestamp}] {msg}\n")
+        except Exception:
+            pass
 
 write_log("=== Application startup begin ===")
 write_log(f"Python version: {sys.version}")
@@ -27,15 +25,27 @@ def setup_error_logging():
     def exception_hook(exctype, value, tb):
         error_msg = ''.join(traceback.format_exception(exctype, value, tb))
         write_log(f"EXCEPTION: {error_msg}")
-        print(f"STARTUP ERROR - Log file: {LOG_FILE}")
+        try:
+            from bt_utils.log_manager import LogManager
+            print(f"STARTUP ERROR - Log file: {LogManager.get_log_file_path()}")
+        except Exception:
+            pass
         print(error_msg)
         sys.__excepthook__(exctype, value, tb)
     
     sys.excepthook = exception_hook
-    return LOG_FILE
+    try:
+        from bt_utils.log_manager import LogManager
+        return LogManager.get_log_file_path()
+    except Exception:
+        return ""
 
 LOG_FILE_RESULT = setup_error_logging()
-print(f"Error logging initialized. Log file: {LOG_FILE}")
+try:
+    from bt_utils.log_manager import LogManager
+    print(f"Error logging initialized. Log file: {LogManager.get_log_file_path()}")
+except Exception:
+    pass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

@@ -109,13 +109,55 @@ class LogManager:
     _file_log_lock = threading.Lock()
     
     @classmethod
+    def _get_log_dir(cls) -> str:
+        """获取日志目录（项目根目录/logs）
+
+        日志统一保存在项目根目录下的 logs 文件夹中，
+        实时日志与历史日志共用同一套逻辑（时间戳文件）。
+        目录创建失败时回退当前目录。
+        """
+        try:
+            # 项目根目录 = 本文件所在目录的上一级（bt_utils -> 项目根）
+            project_root = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
+            log_dir = os.path.join(project_root, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            return log_dir
+        except Exception:
+            return os.getcwd()
+
+    @classmethod
     def _get_log_file_path(cls) -> str:
-        """获取日志文件路径（应用当前目录）"""
+        """获取日志文件路径（项目根目录/logs/debug_log_<时间戳>.txt）
+
+        每次运行生成一个带时间戳的文件，既是当前实时日志，
+        也是历史归档日志，实时与历史共用同一套逻辑。
+        """
         if cls._file_log_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_dir = os.getcwd()
+            log_dir = cls._get_log_dir()
             cls._file_log_path = os.path.join(log_dir, f"debug_log_{timestamp}.txt")
         return cls._file_log_path
+
+    @classmethod
+    def get_log_file_path(cls) -> str:
+        """获取当前日志文件路径（供外部复用，如启动日志）"""
+        return cls._get_log_file_path()
+
+    @classmethod
+    def write_startup_log(cls, message: str) -> None:
+        """写入启动日志（与运行日志共用同一文件逻辑）
+
+        即使文件日志未启用也会写入，确保启动早期日志不丢失。
+        """
+        try:
+            log_path = cls._get_log_file_path()
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            log_line = f"[{timestamp}] {message}\n"
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(log_line)
+        except Exception:
+            pass
     
     @classmethod
     def enable_file_log(cls, enabled: bool = True) -> None:
