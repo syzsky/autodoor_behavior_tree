@@ -736,11 +736,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._tab_shortcut_keys = []  # 单树快捷键注册列表
         
         def start_callback():
-            LogManager.debug_print(f"[DEBUG] F10 pressed, _is_running={self._is_running}")
             self._start_running()
         
         def stop_callback():
-            LogManager.debug_print(f"[DEBUG] F12 pressed, _is_running={self._is_running}")
             self._stop_running()
         
         self._hotkey_manager.register(start_key, start_callback)
@@ -1084,9 +1082,11 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     
     def _copy_selected(self):
         if self.canvas.selected_nodes:
-            self._clipboard_data = self.canvas._copy_selected_nodes_to_clipboard()
+            result = self.canvas._copy_selected_nodes_to_clipboard()
+            self._clipboard_data = result
         elif self.canvas.selected_node:
-            self._clipboard_data = self.canvas._copy_selected_nodes_to_clipboard()
+            result = self.canvas._copy_selected_nodes_to_clipboard()
+            self._clipboard_data = result
     
     def _paste_selected(self, paste_x: float = None, paste_y: float = None):
         if not self._clipboard_data:

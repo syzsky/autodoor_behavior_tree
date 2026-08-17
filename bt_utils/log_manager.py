@@ -236,6 +236,65 @@ class LogManager:
             message: 调试消息
         """
         cls._write_file_log(message)
+
+    _run_log_path = None
+
+    @classmethod
+    def _get_run_log_path(cls) -> str:
+        """获取运行日志文件路径（项目根目录/logs/run_log.txt）
+
+        运行日志固定文件名，每次引擎启动时清空，仅保留当次运行现场。
+        """
+        if cls._run_log_path is None:
+            log_dir = cls._get_log_dir()
+            cls._run_log_path = os.path.join(log_dir, "run_log.txt")
+        return cls._run_log_path
+
+    @classmethod
+    def clear_run_log(cls) -> None:
+        """清空运行日志文件（引擎启动时调用）"""
+        try:
+            with open(cls._get_run_log_path(), 'w', encoding='utf-8') as f:
+                f.write("")
+        except Exception:
+            pass
+
+    @classmethod
+    def run_log(cls, message: str) -> None:
+        """运行时高频日志（文件 + 终端双写）
+
+        写入固定文件 run_log.txt（每次运行清空），同时输出到终端。
+        用于记录当次运行的节点执行现场，不进入历史日志文件。
+
+        Args:
+            message: 运行日志消息
+        """
+        try:
+            log_path = cls._get_run_log_path()
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            log_line = f"[{timestamp}] {message}\n"
+            with cls._file_log_lock:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(log_line)
+        except Exception:
+            pass
+
+        if not cls._console_output_enabled:
+            if cls._console_output_enabled is None:
+                cls._console_output_enabled = _is_console_output_enabled()
+            if not cls._console_output_enabled:
+                return
+
+        try:
+            print(message)
+        except UnicodeEncodeError:
+            try:
+                import sys
+                sys.stdout.buffer.write(message.encode('utf-8', errors='replace'))
+                sys.stdout.buffer.write(b'\n')
+                sys.stdout.buffer.flush()
+            except Exception:
+                pass
     
     def log(self, entry: LogEntry) -> None:
         """记录日志（仅前端显示，不输出到终端）

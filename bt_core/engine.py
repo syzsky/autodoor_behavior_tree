@@ -83,6 +83,10 @@ class BehaviorTreeEngine:
             if self._running:
                 return
 
+            # 每次启动清空运行日志，仅保留当次运行现场
+            from bt_utils.log_manager import LogManager
+            LogManager.clear_run_log()
+
             self.context = context or ExecutionContext()
             self.context.set_stats_collector(self._stats)
             self._running = True

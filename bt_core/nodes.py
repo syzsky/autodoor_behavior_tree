@@ -73,7 +73,6 @@ class Node(ABC):
             return NodeStatus.SUCCESS
 
         if self.status != NodeStatus.RUNNING:
-            LogManager.debug_print(f"[EXEC] 执行节点: {self.NODE_TYPE} '{self.name}'")
             context.notify_node_status(self.node_id, "running")
 
         if self._start_time is None:
@@ -1215,45 +1214,45 @@ class ActionNode(Node):
                 window_rect = WindowManager.get_window_rect(bound_window)
                 foreground_hwnd = WindowManager.get_foreground_window()
                 
-                LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 窗口切换检查开始")
-                LogManager.debug_print(f"[WIN] ActionNode '{self.name}' bound_window={bound_window}, rect={window_rect}")
-                LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 当前前台窗口 hwnd={foreground_hwnd}")
-                LogManager.debug_print(f"[WIN] ActionNode '{self.name}' was_already_foreground={self._was_already_foreground}")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换检查开始")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' bound_window={bound_window}, rect={window_rect}")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 当前前台窗口 hwnd={foreground_hwnd}")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' was_already_foreground={self._was_already_foreground}")
                 
                 if self._was_already_foreground:
-                    LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 绑定窗口已在前台，跳过切换")
+                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 绑定窗口已在前台，跳过切换")
                     self._window_switched = True
                 else:
                     if self._original_foreground_window is None:
                         self._original_foreground_window = foreground_hwnd
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 保存原始前台窗口 hwnd={self._original_foreground_window}")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 保存原始前台窗口 hwnd={self._original_foreground_window}")
                     
                     max_retries = 3
                     switch_success = False
                     
                     for attempt in range(max_retries):
                         retry_delay = 0.1 * (2 ** attempt)
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 准备切换到绑定窗口 (尝试 {attempt + 1}/{max_retries})")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 准备切换到绑定窗口 (尝试 {attempt + 1}/{max_retries})")
                         switch_start = time.time()
                         switch_result = context.smart_switch_to_bound_window()
                         switch_elapsed_ms = (time.time() - switch_start) * 1000
                         after_switch_foreground = WindowManager.is_foreground_window(bound_window)
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 窗口切换完成 result={switch_result}, 耗时={switch_elapsed_ms:.2f}ms")
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 切换后绑定窗口是否在前台={after_switch_foreground}")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换完成 result={switch_result}, 耗时={switch_elapsed_ms:.2f}ms")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 切换后绑定窗口是否在前台={after_switch_foreground}")
                         
                         if after_switch_foreground:
-                            LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 窗口切换成功")
+                            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换成功")
                             switch_success = True
                             break
                         else:
-                            LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 窗口切换失败，等待 {retry_delay}s 后重试")
+                            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换失败，等待 {retry_delay}s 后重试")
                             time.sleep(retry_delay)
                     
                     if switch_success:
                         self._window_switched = True
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' window_switched 标记已设置")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' window_switched 标记已设置")
                     else:
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 窗口切换失败，返回 FAILURE")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换失败，返回 FAILURE")
                         LogManager.instance().log_failure(
                             node_type="动作节点",
                             node_name=self.name,
@@ -1264,19 +1263,19 @@ class ActionNode(Node):
             else:
                 is_foreground_now = WindowManager.is_foreground_window(bound_window)
                 if not is_foreground_now:
-                    LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 检测到绑定窗口已不在前台，重新切换")
+                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 检测到绑定窗口已不在前台，重新切换")
                     self._window_switched = False
                     self._was_already_foreground = False
                     return NodeStatus.RUNNING
             
-            LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 执行动作...")
+            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 执行动作...")
             action_start = time.time()
             status = self._execute_action(context)
             action_elapsed_ms = (time.time() - action_start) * 1000
-            LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 动作执行完成 status={status}, 耗时={action_elapsed_ms:.2f}ms")
+            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 动作执行完成 status={status}, 耗时={action_elapsed_ms:.2f}ms")
             
             if status != NodeStatus.RUNNING:
-                LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 动作非 RUNNING，准备恢复前台窗口")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 动作非 RUNNING，准备恢复前台窗口")
                 if not self._was_already_foreground and self._original_foreground_window is not None:
                     restore_start = time.time()
                     from bt_utils.window_manager import WindowManager
@@ -1284,11 +1283,11 @@ class ActionNode(Node):
                         WindowManager.set_foreground_window(self._original_foreground_window)
                         context._previous_foreground_window = None
                         restore_elapsed_ms = (time.time() - restore_start) * 1000
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 恢复原前台窗口 hwnd={self._original_foreground_window}，耗时={restore_elapsed_ms:.2f}ms")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 恢复原前台窗口 hwnd={self._original_foreground_window}，耗时={restore_elapsed_ms:.2f}ms")
                     else:
-                        LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 原始前台窗口已无效，跳过恢复")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 原始前台窗口已无效，跳过恢复")
                 else:
-                    LogManager.debug_print(f"[WIN] ActionNode '{self.name}' 绑定窗口原本就在前台，无需恢复")
+                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 绑定窗口原本就在前台，无需恢复")
                 self._window_switched = False
                 self._was_already_foreground = False
                 self._original_foreground_window = None
