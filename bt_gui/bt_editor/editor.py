@@ -1575,7 +1575,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             return
         
         if not self.project_root or save_as:
-            self._on_new_project_dialog()
+            # 无项目上下文（如 AI 生成的临时树）：把当前画布上的树
+            # 保存进新建的项目，而不是清空画布新建空白项目
+            self._convert_to_project()
             return
         
         if not file_path:
@@ -1834,12 +1836,21 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 self.project_manager.create_project(name, description)
                 
                 tree_data = self.canvas.get_tree_data()
+                # 与正常保存路径一致：把树引用的子树/模板等资源一并清理并复制进新项目，
+                # 避免 AI 临时树转项目后资源引用失效
+                from bt_utils.resource_service import ResourceService
+                tree_data = ResourceService.save_with_cleanup(tree_data, self.project_root)
+                self.canvas.load_tree(tree_data)
                 self.project_manager.save_project(tree_data)
                 
                 self.file_path = os.path.join(self.project_root, "tree.json")
                 self._update_title(name)
                 self._set_modified(False)
-                
+
+                active_tab = self.tab_manager.get_active_tab()
+                if active_tab and hasattr(active_tab, '_autosave_manager') and active_tab._autosave_manager:
+                    active_tab._autosave_manager.clear_autosaves()
+
                 self.toolbar.set_project_path(self.project_root)
                 
                 messagebox.showinfo("成功", f"项目 '{name}' 创建成功，当前行为树已保存到项目中")
