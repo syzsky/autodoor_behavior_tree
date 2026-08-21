@@ -1,7 +1,6 @@
 import time
 import os
 import random
-import pyperclip
 from bt_core.nodes import ActionNode, NodeStatus
 from bt_core.config import NodeConfig
 from typing import Dict, Any, List
@@ -153,6 +152,7 @@ class TextInputNode(ActionNode):
             pyautogui.PAUSE = original_pause
     
     def _input_text_fast(self, context, text: str) -> None:
+        import pyperclip
         pyperclip.copy(text)
         time.sleep(0.01)
         
@@ -161,6 +161,7 @@ class TextInputNode(ActionNode):
         context.execute_key_press("ctrl", "up", 0)
     
     def _input_text_slow(self, context, text: str) -> None:
+        import pyperclip
         CLIPBOARD_READY_DELAY = 0.005
         PASTE_COMPLETE_DELAY = 0.01
         

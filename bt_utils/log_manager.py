@@ -3,6 +3,8 @@ from datetime import datetime
 from enum import Enum
 from typing import List
 import threading
+import os
+import traceback
 from bt_utils.singleton import singleton
 
 
@@ -102,6 +104,101 @@ class LogManager:
         """
         cls._console_output_enabled = enabled
     
+    _file_log_enabled = False
+    _file_log_path = None
+    _file_log_lock = threading.Lock()
+    
+    @classmethod
+    def _get_log_dir(cls) -> str:
+        """获取日志目录（项目根目录/logs）
+
+        日志统一保存在项目根目录下的 logs 文件夹中，
+        实时日志与历史日志共用同一套逻辑（时间戳文件）。
+        目录创建失败时回退当前目录。
+        """
+        try:
+            # 项目根目录 = 本文件所在目录的上一级（bt_utils -> 项目根）
+            project_root = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
+            log_dir = os.path.join(project_root, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            return log_dir
+        except Exception:
+            return os.getcwd()
+
+    @classmethod
+    def _get_log_file_path(cls) -> str:
+        """获取日志文件路径（项目根目录/logs/debug_log_<时间戳>.txt）
+
+        每次运行生成一个带时间戳的文件，既是当前实时日志，
+        也是历史归档日志，实时与历史共用同一套逻辑。
+        """
+        if cls._file_log_path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_dir = cls._get_log_dir()
+            cls._file_log_path = os.path.join(log_dir, f"debug_log_{timestamp}.txt")
+        return cls._file_log_path
+
+    @classmethod
+    def get_log_file_path(cls) -> str:
+        """获取当前日志文件路径（供外部复用，如启动日志）"""
+        return cls._get_log_file_path()
+
+    @classmethod
+    def write_startup_log(cls, message: str) -> None:
+        """写入启动日志（与运行日志共用同一文件逻辑）
+
+        即使文件日志未启用也会写入，确保启动早期日志不丢失。
+        """
+        try:
+            log_path = cls._get_log_file_path()
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            log_line = f"[{timestamp}] {message}\n"
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(log_line)
+        except Exception:
+            pass
+    
+    @classmethod
+    def enable_file_log(cls, enabled: bool = True) -> None:
+        """启用/禁用文件日志
+        
+        Args:
+            enabled: 是否启用文件日志
+        """
+        cls._file_log_enabled = enabled
+        if enabled:
+            cls._write_file_log("[SYSTEM] 文件日志已启用")
+    
+    @classmethod
+    def disable_file_log(cls) -> None:
+        """禁用文件日志"""
+        cls._file_log_enabled = False
+    
+    @classmethod
+    def _write_file_log(cls, message: str) -> None:
+        """写入日志到文件
+        
+        Args:
+            message: 日志消息
+        """
+        if not cls._file_log_enabled:
+            return
+        
+        with cls._file_log_lock:
+            try:
+                log_path = cls._get_log_file_path()
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                log_line = f"[{timestamp}] {message}\n"
+                
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(log_line)
+            except Exception as e:
+                try:
+                    print(f"[LOG ERROR] 写入日志文件失败: {e}")
+                except:
+                    pass
+    
     @classmethod
     def debug_print(cls, message: str) -> None:
         """终端调试输出（仅 Debug 环境）
@@ -112,12 +209,82 @@ class LogManager:
         Args:
             message: 调试消息
         """
+        cls._write_file_log(message)
+        
         if not cls._console_output_enabled:
             if cls._console_output_enabled is None:
                 cls._console_output_enabled = _is_console_output_enabled()
             if not cls._console_output_enabled:
                 return
         
+        try:
+            print(message)
+        except UnicodeEncodeError:
+            try:
+                import sys
+                sys.stdout.buffer.write(message.encode('utf-8', errors='replace'))
+                sys.stdout.buffer.write(b'\n')
+                sys.stdout.buffer.flush()
+            except Exception:
+                pass
+    
+    @classmethod
+    def debug_log(cls, message: str) -> None:
+        """仅写入文件的调试日志（不输出到终端）
+        
+        Args:
+            message: 调试消息
+        """
+        cls._write_file_log(message)
+
+    _run_log_path = None
+
+    @classmethod
+    def _get_run_log_path(cls) -> str:
+        """获取运行日志文件路径（项目根目录/logs/run_log.txt）
+
+        运行日志固定文件名，每次引擎启动时清空，仅保留当次运行现场。
+        """
+        if cls._run_log_path is None:
+            log_dir = cls._get_log_dir()
+            cls._run_log_path = os.path.join(log_dir, "run_log.txt")
+        return cls._run_log_path
+
+    @classmethod
+    def clear_run_log(cls) -> None:
+        """清空运行日志文件（引擎启动时调用）"""
+        try:
+            with open(cls._get_run_log_path(), 'w', encoding='utf-8') as f:
+                f.write("")
+        except Exception:
+            pass
+
+    @classmethod
+    def run_log(cls, message: str) -> None:
+        """运行时高频日志（文件 + 终端双写）
+
+        写入固定文件 run_log.txt（每次运行清空），同时输出到终端。
+        用于记录当次运行的节点执行现场，不进入历史日志文件。
+
+        Args:
+            message: 运行日志消息
+        """
+        try:
+            log_path = cls._get_run_log_path()
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            log_line = f"[{timestamp}] {message}\n"
+            with cls._file_log_lock:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(log_line)
+        except Exception:
+            pass
+
+        if not cls._console_output_enabled:
+            if cls._console_output_enabled is None:
+                cls._console_output_enabled = _is_console_output_enabled()
+            if not cls._console_output_enabled:
+                return
+
         try:
             print(message)
         except UnicodeEncodeError:

@@ -2,7 +2,7 @@ import customtkinter as ctk
 from typing import List, Callable, Optional
 
 from ..theme import Theme
-from .constants import build_node_categories
+from .constants import build_node_categories, build_plugin_category
 
 
 NODE_CATEGORIES = build_node_categories(Theme.NODE_COLORS)
@@ -149,21 +149,33 @@ class CategorySection(ctk.CTkFrame):
 
 
 class NodePalette(ctk.CTkFrame):
+    COLLAPSED_WIDTH = 32
+
     def __init__(self, master, on_node_add: Optional[Callable[[str], None]] = None, **kwargs):
         super().__init__(master, **kwargs)
         self.on_node_add = on_node_add
-        
+        self._plugin_loader = None
+        self._plugin_section: Optional[CategorySection] = None
+        self._is_collapsed = False
+
         self._dark_colors = Theme.get_dark_colors()
+        self._expanded_width = Theme.DIMENSIONS['sidebar_width']
         self.configure(
             fg_color=self._dark_colors['sidebar_bg'],
             corner_radius=0,
-            width=Theme.DIMENSIONS['sidebar_width']
+            width=self._expanded_width
         )
-        
+
         self._create_ui()
+        # 初次刷新插件节点（若有）
+        self.refresh_plugin_nodes()
     
     def _create_ui(self):
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        # --- 展开状态的内容 ---
+        self._expanded_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self._expanded_frame.pack(fill="both", expand=True)
+
+        header_frame = ctk.CTkFrame(self._expanded_frame, fg_color="transparent")
         header_frame.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_md'])
         
         title_label = ctk.CTkLabel(
@@ -173,8 +185,22 @@ class NodePalette(ctk.CTkFrame):
             text_color=self._dark_colors['text_primary']
         )
         title_label.pack(side="left")
+
+        # 收起按钮
+        self._collapse_btn = ctk.CTkButton(
+            header_frame,
+            text="◀",
+            width=28,
+            height=28,
+            font=Theme.get_font('sm'),
+            fg_color="transparent",
+            hover_color=self._dark_colors['border'],
+            text_color=self._dark_colors['text_muted'],
+            command=self.collapse
+        )
+        self._collapse_btn.pack(side="right")
         
-        search_frame = ctk.CTkFrame(self, fg_color=self._dark_colors['bg_tertiary'], corner_radius=6)
+        search_frame = ctk.CTkFrame(self._expanded_frame, fg_color=self._dark_colors['bg_tertiary'], corner_radius=6)
         search_frame.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(0, Theme.DIMENSIONS['spacing_md']))
         
         self.search_entry = ctk.CTkEntry(
@@ -191,7 +217,7 @@ class NodePalette(ctk.CTkFrame):
         self.search_entry.bind("<KeyRelease>", self._on_search)
         
         self.content_frame = ctk.CTkScrollableFrame(
-            self,
+            self._expanded_frame,
             fg_color="transparent",
             scrollbar_button_color=self._dark_colors['bg_tertiary'],
             scrollbar_button_hover_color=self._dark_colors['border']
@@ -208,6 +234,22 @@ class NodePalette(ctk.CTkFrame):
             )
             section.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
             self.category_sections.append(section)
+
+        # --- 收起状态的内容 ---
+        self._collapsed_frame = ctk.CTkFrame(self, fg_color="transparent")
+        # 默认不显示
+        self._collapsed_btn = ctk.CTkButton(
+            self._collapsed_frame,
+            text="▶",
+            width=self.COLLAPSED_WIDTH - 4,
+            height=40,
+            font=Theme.get_font('md'),
+            fg_color="transparent",
+            hover_color=self._dark_colors['border'],
+            text_color=self._dark_colors['text_muted'],
+            command=self.expand
+        )
+        self._collapsed_btn.pack(pady=(10, 0))
     
     def _on_search(self, event):
         search_text = self.search_entry.get().lower()
@@ -242,3 +284,72 @@ class NodePalette(ctk.CTkFrame):
     def _on_node_click(self, node_type: str):
         if self.on_node_add:
             self.on_node_add(node_type)
+
+    def collapse(self):
+        """收起面板：隐藏内容，仅显示展开按钮"""
+        if self._is_collapsed:
+            return
+        self._is_collapsed = True
+        self._expanded_frame.pack_forget()
+        self._collapsed_frame.pack(fill="y", padx=2, pady=2)
+        self.configure(width=self.COLLAPSED_WIDTH)
+
+    def expand(self):
+        """展开面板：恢复完整内容"""
+        if not self._is_collapsed:
+            return
+        self._is_collapsed = False
+        self._collapsed_frame.pack_forget()
+        self._expanded_frame.pack(fill="both", expand=True)
+        self.configure(width=self._expanded_width)
+
+    def toggle(self):
+        """切换展开/收起状态"""
+        if self._is_collapsed:
+            self.expand()
+        else:
+            self.collapse()
+
+    def is_collapsed(self) -> bool:
+        """是否处于收起状态"""
+        return self._is_collapsed
+
+    def set_plugin_loader(self, loader) -> None:
+        """注入 PluginLoader 实例，用于动态显示插件节点"""
+        self._plugin_loader = loader
+        self.refresh_plugin_nodes()
+
+    def refresh_plugin_nodes(self) -> None:
+        """根据 PluginLoader 当前状态刷新「插件节点」分类
+
+        - 若已存在插件节点 section，先销毁
+        - 然后查询 loader 的 display_info，若非空则重建 section
+        - 调用时机：palette 初始化后、插件启动/停止后
+        """
+        # 销毁旧的插件节点 section
+        if self._plugin_section is not None:
+            try:
+                self._plugin_section.destroy()
+            except Exception:
+                pass
+            self._plugin_section = None
+            # 从 category_sections 中移除已销毁的引用
+            self.category_sections = [s for s in self.category_sections if s.winfo_exists()]
+
+        if self._plugin_loader is None:
+            return
+
+        plugin_category = build_plugin_category(self._plugin_loader, Theme.NODE_COLORS)
+        if not plugin_category:
+            return
+
+        category_name, category_data = next(iter(plugin_category.items()))
+        section = CategorySection(
+            self.content_frame,
+            category_name=category_name,
+            category_data=category_data,
+            on_node_click=self._on_node_click
+        )
+        section.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
+        self._plugin_section = section
+        self.category_sections.append(section)

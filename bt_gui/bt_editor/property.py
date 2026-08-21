@@ -7,8 +7,39 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from ..theme import Theme
-from .constants import CONDITION_NODES, ACTION_NODES, COMPOSITE_NODES
+from .constants import CONDITION_NODES, ACTION_NODES, COMPOSITE_NODES, INTERFACE_NODES
 from bt_utils.log_manager import LogManager
+
+
+def _subtree_dirs_identical(src_dir: str, dst_dir: str) -> bool:
+    """判断两个目录内容是否一致（相对路径 + 文件大小）
+
+    用于子树引用的幂等判断：同一子树重复引用时，若目标已存在且内容一致，
+    则直接复用，避免重复复制导致后缀堆叠或覆盖破坏。
+
+    Args:
+        src_dir: 源目录
+        dst_dir: 目标目录
+
+    Returns:
+        内容一致返回 True，否则 False
+    """
+    try:
+        def _snapshot(root: str) -> dict:
+            result = {}
+            for dirpath, _dirs, files in os.walk(root):
+                for f in files:
+                    full = os.path.join(dirpath, f)
+                    rel = os.path.relpath(full, root).replace(os.sep, "/")
+                    try:
+                        result[rel] = os.path.getsize(full)
+                    except OSError:
+                        result[rel] = -1
+            return result
+
+        return _snapshot(src_dir) == _snapshot(dst_dir)
+    except Exception:
+        return False
 
 
 NODE_CONFIG_SCHEMAS = {
@@ -295,6 +326,44 @@ NODE_CONFIG_SCHEMAS = {
         {"key": "auto_reload", "label": "自动重载", "type": "bool", "default": False},
         {"key": "_aut_parameter_file", "label": "加密参数文件", "type": "file", "width": 150, "filetypes": [("参数文件", "*.json"), ("所有文件", "*.*")], "hidden": True},
     ],
+    "HTTPRequestNode": [
+        {"key": "url", "label": "请求URL", "type": "text", "default": ""},
+        {"key": "method", "label": "请求方法", "type": "select", "options": ["GET", "POST", "PUT", "DELETE"], "default": "GET"},
+        {"key": "body", "label": "请求体", "type": "text", "hide_if": {"field": "method", "value": ["GET", "DELETE"]}},
+        {"key": "headers", "label": "请求头(JSON)", "type": "text", "default": "{}"},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 100, "default": 5000},
+        {"key": "expected_status", "label": "期望状态码(0不检查)", "type": "number", "min": 0, "max": 599, "default": 0},
+        {"key": "response_key", "label": "响应变量名", "type": "text", "default": "http_response"},
+    ],
+    "APIConditionNode": [
+        {"key": "url", "label": "请求URL", "type": "text", "default": ""},
+        {"key": "method", "label": "请求方法", "type": "select", "options": ["GET", "POST"], "default": "GET"},
+        {"key": "body", "label": "请求体", "type": "text", "hide_if": {"field": "method", "value": "GET"}},
+        {"key": "headers", "label": "请求头(JSON)", "type": "text", "default": "{}"},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 100, "default": 5000},
+        {"key": "expected_status", "label": "期望状态码(0不检查)", "type": "number", "min": 0, "max": 599, "default": 0},
+        {"key": "json_path", "label": "JSON路径", "type": "text", "default": ""},
+        {"key": "expected_value", "label": "期望字段值", "type": "text", "default": ""},
+    ],
+    "MessagePublishNode": [
+        {"key": "topic", "label": "主题", "type": "text", "default": ""},
+        {"key": "payload", "label": "静态负载(JSON)", "type": "text", "default": "{}"},
+        {"key": "payload_key", "label": "黑板键名", "type": "text", "default": ""},
+        {"key": "prefix_tree_id", "label": "自动添加树ID前缀", "type": "bool", "default": True},
+    ],
+    "MessageSubscribeNode": [
+        {"key": "topic", "label": "订阅主题", "type": "text", "default": ""},
+        {"key": "payload_key", "label": "输出变量名", "type": "text", "default": "last_message"},
+        {"key": "wait_mode", "label": "等待模式", "type": "select", "options": ["nonblocking", "blocking"], "display_names": {"nonblocking": "非阻塞", "blocking": "阻塞"}, "default": "nonblocking"},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 0, "default": 0},
+    ],
+    "WebSocketNode": [
+        {"key": "url", "label": "WebSocket地址", "type": "text", "default": ""},
+        {"key": "action", "label": "操作", "type": "select", "options": ["send", "recv"], "display_names": {"send": "发送", "recv": "接收"}, "default": "send"},
+        {"key": "message", "label": "发送消息", "type": "text", "default": "", "hide_if": {"field": "action", "value": "recv"}},
+        {"key": "payload_key", "label": "输出变量名", "type": "text", "default": "ws_message", "hide_if": {"field": "action", "value": "send"}},
+        {"key": "timeout_ms", "label": "超时时间(ms)", "type": "number", "min": 100, "default": 1000, "hide_if": {"field": "action", "value": "send"}},
+    ],
 }
 
 CONDITION_DECORATOR_FIELDS = [
@@ -318,6 +387,40 @@ COMPOSITE_DECORATOR_FIELDS = [
     {"key": "repeat_interval_ms_random", "label": "重复间隔随机范围(±ms)", "type": "number", "min": 0, "default": 0},
     {"key": "timeout_ms", "label": "超时时间(ms,0不限)", "type": "number", "min": 0, "default": 0},
 ]
+
+
+# ── 插件节点 schema 动态注册 ──
+# NODE_CONFIG_SCHEMAS 是模块级 dict，运行时可变。
+# 插件启动时调用 register_plugin_schemas() 注册其节点 schema，
+# 停止时调用 unregister_plugin_schemas() 清理，保证属性面板能正确渲染插件节点配置。
+_plugin_schema_index: Dict[str, str] = {}  # node_type → plugin_name（用于按插件名清理）
+
+
+def register_plugin_schemas(plugin_name: str, schemas: Dict[str, list]) -> None:
+    """注册插件节点 schema 到全局 NODE_CONFIG_SCHEMAS
+
+    Args:
+        plugin_name: 插件名（用于按插件名批量清理）
+        schemas: {prefixed_node_type: [schema_item, ...]}
+    """
+    for node_type, schema in (schemas or {}).items():
+        NODE_CONFIG_SCHEMAS[node_type] = schema
+        _plugin_schema_index[node_type] = plugin_name
+
+
+def unregister_plugin_schemas(plugin_name: str) -> None:
+    """按插件名清理已注册的 schema"""
+    keys_to_remove = [nt for nt, pn in _plugin_schema_index.items() if pn == plugin_name]
+    for key in keys_to_remove:
+        NODE_CONFIG_SCHEMAS.pop(key, None)
+        _plugin_schema_index.pop(key, None)
+
+
+def unregister_all_plugin_schemas() -> None:
+    """清理所有插件 schema（应用退出时调用）"""
+    for key in list(_plugin_schema_index.keys()):
+        NODE_CONFIG_SCHEMAS.pop(key, None)
+    _plugin_schema_index.clear()
 
 
 class FieldWidget(ctk.CTkFrame):
@@ -1070,7 +1173,29 @@ class FolderField(FieldWidget):
             subtrees_dir = os.path.join(project_root, "subtrees")
             os.makedirs(subtrees_dir, exist_ok=True)
 
+            abs_project_root = os.path.abspath(project_root)
+            abs_subtrees_dir = os.path.abspath(subtrees_dir)
+            abs_source = os.path.abspath(folder_path)
+
+            # 自复制防护：源文件夹已在项目 subtrees 目录内，直接引用，避免复制到自己内部
+            if abs_source.startswith(abs_subtrees_dir + os.sep):
+                rel_path = os.path.relpath(abs_source, abs_project_root).replace(os.sep, "/")
+                if not rel_path.startswith("./"):
+                    rel_path = "./" + rel_path
+                self.full_path = rel_path
+                self.var.set(folder_name)
+                self.on_change(self.key, rel_path)
+                return
+
             dest_dir = os.path.join(subtrees_dir, folder_name)
+
+            # 幂等：目标已存在且与源内容一致 → 直接复用，不重复复制
+            if os.path.exists(dest_dir) and _subtree_dirs_identical(folder_path, dest_dir):
+                rel_path = "./subtrees/" + folder_name
+                self.full_path = rel_path
+                self.var.set(folder_name)
+                self.on_change(self.key, rel_path)
+                return
 
             if os.path.exists(dest_dir):
                 from tkinter import messagebox
@@ -1084,16 +1209,32 @@ class FolderField(FieldWidget):
                     self.var.set(folder_name)
                     self.on_change(self.key, rel_path)
                     return
-                # 将旧目录移到缓存而非直接删除，以便误操作时恢复
-                from bt_utils.resource_service import ResourceService
-                ResourceService.move_dir_to_cache(dest_dir, project_root)
-
-            try:
-                shutil.copytree(folder_path, dest_dir)
-            except Exception as e:
-                from tkinter import messagebox
-                messagebox.showerror("复制失败", f"复制子树项目文件夹失败: {e}")
-                return
+                # 安全覆盖：先复制到临时目录，成功后再替换旧目录，避免源目录被误删导致子树丢失
+                tmp_dir = os.path.join(subtrees_dir, f".{folder_name}.tmp_{os.getpid()}")
+                try:
+                    if os.path.exists(tmp_dir):
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                    shutil.copytree(folder_path, tmp_dir)
+                    from bt_utils.resource_service import ResourceService
+                    ResourceService.move_dir_to_cache(dest_dir, project_root)
+                    shutil.copytree(tmp_dir, dest_dir)
+                except Exception as e:
+                    from tkinter import messagebox
+                    messagebox.showerror("复制失败", f"复制子树项目文件夹失败: {e}")
+                    return
+                finally:
+                    if os.path.exists(tmp_dir):
+                        try:
+                            shutil.rmtree(tmp_dir, ignore_errors=True)
+                        except Exception:
+                            pass
+            else:
+                try:
+                    shutil.copytree(folder_path, dest_dir)
+                except Exception as e:
+                    from tkinter import messagebox
+                    messagebox.showerror("复制失败", f"复制子树项目文件夹失败: {e}")
+                    return
 
             rel_path = "./subtrees/" + folder_name
             self.full_path = rel_path
@@ -2803,10 +2944,13 @@ class PropertyPanel(ctk.CTkFrame):
         enabled_widget = self.widgets.get("enabled")
         if enabled_widget:
             enabled_widget.set_value(node_data.get("enabled", True))
+        skip_widget = self.widgets.get("skip")
+        if skip_widget:
+            skip_widget.set_value(node_data.get("skip", False))
 
         # 更新配置字段值
         for key, widget in self.widgets.items():
-            if key in ("name", "enabled"):
+            if key in ("name", "enabled", "skip"):
                 continue  # 基本信息已单独处理
 
             # TreeSelectField 需要刷新选项列表
@@ -3251,6 +3395,16 @@ class PropertyPanel(ctk.CTkFrame):
         enabled_field.set_value(node_data.get("enabled", True))
         enabled_field.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'])
         self.widgets["enabled"] = enabled_field
+
+        skip_field = BoolField(
+            self.content_frame,
+            label="跳过",
+            key="skip",
+            on_change=self._on_field_change
+        )
+        skip_field.set_value(node_data.get("skip", False))
+        skip_field.pack(fill="x", pady=Theme.DIMENSIONS['spacing_xs'])
+        self.widgets["skip"] = skip_field
     
     def _create_field(self, field: Dict[str, Any], value: Any, parent_frame=None):
         field_type = field.get("type", "text")

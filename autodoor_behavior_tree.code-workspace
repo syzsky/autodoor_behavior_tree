@@ -4,7 +4,7 @@
 			"path": "."
 		},
 		{
-			"path": "../autodoor_executor"
+			"path": "dsh_integration"
 		}
 	],
 	"settings": {}

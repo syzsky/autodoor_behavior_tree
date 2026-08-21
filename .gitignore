@@ -62,3 +62,22 @@ build_cython/
 
 # Worktrees
 .worktrees/
+
+# AI orchestration intermediate files
+.ai/
+
+# Debug logs
+debug_log_*.txt
+
+# Independent private repository (never sync to this remote)
+dsh_integration/
+
+# Internal documentation (local only, not for remote)
+docs/
+
+# Runtime logs
+logs/
+
+# TRAE generated artifacts
+.trae-html-share-packages/
+.trae-reports/

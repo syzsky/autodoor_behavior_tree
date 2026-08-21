@@ -1,8 +1,8 @@
 {
-    "version": "1.6.5",
-    "expire_date": "2029-07-30",
+    "version": "1.6.8b",
+    "expire_date": "2026-08-30",
     "force_update": false,
-    "build_type": "release",
+    "build_type": "debug",
     
     "github": {
         "owner": "wdhq4261761",

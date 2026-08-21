@@ -113,24 +113,57 @@ class PyAutoGUIInput(BaseInputController):
                    action: str = "press", duration: int = 0) -> None:
         """鼠标点击"""
         import pyautogui
+        from bt_utils.log_manager import LogManager
+        
+        LogManager.run_log(f"[PYAUTO] mouse_click: === 开始 === button={button}, action={action}, duration={duration}, position={position}")
+        
+        start_time = time.time()
         self._set_simulating(True)
         try:
             if position:
+                LogManager.run_log(f"[PYAUTO] mouse_click: 执行 moveTo({position[0]}, {position[1]})")
+                move_start = time.time()
                 pyautogui.moveTo(position[0], position[1])
+                move_elapsed_ms = (time.time() - move_start) * 1000
+                LogManager.run_log(f"[PYAUTO] mouse_click: moveTo 完成，耗时={move_elapsed_ms:.2f}ms")
+                
+                current_pos = pyautogui.position()
+                LogManager.run_log(f"[PYAUTO] mouse_click: 当前鼠标位置={current_pos}")
+            else:
+                LogManager.run_log(f"[PYAUTO] mouse_click: position=None，跳过 moveTo")
+            
+            LogManager.run_log(f"[PYAUTO] mouse_click: 执行 action={action}")
+            action_start = time.time()
             
             if action == "press":
                 if duration > 0:
+                    LogManager.run_log(f"[PYAUTO] mouse_click: 执行 mouseDown + sleep({duration}ms) + mouseUp")
                     pyautogui.mouseDown(button=button)
                     time.sleep(duration / 1000.0)
                     pyautogui.mouseUp(button=button)
                 else:
+                    LogManager.run_log(f"[PYAUTO] mouse_click: 执行 click(button={button})")
                     pyautogui.click(button=button)
             elif action == "down":
+                LogManager.run_log(f"[PYAUTO] mouse_click: 执行 mouseDown(button={button})")
                 pyautogui.mouseDown(button=button)
             elif action == "up":
+                LogManager.run_log(f"[PYAUTO] mouse_click: 执行 mouseUp(button={button})")
                 pyautogui.mouseUp(button=button)
+            
+            action_elapsed_ms = (time.time() - action_start) * 1000
+            LogManager.run_log(f"[PYAUTO] mouse_click: action 完成，耗时={action_elapsed_ms:.2f}ms")
+            
+        except Exception as e:
+            LogManager.run_log(f"[PYAUTO] mouse_click: 异常 - {type(e).__name__}: {e}")
+            import traceback
+            LogManager.run_log(f"[PYAUTO] mouse_click: 异常堆栈:\n{traceback.format_exc()}")
+            raise
         finally:
             self._set_simulating(False)
+            
+        total_elapsed_ms = (time.time() - start_time) * 1000
+        LogManager.run_log(f"[PYAUTO] mouse_click: === 结束 === 总耗时={total_elapsed_ms:.2f}ms")
     
     def mouse_down(self, button: str = "left") -> None:
         """按下鼠标"""

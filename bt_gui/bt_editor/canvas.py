@@ -494,7 +494,7 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
             menu.add_command(label=f"删除 {len(self.selected_nodes)} 个节点", 
                            command=lambda: self._delete_selected_nodes())
             menu.add_command(label=f"复制 {len(self.selected_nodes)} 个节点", 
-                           command=self._copy_selected_nodes_to_clipboard)
+                           command=self._copy_to_clipboard)
         elif self.selected_node:
             menu.add_command(label="删除节点", command=lambda: self.remove_node(self.selected_node))
             menu.add_command(label="复制节点", command=lambda: self._copy_node(self.selected_node))
@@ -666,7 +666,34 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
         pass
     
     def _copy_node(self, node_id: str):
-        pass
+        """复制单个节点到剪贴板（存入 editor._clipboard_data）"""
+        editor = self._get_editor()
+        if not editor:
+            return
+        if node_id not in self.nodes:
+            return
+        node = self.nodes[node_id]
+        if node.is_protected():
+            return
+        import copy
+        editor._clipboard_data = {
+            'nodes': [{
+                'id': node_id,
+                'type': node.node_type,
+                'name': node.name,
+                'config': copy.deepcopy(node.config) if node.config else {},
+                'enabled': node.enabled
+            }],
+            'connections': [],
+            'relative_positions': {node_id: (0, 0)}
+        }
+
+    def _copy_to_clipboard(self):
+        """复制选中节点到剪贴板（存入 editor._clipboard_data）"""
+        editor = self._get_editor()
+        if not editor:
+            return
+        editor._clipboard_data = self._copy_selected_nodes_to_clipboard()
     
     def add_node(self, node_id: str, node_type: str, x: float, y: float, name: str = "", config: dict = None, enabled: bool = True) -> NodeItem:
         if not name:
@@ -1690,11 +1717,15 @@ class BehaviorTreeCanvas(ctk.CTkFrame):
             if node_id not in self.nodes:
                 continue
             node = self.nodes[node_id]
+            try:
+                config_copy = copy.deepcopy(node.config) if node.config else {}
+            except Exception:
+                config_copy = {}
             nodes_data.append({
                 'id': node_id,
                 'type': node.node_type,
                 'name': node.name,
-                'config': copy.deepcopy(node.config) if node.config else {},
+                'config': config_copy,
                 'enabled': node.enabled
             })
             relative_positions[node_id] = (node.x - min_x, node.y - min_y)

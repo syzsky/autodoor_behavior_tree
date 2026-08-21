@@ -23,7 +23,7 @@ class BehaviorTreeEngine:
         self._running = False
         self._paused = False
         self._thread: Optional[threading.Thread] = None
-        self._tick_interval = 0.01
+        self._tick_interval = 0.033  # 默认 33ms，与配置层 behavior_tree.tick_interval 保持一致
         self._on_status_change: Optional[Callable] = None
         self._on_node_status: Optional[Callable] = None
         self._lock = threading.Lock()
@@ -31,6 +31,11 @@ class BehaviorTreeEngine:
         self._pause_event = threading.Event()
         self._pause_event.set()
         self._stats = get_stats_collector()
+        # 异步执行器（基于 SharedThreadPool）
+        from bt_utils.async_executor import AsyncExecutor
+        self._async_executor = AsyncExecutor()
+        # 引擎 tick 线程 ID（供 MessageBus.request() 防死锁检测使用）
+        self._engine_thread_id = None
 
     def load_tree(self, data: Dict[str, Any]) -> None:
         """从字典数据加载行为树
@@ -78,6 +83,10 @@ class BehaviorTreeEngine:
             if self._running:
                 return
 
+            # 每次启动清空运行日志，仅保留当次运行现场
+            from bt_utils.log_manager import LogManager
+            LogManager.clear_run_log()
+
             self.context = context or ExecutionContext()
             self.context.set_stats_collector(self._stats)
             self._running = True
@@ -87,11 +96,19 @@ class BehaviorTreeEngine:
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
 
+            # 发布事件到消息总线
+            if context and hasattr(context, 'publish_event'):
+                context.publish_event(
+                    f"bt.{context.get_tree_id()}.event.tree.started",
+                    {"tree_id": context.get_tree_id()}
+                )
+
             if self._on_status_change:
                 self._on_status_change("running")
 
     def stop(self) -> None:
         with self._lock:
+            tree_id = self.context.get_tree_id() if self.context else "default"
             self._running = False
             self._paused = False
             self._stop_event.set()
@@ -105,10 +122,21 @@ class BehaviorTreeEngine:
             elif self.root_node:
                 self.root_node.reset()
 
+            # 取消所有异步任务
+            if hasattr(self, '_async_executor'):
+                self._async_executor.cancel_all()
+
             self._stop_all_script_nodes()
 
             self._stats.end_session()
             self._output_stats_report()
+
+            # 发布事件到消息总线
+            if self.context and hasattr(self.context, 'publish_event'):
+                self.context.publish_event(
+                    f"bt.{tree_id}.event.tree.stopped",
+                    {"tree_id": tree_id}
+                )
 
             if self._on_status_change:
                 self._on_status_change("stopped")
@@ -128,14 +156,28 @@ class BehaviorTreeEngine:
                 yield from self._iter_all_nodes(child)
 
     def pause(self) -> None:
+        tree_id = self.context.get_tree_id() if self.context else "default"
         self._paused = True
         self._pause_event.clear()
+        # 发布事件到消息总线
+        if self.context and hasattr(self.context, 'publish_event'):
+            self.context.publish_event(
+                f"bt.{tree_id}.event.tree.paused",
+                {"tree_id": tree_id}
+            )
         if self._on_status_change:
             self._on_status_change("paused")
 
     def resume(self) -> None:
+        tree_id = self.context.get_tree_id() if self.context else "default"
         self._paused = False
         self._pause_event.set()
+        # 发布事件到消息总线
+        if self.context and hasattr(self.context, 'publish_event'):
+            self.context.publish_event(
+                f"bt.{tree_id}.event.tree.resumed",
+                {"tree_id": tree_id}
+            )
         if self._on_status_change:
             self._on_status_change("running")
 
@@ -210,6 +252,12 @@ class BehaviorTreeEngine:
         return self._stats.export_to_file(filepath)
 
     def _run_loop(self) -> None:
+        # 记录引擎线程 ID（必须在 _run_loop 中记录，而非 start()）
+        self._engine_thread_id = threading.get_ident()
+        # 注册到 MessageBus 以激活 request() 死锁防护
+        bus = self.context.get_message_bus() if self.context else None
+        if bus is not None:
+            bus.set_engine_thread_id(self._engine_thread_id)
         start_time = time.time()
         self._stop_event.clear()
 
@@ -225,26 +273,41 @@ class BehaviorTreeEngine:
             self._stats.record_tick()
 
             if self.root_node:
-                status = self.root_node.tick(self.context)
-
                 from bt_utils.log_manager import LogManager
-                LogManager.debug_print(
-                    f"[DEBUG] Engine._run_loop: tick={self.context.tick_count}, "
-                    f"root_node status={status.name}"
-                )
+                try:
+                    status = self.root_node.tick(self.context)
 
-                if self._on_node_status:
-                    self._on_node_status(self.root_node.node_id, status.value)
+                    if self._on_node_status:
+                        self._on_node_status(self.root_node.node_id, status.value)
 
-                if status != NodeStatus.RUNNING:
+                    if status != NodeStatus.RUNNING:
+                        self._running = False
+                        
+                        self._stats.end_session()
+                        self._output_stats_report()
+                        
+                        # 正常完成时使用 reset() 而非 abort()
+                        # abort() 会将节点状态覆盖为 ABORTED 并通知 UI，导致正常完成的节点显示为"已中止"
+                        # reset() 仅重置节点状态为初始值，准备下次执行，不影响最终状态显示
+                        if self.root_node:
+                            self.root_node.reset()
+                        
+                        # 通知 GUI 引擎已完成（正常完成路径）
+                        if self._on_status_change:
+                            self._on_status_change("completed", status)
+                except Exception as e:
+                    import traceback
+                    error_traceback = traceback.format_exc()
+                    error_msg = f"[ERROR] Engine._run_loop: 异常发生\n{error_traceback}"
+                    LogManager.debug_print(error_msg)
+                    LogManager.instance().log_failure(
+                        node_type="引擎",
+                        node_name="行为树引擎",
+                        reason=str(e)
+                    )
                     self._running = False
-                    
                     self._stats.end_session()
                     self._output_stats_report()
-                    
-                    # 正常完成时使用 reset() 而非 abort()
-                    # abort() 会将节点状态覆盖为 ABORTED 并通知 UI，导致正常完成的节点显示为"已中止"
-                    # reset() 仅重置节点状态为初始值，准备下次执行，不影响最终状态显示
                     if self.root_node:
                         self.root_node.reset()
                     

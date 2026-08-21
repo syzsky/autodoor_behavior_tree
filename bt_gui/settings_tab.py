@@ -7,6 +7,11 @@ from .theme import Theme
 from .widgets import CardFrame, AnimatedButton, create_section_title, create_divider
 from bt_utils.resource_manager import ResourceManager
 
+# 全局 tick 间隔（毫秒）预设与边界，与应用其它层保持一致
+TICK_PRESETS_MS = (33, 100, 200, 500, 1000)
+TICK_DEFAULT_MS = 33
+TICK_MIN_MS = 33
+
 
 class SettingsTab(ctk.CTkFrame):
     def __init__(self, master, app, **kwargs):
@@ -34,11 +39,14 @@ class SettingsTab(ctk.CTkFrame):
         self.start_shortcut_var = tk.StringVar(value="F10")
         self.stop_shortcut_var = tk.StringVar(value="F12")
         self.record_hotkey_var = tk.StringVar(value="F11")
-        
+
         from config.settings_manager import SettingsManager
         settings = SettingsManager()
         self._current_keyboard_method = settings.get("input.keyboard_method", "pyautogui")
         self._current_mouse_method = settings.get("input.mouse_method", "pyautogui")
+
+        # 全局运行频率（tick 间隔，毫秒）
+        self.tick_interval_ms = tk.IntVar(value=TICK_DEFAULT_MS)
     
     def _get_default_project_path(self) -> str:
         """获取默认项目保存路径
@@ -56,13 +64,15 @@ class SettingsTab(ctk.CTkFrame):
         return SettingsManager.get_default_workspace_path()
     
     def _create_ui(self):
-        scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        scroll_frame.pack(fill="both", expand=True, padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_md'])
-        
-        self._create_project_section(scroll_frame)
-        self._create_alarm_section(scroll_frame)
-        self._create_shortcut_section(scroll_frame)
-        self._create_input_method_section(scroll_frame)
+        self._scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._scroll_frame.pack(fill="both", expand=True, padx=Theme.DIMENSIONS['spacing_md'], pady=Theme.DIMENSIONS['spacing_md'])
+
+        self._create_project_section(self._scroll_frame)
+        self._create_run_section(self._scroll_frame)
+        self._create_alarm_section(self._scroll_frame)
+        self._create_shortcut_section(self._scroll_frame)
+        self._create_input_method_section(self._scroll_frame)
+        self._create_ai_section(self._scroll_frame)
     
     def _create_project_section(self, parent):
         project_frame = CardFrame(parent)
@@ -101,6 +111,74 @@ class SettingsTab(ctk.CTkFrame):
             command=self._browse_project_path
         )
         self.browse_project_btn.pack(side="left")
+    
+    def _create_run_section(self, parent):
+        """创建运行频率设置区域（控制整体 tick 频率）"""
+        run_frame = CardFrame(parent)
+        run_frame.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
+
+        run_header = ctk.CTkFrame(run_frame, fg_color="transparent")
+        run_header.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_md'], Theme.DIMENSIONS['spacing_sm']))
+        create_section_title(run_header, "运行设置", level=1).pack(side="left")
+
+        create_divider(run_frame)
+
+        run_desc = ctk.CTkFrame(run_frame, fg_color="transparent")
+        run_desc.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'])
+        ctk.CTkLabel(
+            run_desc,
+            text=f"tick 间隔越小，执行频率越高",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted']
+        ).pack(side="left")
+
+        run_row = ctk.CTkFrame(run_frame, fg_color="transparent")
+        run_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'], pady=(Theme.DIMENSIONS['spacing_sm'], Theme.DIMENSIONS['spacing_md']))
+
+        ctk.CTkLabel(run_row, text="tick 间隔(ms):", font=Theme.get_font("sm"), text_color=self._dark_colors['text_secondary']).pack(side="left")
+
+        # 预设下拉：仅允许从预设值中选择，选择后立即保存应用
+        preset_values = [str(v) for v in TICK_PRESETS_MS]
+        from config.settings_manager import SettingsManager
+        _current_tick = int(SettingsManager.get_instance().get(
+            "behavior_tree.tick_interval", TICK_DEFAULT_MS))
+        if _current_tick not in TICK_PRESETS_MS:
+            _current_tick = TICK_DEFAULT_MS
+        self.tick_preset_var = tk.StringVar(value=str(_current_tick))
+
+        def _on_preset(*args):
+            val = int(self.tick_preset_var.get())
+            self.tick_interval_ms.set(val)
+            SettingsManager.get_instance().set("behavior_tree.tick_interval", val, auto_save=True)
+            self._tick_status_label.configure(
+                text=f"已保存 ({val} ms)",
+                text_color=self._dark_colors.get('success', '#22C55E')
+            )
+
+        self.tick_preset_var.trace_add("write", _on_preset)
+
+        preset_menu = ctk.CTkOptionMenu(
+            run_row,
+            values=preset_values,
+            variable=self.tick_preset_var,
+            width=110,
+            height=28,
+            font=Theme.get_font("sm"),
+            fg_color=self._dark_colors['bg_tertiary'],
+            button_color=self._dark_colors['bg_tertiary'],
+            button_hover_color=self._dark_colors.get('node_selected', '#3B82F6'),
+            text_color=self._dark_colors['text_primary'],
+            dropdown_fg_color=self._dark_colors['bg_tertiary'],
+            dropdown_hover_color=self._dark_colors.get('node_selected', '#3B82F6'),
+            dropdown_text_color=self._dark_colors['text_primary']
+        )
+        preset_menu.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], Theme.DIMENSIONS['spacing_sm']))
+
+        self._tick_status_label = ctk.CTkLabel(
+            run_row, text="", font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted']
+        )
+        self._tick_status_label.pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
     
     def _create_alarm_section(self, parent):
         alarm_frame = CardFrame(parent)
@@ -846,6 +924,7 @@ class SettingsTab(ctk.CTkFrame):
             "alarm_sound_path": self.alarm_sound_path.get(),
             "alarm_volume": self.alarm_volume.get(),
             "default_project_path": self.default_project_path.get(),
+            "tick_interval_ms": self.tick_interval_ms.get(),
             "shortcuts": {
                 "start": self.start_shortcut_var.get(),
                 "stop": self.stop_shortcut_var.get(),
@@ -884,6 +963,23 @@ class SettingsTab(ctk.CTkFrame):
             self.default_project_path.set(default_project_path)
         
         self._ensure_workspace_exists()
+
+        if "tick_interval_ms" in settings:
+            try:
+                val = int(settings["tick_interval_ms"])
+                if val > 0:
+                    self.tick_interval_ms.set(val)
+                    if val in TICK_PRESETS_MS:
+                        self.tick_preset_var.set(str(val))
+            except (ValueError, TypeError):
+                pass
+        else:
+            from config.settings_manager import SettingsManager
+            saved = int(SettingsManager.get_instance().get("behavior_tree.tick_interval", TICK_DEFAULT_MS))
+            if saved not in TICK_PRESETS_MS:
+                saved = TICK_DEFAULT_MS
+            self.tick_interval_ms.set(saved)
+            self.tick_preset_var.set(str(saved))
         
         if "shortcuts" in settings:
             shortcuts = settings["shortcuts"]
@@ -916,3 +1012,204 @@ class SettingsTab(ctk.CTkFrame):
                     label = self._method_key_to_label.get(input_settings["mouse_method"], "")
                     if label:
                         self._ms_combo_var.set(label)
+
+    def _create_ai_section(self, parent):
+        """创建 AI 配置区域"""
+        from config.settings_manager import SettingsManager
+
+        sm = SettingsManager.get_instance()
+
+        ai_frame = CardFrame(parent)
+        ai_frame.pack(fill="x", pady=(0, Theme.DIMENSIONS['spacing_md']))
+
+        ai_header = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        ai_header.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                        pady=(Theme.DIMENSIONS['spacing_md'], Theme.DIMENSIONS['spacing_sm']))
+        create_section_title(ai_header, "AI 助手配置", level=1).pack(side="left")
+
+        ctk.CTkLabel(
+            ai_header,
+            text="配置 LLM/VLM 接口以启用 AI 自动生成行为树",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted'],
+        ).pack(side="left", padx=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        create_divider(ai_frame)
+
+        # --- LLM 配置 ---
+        llm_section = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        llm_section.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                          pady=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        ctk.CTkLabel(
+            llm_section,
+            text="LLM（文本模型 — 意图分析、节点选型、JSON 生成）",
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_primary'],
+        ).pack(anchor="w", pady=(0, 5))
+
+        # base_url
+        llm_url_row = ctk.CTkFrame(llm_section, fg_color="transparent")
+        llm_url_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            llm_url_row, text="API 地址:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_llm_url_var = tk.StringVar(
+            value=sm.get("ai.llm.base_url", "https://api.openai.com/v1"))
+        ctk.CTkEntry(
+            llm_url_row, textvariable=self._ai_llm_url_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # api_key
+        llm_key_row = ctk.CTkFrame(llm_section, fg_color="transparent")
+        llm_key_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            llm_key_row, text="API Key:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_llm_key_var = tk.StringVar(
+            value=sm.get("ai.llm.api_key", ""))
+        ctk.CTkEntry(
+            llm_key_row, textvariable=self._ai_llm_key_var,
+            height=28, show="*",
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # model
+        llm_model_row = ctk.CTkFrame(llm_section, fg_color="transparent")
+        llm_model_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            llm_model_row, text="模型:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_llm_model_var = tk.StringVar(
+            value=sm.get("ai.llm.model", "gpt-4o"))
+        ctk.CTkEntry(
+            llm_model_row, textvariable=self._ai_llm_model_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        create_divider(ai_frame)
+
+        # --- VLM 配置 ---
+        vlm_section = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        vlm_section.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                          pady=(Theme.DIMENSIONS['spacing_sm'], 0))
+
+        ctk.CTkLabel(
+            vlm_section,
+            text="VLM（视觉模型 — 屏幕截图分析、参数自动填充）",
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_primary'],
+        ).pack(anchor="w", pady=(0, 5))
+
+        ctk.CTkLabel(
+            vlm_section,
+            text="留空则跳过屏幕感知阶段，使用 LLM 生成的结构直接生成行为树",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted'],
+        ).pack(anchor="w", pady=(0, 5))
+
+        # base_url
+        vlm_url_row = ctk.CTkFrame(vlm_section, fg_color="transparent")
+        vlm_url_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            vlm_url_row, text="API 地址:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_vlm_url_var = tk.StringVar(
+            value=sm.get("ai.vlm.base_url", "https://api.openai.com/v1"))
+        ctk.CTkEntry(
+            vlm_url_row, textvariable=self._ai_vlm_url_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # api_key
+        vlm_key_row = ctk.CTkFrame(vlm_section, fg_color="transparent")
+        vlm_key_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            vlm_key_row, text="API Key:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_vlm_key_var = tk.StringVar(
+            value=sm.get("ai.vlm.api_key", ""))
+        ctk.CTkEntry(
+            vlm_key_row, textvariable=self._ai_vlm_key_var,
+            height=28, show="*",
+            fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # model
+        vlm_model_row = ctk.CTkFrame(vlm_section, fg_color="transparent")
+        vlm_model_row.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            vlm_model_row, text="模型:", width=70,
+            font=Theme.get_font("sm"),
+            text_color=self._dark_colors['text_secondary'],
+        ).pack(side="left")
+        self._ai_vlm_model_var = tk.StringVar(
+            value=sm.get("ai.vlm.model", "gpt-4o"))
+        ctk.CTkEntry(
+            vlm_model_row, textvariable=self._ai_vlm_model_var,
+            height=28, fg_color=self._dark_colors['bg_tertiary'],
+            text_color=self._dark_colors['text_primary'],
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # --- 保存按钮 ---
+        btn_row = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        btn_row.pack(fill="x", padx=Theme.DIMENSIONS['spacing_md'],
+                      pady=(Theme.DIMENSIONS['spacing_sm'], Theme.DIMENSIONS['spacing_md']))
+
+        AnimatedButton(
+            btn_row, text="保存 AI 配置",
+            font=Theme.get_font("sm"), width=120, height=30,
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=Theme.COLORS['primary'],
+            hover_color=Theme.COLORS['primary_hover'],
+            command=self._save_ai_settings,
+        ).pack(side="left")
+
+        self._ai_status_label = ctk.CTkLabel(
+            btn_row, text="",
+            font=Theme.get_font("xs"),
+            text_color=self._dark_colors['text_muted'],
+        )
+        self._ai_status_label.pack(side="left", padx=10)
+
+    def _save_ai_settings(self):
+        """保存 AI 配置"""
+        from config.settings_manager import SettingsManager
+        sm = SettingsManager.get_instance()
+
+        sm.set("ai.enabled", True, auto_save=False)
+        sm.set("ai.llm.base_url", self._ai_llm_url_var.get().strip(), auto_save=False)
+        sm.set("ai.llm.api_key", self._ai_llm_key_var.get().strip(), auto_save=False)
+        sm.set("ai.llm.model", self._ai_llm_model_var.get().strip(), auto_save=False)
+        sm.set("ai.vlm.base_url", self._ai_vlm_url_var.get().strip(), auto_save=False)
+        sm.set("ai.vlm.api_key", self._ai_vlm_key_var.get().strip(), auto_save=False)
+        sm.set("ai.vlm.model", self._ai_vlm_model_var.get().strip(), auto_save=True)
+
+        has_llm = bool(self._ai_llm_key_var.get().strip())
+        has_vlm = bool(self._ai_vlm_key_var.get().strip())
+        if has_llm and has_vlm:
+            status = "已保存 — LLM + VLM 均已配置"
+            color = self._dark_colors.get('success', '#22C55E')
+        elif has_llm:
+            status = "已保存 — 仅 LLM（VLM 未配置，将跳过屏幕感知）"
+            color = self._dark_colors.get('warning', '#F59E0B')
+        else:
+            status = "已保存 — 未配置 API Key，AI 助手不可用"
+            color = self._dark_colors.get('error', '#EF4444')
+        self._ai_status_label.configure(text=status, text_color=color)

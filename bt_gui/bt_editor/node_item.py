@@ -45,6 +45,7 @@ class NodeItem:
         self.name = name
         self.config = config or {}
         self.enabled = enabled
+        self.skip = bool(self.config.get("skip", False))
         self._zoom = zoom
         self._pan_x = pan_x
         self._pan_y = pan_y
@@ -80,11 +81,13 @@ class NodeItem:
         return y * self._zoom + self._pan_y
     
     def update_config(self, key: str, value) -> None:
-        if key in ["name", "description", "enabled"]:
+        if key in ["name", "description", "enabled", "skip"]:
             old_value = getattr(self, key, None)
             setattr(self, key, value)
+            if key == "skip":
+                self.config[key] = bool(value)
             
-            if key == "name" and old_value != value:
+            if key in ("name", "skip") and old_value != value:
                 self.redraw()
         else:
             if self.config is None:
@@ -120,6 +123,7 @@ class NodeItem:
             fill=self._dark_colors['node_bg'],
             outline=self._dark_colors['node_border'],
             width=1,
+            dash=(4, 3) if self.skip else None,
             tags=("node", self.node_id)
         )
         
@@ -368,7 +372,8 @@ class NodeItem:
             outline = self._dark_colors['node_border']
             width = 1
 
-        self.canvas.itemconfig(self.rect, outline=outline, width=width)
+        self.canvas.itemconfig(self.rect, outline=outline, width=width,
+                               dash=(4, 3) if self.skip and not self._selected else None)
 
     def reset_status(self):
         self._status = NodeExecutionStatus.IDLE

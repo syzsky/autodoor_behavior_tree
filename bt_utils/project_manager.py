@@ -56,6 +56,26 @@ class ProjectManager:
         return ""
 
     @staticmethod
+    def read_project_info(project_root: str) -> dict:
+        """读取 project.json 中存储的完整 project_info。
+
+        Args:
+            project_root: 项目根目录绝对路径
+
+        Returns:
+            project_info 字典；文件不存在或读取失败返回空字典
+        """
+        meta_path = os.path.join(project_root, ProjectConstants.PROJECT_META_FILE)
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                return meta.get("project_info", {})
+            except (json.JSONDecodeError, OSError):
+                pass
+        return {}
+
+    @staticmethod
     def check_name_consistency(project_root: str) -> Dict[str, Any]:
         """检查文件夹名与 project_info.name 是否一致。
 

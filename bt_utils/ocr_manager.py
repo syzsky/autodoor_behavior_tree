@@ -1,4 +1,7 @@
-from rapidocr import RapidOCR
+try:
+    from rapidocr import RapidOCR
+except ImportError:
+    RapidOCR = None
 from PIL import Image, ImageEnhance, ImageFilter
 from typing import Tuple, Optional, Dict, Any
 from dataclasses import dataclass

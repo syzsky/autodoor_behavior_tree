@@ -46,6 +46,22 @@ class Blackboard:
         self._data: Dict[str, Any] = dict(self.BUILTIN_VARS)
         self._subscribers: Dict[str, List[Callable]] = {}
         self._lock = threading.RLock()
+        # 消息总线引用（可选，通过 setter 注入避免循环依赖）
+        self._bus = None
+        self._tree_id = "default"
+
+    def set_message_bus(self, bus, tree_id: str = "default") -> None:
+        """注入消息总线引用
+
+        注入后，set() 会向总线发布 bt.{tree_id}.data.blackboard.changed 事件。
+        传 None 可清除引用（降级为纯本地模式）。
+
+        Args:
+            bus: MessageBus 实例，可为 None
+            tree_id: 行为树 ID，用于主题隔离
+        """
+        self._bus = bus
+        self._tree_id = tree_id
 
     def get(self, key: str, default: Any = None) -> Any:
         """获取变量值
@@ -71,12 +87,21 @@ class Blackboard:
             old_value = self._data.get(key)
             self._data[key] = value
             subscribers = self._subscribers.get(key, [])[:] if key in self._subscribers else []
+            bus = self._bus
+            tree_id = self._tree_id
 
         for callback in subscribers:
             try:
                 callback(old_value, value)
             except Exception:
                 pass
+
+        if bus is not None:
+            bus.publish(
+                f"bt.{tree_id}.data.blackboard.changed",
+                {"key": key, "old_value": old_value, "new_value": value},
+                source="blackboard"
+            )
 
     def increment(self, key: str, amount=1) -> None:
         """递增变量

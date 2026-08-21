@@ -48,7 +48,14 @@ class ExecutionContext:
         # Tab管理器引用（用于启动/停止节点访问其他行为树）
         self._tab_manager = None
         self._current_tab_id: Optional[str] = None
-    
+        self._headless: bool = False
+        self._async_executor = None
+        # 消息总线和服务层（阶段 3 新增）
+        self._message_bus = None
+        self._service_registry = None
+        self._adapter_manager = None
+        self._auth_principal = None
+
     def set_stats_collector(self, collector):
         """设置统计收集器
         
@@ -74,6 +81,79 @@ class ExecutionContext:
     def get_current_tab_id(self) -> Optional[str]:
         """获取当前Tab ID"""
         return self._current_tab_id
+
+    def set_headless(self, headless: bool) -> None:
+        """设置 Headless 模式
+
+        Args:
+            headless: True=无 GUI 模式（notify_node_status 为空操作）
+        """
+        self._headless = headless
+
+    def is_headless(self) -> bool:
+        """是否为 Headless 模式"""
+        return self._headless
+
+    def set_async_executor(self, executor) -> None:
+        """设置异步执行器"""
+        self._async_executor = executor
+
+    def get_async_executor(self):
+        """获取异步执行器"""
+        return getattr(self, '_async_executor', None)
+
+    def set_message_bus(self, bus) -> None:
+        """设置消息总线
+
+        同时将 bus 注入 blackboard，使 blackboard.set() 能向总线发布
+        bt.{tree_id}.data.blackboard.changed 事件。传 None 清除引用并降级。
+        """
+        self._message_bus = bus
+        if self.blackboard is not None:
+            self.blackboard.set_message_bus(bus, self.get_tree_id())
+
+    def get_message_bus(self):
+        """获取消息总线"""
+        return self._message_bus
+
+    def set_service_registry(self, registry) -> None:
+        """设置服务注册中心"""
+        self._service_registry = registry
+
+    def get_service(self, name: str):
+        """获取服务"""
+        if self._service_registry:
+            return self._service_registry.get(name)
+        return None
+
+    def set_adapter_manager(self, manager) -> None:
+        """设置适配器管理器"""
+        self._adapter_manager = manager
+
+    def get_adapter_manager(self):
+        """获取适配器管理器"""
+        return self._adapter_manager
+
+    def publish_event(self, topic: str, data) -> None:
+        """发布事件到消息总线"""
+        if self._message_bus:
+            self._message_bus.publish(topic, data)
+
+    def set_auth_principal(self, principal) -> None:
+        """设置当前认证主体"""
+        self._auth_principal = principal
+
+    def get_auth_principal(self):
+        """获取当前认证主体"""
+        return self._auth_principal
+
+    def is_authenticated(self) -> bool:
+        """是否已认证"""
+        return self._auth_principal is not None
+
+    def get_tree_id(self) -> str:
+        """返回当前行为树 ID（用于消息总线主题隔离）"""
+        return self._current_tab_id or "default"
 
     def push_subtree(self, subtree_path: str) -> None:
         """进入子树时压栈
@@ -157,6 +237,8 @@ class ExecutionContext:
             node_id: 节点ID
             status: 状态字符串
         """
+        if self._headless:
+            return
         if self._on_node_status:
             try:
                 from bt_utils.ui_dispatcher import UIUpdateDispatcher
@@ -234,32 +316,60 @@ class ExecutionContext:
                            action: str = "press", duration: int = 0,
                            x_float: int = 0, y_float: int = 0) -> None:
         """执行鼠标点击（全局自动坐标转换）"""
+        import time
+        start_time = time.time()
+        
         manager = self._get_input_manager()
         mouse_method = manager.get_mouse_method()
         original_position = position
+        
+        LogManager.run_log(f"[CTX] mouse_click: === 开始 === button={button}, action={action}, duration={duration}, x_float={x_float}, y_float={y_float}")
+        LogManager.run_log(f"[CTX] mouse_click: 原始位置 pos={position}, mouse_method={mouse_method}, bound_window={self._bound_window}")
+        
+        if self._bound_window:
+            from bt_utils.window_manager import WindowManager
+            window_rect = WindowManager.get_window_rect(self._bound_window)
+            is_foreground = WindowManager.is_foreground_window(self._bound_window)
+            LogManager.run_log(f"[CTX] mouse_click: 绑定窗口 rect={window_rect}, is_foreground={is_foreground}")
 
         if position:
             if mouse_method == "bg" and self._bound_window:
-                LogManager.debug_print(f"[CTX] mouse_click: 后台模式，坐标不转换 pos={position}")
+                LogManager.run_log(f"[CTX] mouse_click: 后台模式，坐标不转换")
             elif self._bound_window:
+                LogManager.run_log(f"[CTX] mouse_click: 执行坐标转换（客户区→屏幕）")
                 position = self.convert_to_screen_coords(position)
-                LogManager.debug_print(f"[CTX] mouse_click: 坐标转换 {original_position} → {position}")
+                LogManager.run_log(f"[CTX] mouse_click: 坐标转换结果: {original_position} → {position}")
+                if original_position != position:
+                    offset_x = position[0] - original_position[0]
+                    offset_y = position[1] - original_position[1]
+                    LogManager.run_log(f"[CTX] mouse_click: 转换偏移量: ({offset_x}, {offset_y})")
+            else:
+                LogManager.run_log(f"[CTX] mouse_click: 无绑定窗口，坐标不转换")
 
             if x_float > 0 or y_float > 0:
                 from bt_utils.helpers import get_random_value
                 px = get_random_value(position[0], x_float, min_value=0)
                 py = get_random_value(position[1], y_float, min_value=0)
                 position = (px, py)
-                LogManager.debug_print(f"[CTX] mouse_click: 浮动后 pos={position}")
+                LogManager.run_log(f"[CTX] mouse_click: 添加随机浮动后 pos={position}")
 
         kwargs = {}
         if mouse_method == "bg" and self._bound_window:
             kwargs["hwnd"] = self._bound_window
 
         engine = manager.get_mouse_engine(**kwargs)
-        LogManager.debug_print(f"[CTX] mouse_click: method={mouse_method}, engine={type(engine).__name__ if engine else None}, button={button}, pos={position}, action={action}")
+        engine_name = type(engine).__name__ if engine else None
+        LogManager.run_log(f"[CTX] mouse_click: 获取引擎成功 engine={engine_name}, 最终位置 pos={position}")
+        
         if engine:
+            LogManager.run_log(f"[CTX] mouse_click: 调用引擎 mouse_click...")
             engine.mouse_click(button, position, action, duration)
+            LogManager.run_log(f"[CTX] mouse_click: 引擎调用完成")
+        else:
+            LogManager.run_log(f"[CTX] mouse_click: 警告 - 引擎为空，未执行点击")
+
+        elapsed_ms = (time.time() - start_time) * 1000
+        LogManager.run_log(f"[CTX] mouse_click: === 结束 === 耗时 {elapsed_ms:.2f}ms")
 
         self._screenshot_cache.clear()
 
@@ -272,24 +382,24 @@ class ExecutionContext:
 
         if position:
             if mouse_method == "bg" and self._bound_window and not relative:
-                LogManager.debug_print(f"[CTX] mouse_move: 后台模式，坐标不转换 pos={position}")
+                LogManager.run_log(f"[CTX] mouse_move: 后台模式，坐标不转换 pos={position}")
             elif self._bound_window and not relative:
                 position = self.convert_to_screen_coords(position)
-                LogManager.debug_print(f"[CTX] mouse_move: 坐标转换 {original_position} → {position}")
+                LogManager.run_log(f"[CTX] mouse_move: 坐标转换 {original_position} → {position}")
 
             if x_float > 0 or y_float > 0:
                 from bt_utils.helpers import get_random_value
                 px = get_random_value(position[0], x_float, min_value=0)
                 py = get_random_value(position[1], y_float, min_value=0)
                 position = (px, py)
-                LogManager.debug_print(f"[CTX] mouse_move: 浮动后 pos={position}")
+                LogManager.run_log(f"[CTX] mouse_move: 浮动后 pos={position}")
 
         kwargs = {}
         if mouse_method == "bg" and self._bound_window:
             kwargs["hwnd"] = self._bound_window
 
         engine = manager.get_mouse_engine(**kwargs)
-        LogManager.debug_print(f"[CTX] mouse_move: method={mouse_method}, engine={type(engine).__name__ if engine else None}, pos={position}, relative={relative}")
+        LogManager.run_log(f"[CTX] mouse_move: method={mouse_method}, engine={type(engine).__name__ if engine else None}, pos={position}, relative={relative}")
         if engine:
             engine.mouse_move(position, relative)
 

@@ -2,20 +2,18 @@ import sys
 import os
 import traceback
 
-LOG_DIR = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "autodoor_behavior_tree")
-try:
-    os.makedirs(LOG_DIR, exist_ok=True)
-except Exception:
-    LOG_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(LOG_DIR, "startup_error.log")
-
 def write_log(msg):
+    """写入启动日志（与运行日志共用同一套逻辑，统一保存到项目 logs/ 目录）"""
     try:
-        with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            timestamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            f.write(f"[{timestamp}] {msg}\n")
+        from bt_utils.log_manager import LogManager
+        LogManager.write_startup_log(msg)
     except Exception:
-        pass
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "startup_error.log"), 'a', encoding='utf-8') as f:
+                timestamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                f.write(f"[{timestamp}] {msg}\n")
+        except Exception:
+            pass
 
 write_log("=== Application startup begin ===")
 write_log(f"Python version: {sys.version}")
@@ -27,15 +25,27 @@ def setup_error_logging():
     def exception_hook(exctype, value, tb):
         error_msg = ''.join(traceback.format_exception(exctype, value, tb))
         write_log(f"EXCEPTION: {error_msg}")
-        print(f"STARTUP ERROR - Log file: {LOG_FILE}")
+        try:
+            from bt_utils.log_manager import LogManager
+            print(f"STARTUP ERROR - Log file: {LogManager.get_log_file_path()}")
+        except Exception:
+            pass
         print(error_msg)
         sys.__excepthook__(exctype, value, tb)
     
     sys.excepthook = exception_hook
-    return LOG_FILE
+    try:
+        from bt_utils.log_manager import LogManager
+        return LogManager.get_log_file_path()
+    except Exception:
+        return ""
 
 LOG_FILE_RESULT = setup_error_logging()
-print(f"Error logging initialized. Log file: {LOG_FILE}")
+try:
+    from bt_utils.log_manager import LogManager
+    print(f"Error logging initialized. Log file: {LogManager.get_log_file_path()}")
+except Exception:
+    pass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -264,7 +274,39 @@ def check_admin_for_driver(method: str, display_name: str, is_available_fn):
     return True
 
 
+def parse_args():
+    """解析命令行参数"""
+    import argparse
+    parser = argparse.ArgumentParser(description="AutoDoor 行为树编辑器")
+    parser.add_argument("--headless", type=str, default=None,
+                        help="无 GUI 模式运行指定行为树文件")
+    parser.add_argument("--project", type=str, default=None,
+                        help="项目根目录（headless 模式）")
+    return parser.parse_args()
+
+
+def run_headless(tree_file, project_root=None):
+    """Headless 模式入口"""
+    from bt_core.headless import HeadlessRunner
+    from bt_core.registry import register_all_nodes
+    register_all_nodes()
+    runner = HeadlessRunner()
+    return runner.run(tree_file, project_root)
+
+
 def main():
+    # CLI 模式检测
+    if len(sys.argv) > 1 and sys.argv[1] in ("run", "schedule", "status", "stop", "daemon", "remote", "plugin", "config"):
+        from cli import main as cli_main
+        cli_main()
+        return
+
+    args = parse_args()
+
+    if args.headless:
+        run_headless(args.headless, args.project)
+        return
+
     ensure_workspace_exists()
 
     from bt_utils.app_restarter import is_dd_available, is_ib_available
@@ -273,6 +315,9 @@ def main():
     
     initialize_ocr()
     initialize_input()
+    
+    from bt_utils.log_manager import LogManager
+    LogManager.enable_file_log(True)
     
     register_all_nodes()
     

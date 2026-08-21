@@ -127,7 +127,7 @@ class ResourceService:
         
         target_dir = cls.TYPE_DIR_MAP.get(resource_type, 'data/other')
         filename = os.path.basename(source_path)
-        filename = cls._handle_name_conflict(project_root, target_dir, filename)
+        filename = cls._handle_name_conflict(project_root, target_dir, filename, source_path)
         
         target_path = os.path.join(project_root, target_dir, filename)
         
@@ -141,21 +141,48 @@ class ResourceService:
             return None
     
     @classmethod
-    def _handle_name_conflict(cls, project_root: str, target_dir: str, filename: str) -> str:
+    def _handle_name_conflict(cls, project_root: str, target_dir: str, filename: str,
+                              source_path: str = None) -> str:
+        """处理文件名冲突（幂等）
+
+        若目标已存在同名文件：
+        - 当 source_path 指定的源文件与已存在的文件内容一致时，直接复用已有文件名，
+          避免重复导入产生 "_2"、"_3" 等后缀堆叠。
+        - 否则追加递增后缀生成唯一名。
+
+        Args:
+            project_root: 项目根目录
+            target_dir: 目标子目录
+            filename: 原始文件名
+            source_path: 源文件绝对路径（用于内容比对，可选）
+
+        Returns:
+            实际使用的文件名
+        """
         target_path = os.path.join(project_root, target_dir, filename)
-        
+
         if not os.path.exists(target_path):
             return filename
-        
+
+        # 幂等复用：同名文件内容一致则直接复用，避免后缀堆叠
+        if source_path and os.path.isfile(source_path):
+            try:
+                if os.path.getsize(source_path) == os.path.getsize(target_path):
+                    with open(source_path, 'rb') as f1, open(target_path, 'rb') as f2:
+                        if f1.read() == f2.read():
+                            return filename
+            except OSError:
+                pass
+
         name, ext = os.path.splitext(filename)
         counter = 2
         new_filename = filename
-        
+
         while os.path.exists(target_path):
             new_filename = f"{name}_{counter}{ext}"
             target_path = os.path.join(project_root, target_dir, new_filename)
             counter += 1
-        
+
         return new_filename
     
     @classmethod

@@ -20,7 +20,7 @@ class CodeSecurityChecker:
         ast.Slice, ast.ExtSlice, ast.NameConstant, ast.Bytes, ast.Ellipsis,
         ast.Assert, ast.Global, ast.Nonlocal, ast.Await, ast.AsyncFor,
         ast.AsyncWith, ast.AsyncFunctionDef, ast.AnnAssign, ast.FormattedValue,
-        ast.JoinedStr, ast.NamedExpr,
+        ast.JoinedStr, ast.NamedExpr, ast.alias,
     }
     
     FORBIDDEN_NAMES: Set[str] = {
@@ -36,6 +36,27 @@ class CodeSecurityChecker:
         'subprocess.call', 'subprocess.run', 'subprocess.Popen',
         'ctypes', 'multiprocessing',
     }
+
+    # 允许导入的模块白名单（修复 L50-51 漏洞）
+    ALLOWED_MODULES: Set[str] = {
+        'math', 'random', 'json', 're', 'datetime', 'time',
+        'collections', 'itertools', 'functools', 'typing',
+        'decimal', 'fractions', 'statistics', 'hashlib',
+        'base64', 'uuid', 'string', 'textwrap',
+    }
+
+    # 允许在沙箱中使用的内置函数白名单
+    SAFE_BUILTINS: Set[str] = {
+        'abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes',
+        'callable', 'chr', 'complex', 'dict', 'divmod', 'enumerate', 'filter',
+        'float', 'format', 'frozenset', 'hash', 'hex', 'id', 'int', 'isinstance',
+        'issubclass', 'iter', 'len', 'list', 'map', 'max', 'min', 'next', 'oct',
+        'ord', 'pow', 'print', 'range', 'repr', 'reversed', 'round', 'set',
+        'slice', 'sorted', 'str', 'sum', 'tuple', 'type', 'zip',
+        'True', 'False', 'None', 'Exception', 'ValueError', 'TypeError',
+        'KeyError', 'IndexError', 'StopIteration', 'ArithmeticError',
+        'ZeroDivisionError', 'AttributeError', 'RuntimeError',
+    }
     
     @classmethod
     def check_python_script(cls, file_path: str) -> tuple:
@@ -46,14 +67,25 @@ class CodeSecurityChecker:
             tree = ast.parse(code)
             
             for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    # 检查导入的模块名
+                    for alias in node.names:
+                        top_module = alias.name.split('.')[0]
+                        if top_module not in cls.ALLOWED_MODULES:
+                            return False, f"禁止导入模块: {alias.name}"
+                    continue
+                if isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        top_module = node.module.split('.')[0]
+                        if top_module not in cls.ALLOWED_MODULES:
+                            return False, f"禁止导入模块: {node.module}"
+                    continue
                 if type(node) not in cls.ALLOWED_AST_NODES:
-                    if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
-                        continue
                     return False, f"包含受限语法: {type(node).__name__}"
-                
+
                 if isinstance(node, ast.Name) and node.id in cls.FORBIDDEN_NAMES:
                     return False, f"包含禁止的函数/变量: {node.id}"
-                
+
                 if isinstance(node, ast.Call):
                     if isinstance(node.func, ast.Name):
                         if node.func.id in cls.FORBIDDEN_NAMES:
@@ -80,6 +112,20 @@ class CodeSecurityChecker:
                 if not abs_path.startswith(norm_root + os.sep):
                     return False, "路径遍历风险: 脚本路径超出项目目录"
         return True, "路径安全"
+
+    @classmethod
+    def get_safe_builtins(cls) -> dict:
+        """获取安全的 __builtins__ 字典
+
+        在 CodeNode 执行时注入到 exec() 的 globals 中，
+        拦截 __import__('os')、eval()、exec() 等动态绕过方式。
+        """
+        import builtins
+        return {
+            name: getattr(builtins, name)
+            for name in cls.SAFE_BUILTINS
+            if hasattr(builtins, name)
+        }
 
 
 class CodeNode(ActionNode):

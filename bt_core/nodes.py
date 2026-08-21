@@ -30,6 +30,7 @@ class Node(ABC):
         self.name = self.config.name
         self.description = self.config.description
         self.enabled = self.config.enabled
+        self.skip = self.config.skip
         self.status = NodeStatus.SUCCESS
         self.children: List["Node"] = []
         self.parent: Optional["Node"] = None
@@ -40,6 +41,9 @@ class Node(ABC):
         self._start_time: Optional[float] = None
         self._child_index = 0
         self._children_running = False
+        # 异步节点支持（阶段 0.2 新增）
+        self._is_async: bool = False
+        self._async_started: bool = False
 
     @abstractmethod
     def tick(self, context: "ExecutionContext") -> NodeStatus:
@@ -56,6 +60,16 @@ class Node(ABC):
     def _execute_with_decorators(self, context: "ExecutionContext", 
                                    execute_func: callable) -> NodeStatus:
         if not self.config.enabled:
+            return NodeStatus.SUCCESS
+
+        # 跳过模式：跳过节点自身逻辑，透传执行其子节点（无子节点则视为成功）
+        if self.config.skip:
+            if self.children:
+                status = self._execute_children(context)
+                if status != NodeStatus.RUNNING:
+                    self.status = status
+                return status
+            self.status = NodeStatus.SUCCESS
             return NodeStatus.SUCCESS
 
         if self.status != NodeStatus.RUNNING:
@@ -85,22 +99,10 @@ class Node(ABC):
         duration_ms = (time.perf_counter() - start_time) * 1000
         self.status = status
 
-        LogManager.debug_print(
-            f"[DEBUG] _execute_with_decorators: {self.NODE_TYPE} '{self.name}' "
-            f"(id={self.node_id}) execute_func returned {status.name}, "
-            f"retry_count={self.config.retry_count}, _retry_count={self._retry_count}, "
-            f"repeat_count={self.config.repeat_count}, _repeat_count={self._repeat_count}"
-        )
-
         retry_count = self.config.retry_count
         if status == NodeStatus.FAILURE and retry_count != 0:
             if retry_count == -1 or self._retry_count < retry_count:
                 self._retry_count += 1
-                
-                LogManager.debug_print(
-                    f"[DEBUG] _execute_with_decorators: {self.NODE_TYPE} '{self.name}' "
-                    f"RETRY #{self._retry_count}, retry_count config={retry_count}"
-                )
 
                 repeat_interval_ms = self.config.repeat_interval_ms
                 repeat_interval_ms_random = self.config.get_int("repeat_interval_ms_random", 0)
@@ -117,12 +119,6 @@ class Node(ABC):
                     return NodeStatus.ABORTED
 
                 self._reset_for_retry()
-
-                LogManager.debug_print(
-                    f"[DEBUG] _execute_with_decorators: {self.NODE_TYPE} '{self.name}' "
-                    f"after _reset_for_retry: status={self.status.name}, "
-                    f"current_index={getattr(self, 'current_index', 'N/A')}"
-                )
 
                 return NodeStatus.RUNNING
 
@@ -294,6 +290,7 @@ class Node(ABC):
             "type": self.NODE_TYPE,
             "name": self.name,
             "enabled": self.enabled,
+            "skip": self.skip,
             "config": self.config.to_dict(),
             "children": [child.node_id for child in self.children],
         }
@@ -357,21 +354,18 @@ class SequenceNode(CompositeNode):
         self.child_interval = self.config.get_int("childinterval", 0)
         self.child_interval_random = self.config.get_int("childinterval_random", 0)
         self._last_child_finish_time: Optional[float] = None
+        self._completed = False
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         return self._execute_with_decorators(context, self._tick_internal)
 
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
-
-        if not self.children:
+        if self._completed:
             return NodeStatus.SUCCESS
 
-        LogManager.debug_print(
-            f"[DEBUG] SequenceNode._tick_internal: '{self.name}' (id={self.node_id}) "
-            f"ENTER: current_index={self.current_index}, "
-            f"continue_on_failure={self.continue_on_failure}, "
-            f"children_count={len(self.children)}"
-        )
+        if not self.children:
+            self._completed = True
+            return NodeStatus.SUCCESS
 
         has_failure = False
 
@@ -388,19 +382,7 @@ class SequenceNode(CompositeNode):
                 if current_time - self._last_child_finish_time < actual_interval:
                     return NodeStatus.RUNNING
 
-            LogManager.debug_print(
-                f"[DEBUG] SequenceNode._tick_internal: '{self.name}' "
-                f"ticking child[{self.current_index}]={child.NODE_TYPE} '{child.name}' "
-                f"(id={child.node_id}), child.status={child.status.name}"
-            )
-
             status = child.tick(context)
-
-            LogManager.debug_print(
-                f"[DEBUG] SequenceNode._tick_internal: '{self.name}' "
-                f"child[{self.current_index}]={child.NODE_TYPE} '{child.name}' "
-                f"returned {status.name}"
-            )
 
             if status == NodeStatus.RUNNING:
                 return NodeStatus.RUNNING
@@ -412,10 +394,6 @@ class SequenceNode(CompositeNode):
                     self._last_child_finish_time = context.elapsed_time * 1000
                     continue
                 else:
-                    LogManager.debug_print(
-                        f"[DEBUG] SequenceNode._tick_internal: '{self.name}' "
-                        f"FAILURE branch: setting current_index=0 (was {self.current_index})"
-                    )
                     self.current_index = 0
                     LogManager.instance().log_failure(
                         node_type="顺序节点",
@@ -441,15 +419,18 @@ class SequenceNode(CompositeNode):
                 node_name=self.name
             )
         
+        self._completed = True
         return NodeStatus.FAILURE if has_failure else NodeStatus.SUCCESS
 
     def reset(self, reset_counters: bool = True) -> None:
         super().reset(reset_counters)
         self._last_child_finish_time = None
+        self._completed = False
 
     def _reset_for_retry(self) -> None:
         super()._reset_for_retry()
         self._last_child_finish_time = None
+        self._completed = False
 
 
 class SelectorNode(CompositeNode):
@@ -990,14 +971,9 @@ class ConditionNode(Node):
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
 
         if self._children_running and self.children:
-            LogManager.debug_print(
-                f"[DEBUG] ConditionNode._tick_internal: {self.NODE_TYPE} '{self.name}' "
-                f"(id={self.node_id}) _children_running=True, executing children"
-            )
             return self._execute_children(context)
 
         check_interval_ms = self.config.get_int("check_interval_ms", 300)
-        # 智能跳过：连续相同结果时延长检测间隔
         effective_interval_ms = check_interval_ms
         if self._consecutive_same_count >= self._STABLE_THRESHOLD:
             effective_interval_ms = check_interval_ms * 2
@@ -1005,23 +981,7 @@ class ConditionNode(Node):
         current_time = context.elapsed_time * 1000
         time_since_last = current_time - self._last_check_time
         if time_since_last < effective_interval_ms:
-            LogManager.debug_print(
-                f"[DEBUG] ConditionNode._tick_internal: {self.NODE_TYPE} '{self.name}' "
-                f"(id={self.node_id}) CHECK_INTERVAL_CACHE HIT: "
-                f"time_since_last={time_since_last:.1f}ms < effective_interval={effective_interval_ms}ms "
-                f"(base={check_interval_ms}ms, consecutive={self._consecutive_same_count}), "
-                f"returning cached status={self.status.name}"
-            )
             return self.status
-
-        LogManager.debug_print(
-            f"[DEBUG] ConditionNode._tick_internal: {self.NODE_TYPE} '{self.name}' "
-            f"(id={self.node_id}) CHECK_INTERVAL_CACHE MISS: "
-            f"time_since_last={time_since_last:.1f}ms >= effective_interval={effective_interval_ms}ms "
-                f"(base={check_interval_ms}ms, consecutive={self._consecutive_same_count}), "
-            f"current_status={self.status.name}, _last_check_time={self._last_check_time}, "
-            f"current_time={current_time:.1f}"
-        )
 
         self._last_check_time = current_time
         result = self._check_condition(context)
@@ -1208,8 +1168,11 @@ class ActionNode(Node):
         super().__init__(node_id, config)
         self._window_switched = False
         self._was_already_foreground = False
+        self._original_foreground_window = None
 
     def tick(self, context: "ExecutionContext") -> NodeStatus:
+        if self._is_async:
+            return self._tick_async(context)
         return self._execute_with_decorators(context, self._tick_internal)
 
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
@@ -1244,25 +1207,90 @@ class ActionNode(Node):
             if self._children_running:
                 return self._execute_children(context)
             
+            from bt_utils.window_manager import WindowManager
+            
             if not self._window_switched:
-                from bt_utils.window_manager import WindowManager
                 self._was_already_foreground = WindowManager.is_foreground_window(bound_window)
+                window_rect = WindowManager.get_window_rect(bound_window)
+                foreground_hwnd = WindowManager.get_foreground_window()
+                
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换检查开始")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' bound_window={bound_window}, rect={window_rect}")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 当前前台窗口 hwnd={foreground_hwnd}")
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' was_already_foreground={self._was_already_foreground}")
                 
                 if self._was_already_foreground:
-                    LogManager.debug_print(f"[DEBUG] ActionNode '{self.name}' 绑定窗口已在前台，跳过切换")
+                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 绑定窗口已在前台，跳过切换")
+                    self._window_switched = True
                 else:
-                    LogManager.debug_print(f"[DEBUG] ActionNode '{self.name}' 检测到绑定窗口: hwnd={bound_window}")
-                    context.smart_switch_to_bound_window()
-                self._window_switched = True
+                    if self._original_foreground_window is None:
+                        self._original_foreground_window = foreground_hwnd
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 保存原始前台窗口 hwnd={self._original_foreground_window}")
+                    
+                    max_retries = 3
+                    switch_success = False
+                    
+                    for attempt in range(max_retries):
+                        retry_delay = 0.1 * (2 ** attempt)
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 准备切换到绑定窗口 (尝试 {attempt + 1}/{max_retries})")
+                        switch_start = time.time()
+                        switch_result = context.smart_switch_to_bound_window()
+                        switch_elapsed_ms = (time.time() - switch_start) * 1000
+                        after_switch_foreground = WindowManager.is_foreground_window(bound_window)
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换完成 result={switch_result}, 耗时={switch_elapsed_ms:.2f}ms")
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 切换后绑定窗口是否在前台={after_switch_foreground}")
+                        
+                        if after_switch_foreground:
+                            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换成功")
+                            switch_success = True
+                            break
+                        else:
+                            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换失败，等待 {retry_delay}s 后重试")
+                            time.sleep(retry_delay)
+                    
+                    if switch_success:
+                        self._window_switched = True
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' window_switched 标记已设置")
+                    else:
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换失败，返回 FAILURE")
+                        LogManager.instance().log_failure(
+                            node_type="动作节点",
+                            node_name=self.name,
+                            reason="窗口切换失败，目标窗口无法切换到前台"
+                        )
+                        self._reset_window_state()
+                        return NodeStatus.FAILURE
+            else:
+                is_foreground_now = WindowManager.is_foreground_window(bound_window)
+                if not is_foreground_now:
+                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 检测到绑定窗口已不在前台，重新切换")
+                    self._window_switched = False
+                    self._was_already_foreground = False
+                    return NodeStatus.RUNNING
             
-            LogManager.debug_print(f"[DEBUG] ActionNode '{self.name}' 执行动作...")
+            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 执行动作...")
+            action_start = time.time()
             status = self._execute_action(context)
+            action_elapsed_ms = (time.time() - action_start) * 1000
+            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 动作执行完成 status={status}, 耗时={action_elapsed_ms:.2f}ms")
             
             if status != NodeStatus.RUNNING:
-                if not self._was_already_foreground:
-                    context.smart_restore_foreground_window()
+                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 动作非 RUNNING，准备恢复前台窗口")
+                if not self._was_already_foreground and self._original_foreground_window is not None:
+                    restore_start = time.time()
+                    from bt_utils.window_manager import WindowManager
+                    if WindowManager.is_window_valid(self._original_foreground_window):
+                        WindowManager.set_foreground_window(self._original_foreground_window)
+                        context._previous_foreground_window = None
+                        restore_elapsed_ms = (time.time() - restore_start) * 1000
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 恢复原前台窗口 hwnd={self._original_foreground_window}，耗时={restore_elapsed_ms:.2f}ms")
+                    else:
+                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 原始前台窗口已无效，跳过恢复")
+                else:
+                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 绑定窗口原本就在前台，无需恢复")
                 self._window_switched = False
                 self._was_already_foreground = False
+                self._original_foreground_window = None
             
             self.status = status
 
@@ -1286,10 +1314,77 @@ class ActionNode(Node):
         else:
             return self._execute_children(context)
 
+    def _reset_window_state(self) -> None:
+        self._window_switched = False
+        self._was_already_foreground = False
+        self._original_foreground_window = None
+
     def reset(self, reset_counters: bool = True) -> None:
         super().reset(reset_counters)
         self._window_switched = False
         self._was_already_foreground = False
+        self._original_foreground_window = None
+        self._async_started = False
+
+    def _tick_async(self, context: "ExecutionContext") -> NodeStatus:
+        async_executor = context.get_async_executor()
+        if not async_executor:
+            LogManager.debug_print(
+                f"[DEBUG] ActionNode._tick_async: {self.NODE_TYPE} '{self.name}' "
+                f"(id={self.node_id}) 未配置异步执行器，降级为同步执行"
+            )
+            return self._execute_with_decorators(context, self._tick_internal)
+
+        if self.status != NodeStatus.RUNNING and not self._async_started:
+            context.notify_node_status(self.node_id, "running")
+            self.status = NodeStatus.RUNNING
+
+        if not self._async_started:
+            timeout_ms = self.config.get_int("timeout_ms", 30000)
+
+            def _async_func():
+                try:
+                    return self._execute_action(context)
+                except Exception as e:
+                    LogManager.instance().log_failure(
+                        node_type=self.NODE_TYPE,
+                        node_name=self.name,
+                        reason=f"异步执行异常: {e}"
+                    )
+                    return NodeStatus.FAILURE
+
+            async_executor.submit(self.node_id, _async_func, timeout_ms)
+            self._async_started = True
+            LogManager.debug_print(
+                f"[DEBUG] ActionNode._tick_async: {self.NODE_TYPE} '{self.name}' "
+                f"(id={self.node_id}) 已提交异步任务"
+            )
+            return NodeStatus.RUNNING
+
+        if async_executor.is_done(self.node_id):
+            result = async_executor.get_result(self.node_id)
+            self.status = result
+            self._async_started = False
+
+            if result == NodeStatus.SUCCESS:
+                context.notify_node_status(self.node_id, "success")
+                LogManager.instance().log_success(
+                    node_type=self.NODE_TYPE,
+                    node_name=self.name
+                )
+                if self.children:
+                    return self._execute_children(context)
+            elif result == NodeStatus.FAILURE:
+                context.notify_node_status(self.node_id, "failure")
+                LogManager.instance().log_failure(
+                    node_type=self.NODE_TYPE,
+                    node_name=self.name,
+                    reason="异步执行失败"
+                )
+
+            return result
+
+        return NodeStatus.RUNNING
 
     @abstractmethod
     def _execute_action(self, context: "ExecutionContext") -> NodeStatus:
@@ -1323,6 +1418,7 @@ class StartNode(CompositeNode):
         self.window_title = self.config.get("window_title", "")
         self.window_pid = self.config.get_int("window_pid", 0)
         self._window_bound = False
+        self._completed = False
     
     def tick(self, context: "ExecutionContext") -> NodeStatus:
         """顺序执行所有子节点,失败后继续执行
@@ -1340,6 +1436,8 @@ class StartNode(CompositeNode):
         return self._execute_with_decorators(context, self._tick_internal)
     
     def _tick_internal(self, context: "ExecutionContext") -> NodeStatus:
+        if self._completed:
+            return NodeStatus.SUCCESS
 
         bind_window = self.config.get_bool("bind_window", False)
         window_title = self.config.get("window_title", "")
@@ -1348,16 +1446,12 @@ class StartNode(CompositeNode):
             self._window_bound = True
 
         if not self.children:
+            self._completed = True
             LogManager.instance().log_success(
                 node_type="开始节点",
                 node_name=self.name
             )
             return NodeStatus.SUCCESS
-        
-        LogManager.debug_print(
-            f"[DEBUG] StartNode._tick_internal: '{self.name}' (id={self.node_id}) "
-            f"ENTER: current_index={self.current_index}, children_count={len(self.children)}"
-        )
 
         while self.current_index < len(self.children):
             child = self.children[self.current_index]
@@ -1365,20 +1459,8 @@ class StartNode(CompositeNode):
             if not child.config.enabled:
                 self.current_index += 1
                 continue
-            
-            LogManager.debug_print(
-                f"[DEBUG] StartNode._tick_internal: '{self.name}' "
-                f"ticking child[{self.current_index}]={child.NODE_TYPE} '{child.name}' "
-                f"(id={child.node_id})"
-            )
 
             status = child.tick(context)
-
-            LogManager.debug_print(
-                f"[DEBUG] StartNode._tick_internal: '{self.name}' "
-                f"child[{self.current_index}]={child.NODE_TYPE} '{child.name}' "
-                f"returned {status.name}"
-            )
             
             if status == NodeStatus.RUNNING:
                 return NodeStatus.RUNNING
@@ -1393,6 +1475,7 @@ class StartNode(CompositeNode):
             self.current_index += 1
         
         self.current_index = 0
+        self._completed = True
         
         LogManager.instance().log_success(
             node_type="开始节点",
@@ -1405,6 +1488,7 @@ class StartNode(CompositeNode):
         """重置节点状态"""
         super().reset(reset_counters)
         self._window_bound = False
+        self._completed = False
         for child in self.children:
             child.reset()
 
@@ -1449,10 +1533,12 @@ class StartNode(CompositeNode):
     def _reset_for_retry(self) -> None:
         """重试时重置状态（保留重试计数器）"""
         super()._reset_for_retry()
+        self._completed = False
     
     def _reset_for_repeat(self) -> None:
         """重复执行时重置状态（保留重复计数器）"""
         super()._reset_for_repeat()
+        self._completed = False
     
     def to_dict(self) -> Dict[str, Any]:
         """

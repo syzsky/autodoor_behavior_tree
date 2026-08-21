@@ -11,6 +11,7 @@ NODE_CATEGORY_MAP = {
     "NumberConditionNode": "condition",
     "VariableConditionNode": "condition",
     "TextExtractNode": "condition",
+    "APIConditionNode": "condition",
     "KeyPressNode": "action",
     "MouseClickNode": "action",
     "MouseMoveNode": "action",
@@ -23,6 +24,10 @@ NODE_CATEGORY_MAP = {
     "TextInputNode": "action",
     "StartTreeNode": "action",
     "StopTreeNode": "action",
+    "HTTPRequestNode": "action",
+    "MessagePublishNode": "interface",
+    "MessageSubscribeNode": "interface",
+    "WebSocketNode": "interface",
 }
 
 NODE_DISPLAY_NAMES = {
@@ -38,6 +43,7 @@ NODE_DISPLAY_NAMES = {
     "NumberConditionNode": "数字比较",
     "VariableConditionNode": "变量判断",
     "TextExtractNode": "文本提取",
+    "APIConditionNode": "API条件",
     "KeyPressNode": "按键",
     "MouseClickNode": "点击",
     "MouseMoveNode": "移动",
@@ -50,6 +56,10 @@ NODE_DISPLAY_NAMES = {
     "TextInputNode": "文本输入",
     "StartTreeNode": "启动树",
     "StopTreeNode": "停止树",
+    "HTTPRequestNode": "HTTP请求",
+    "MessagePublishNode": "消息发布",
+    "MessageSubscribeNode": "消息订阅",
+    "WebSocketNode": "WebSocket连接",
 }
 
 NODE_DESCRIPTIONS = {
@@ -65,6 +75,7 @@ NODE_DESCRIPTIONS = {
     "NumberConditionNode": "比较数值大小",
     "VariableConditionNode": "判断变量值",
     "TextExtractNode": "从指定区域提取文本",
+    "APIConditionNode": "根据API响应判断条件",
     "KeyPressNode": "模拟键盘按键",
     "MouseClickNode": "模拟鼠标点击",
     "MouseMoveNode": "移动鼠标位置",
@@ -77,13 +88,18 @@ NODE_DESCRIPTIONS = {
     "TextInputNode": "向目标位置输入文本",
     "StartTreeNode": "启动其他已加载的行为树",
     "StopTreeNode": "停止当前或其他行为树",
+    "HTTPRequestNode": "发起HTTP请求",
+    "MessagePublishNode": "向消息总线发布消息",
+    "MessageSubscribeNode": "订阅消息总线主题",
+    "WebSocketNode": "建立WebSocket连接",
 }
 
 COMPOSITE_NODES = ["SequenceNode", "SelectorNode", "ParallelNode", "RandomNode", "SubtreeNode"]
-CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode"]
-ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode", "StartTreeNode", "StopTreeNode"]
+CONDITION_NODES = ["OCRConditionNode", "ImageConditionNode", "ColorConditionNode", "NumberConditionNode", "VariableConditionNode", "TextExtractNode", "APIConditionNode"]
+ACTION_NODES = ["KeyPressNode", "MouseClickNode", "MouseMoveNode", "MouseScrollNode", "DelayNode", "SetVariableNode", "ScriptNode", "CodeNode", "AlarmNode", "TextInputNode", "StartTreeNode", "StopTreeNode", "HTTPRequestNode"]
+INTERFACE_NODES = ["MessagePublishNode", "MessageSubscribeNode", "WebSocketNode"]
 
-ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES
+ALL_NODE_TYPES = COMPOSITE_NODES + CONDITION_NODES + ACTION_NODES + INTERFACE_NODES
 
 
 def get_node_category(node_type: str) -> str:
@@ -121,6 +137,7 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("NumberConditionNode", "数字比较", "比较数值大小"),
                 ("VariableConditionNode", "变量判断", "判断变量值"),
                 ("TextExtractNode", "文本提取", "从指定区域提取文本"),
+                ("APIConditionNode", "API条件", "根据API响应判断条件"),
             ]
         },
         "动作节点": {
@@ -139,6 +156,49 @@ def build_node_categories(theme_colors: dict) -> dict:
                 ("TextInputNode", "文本输入", "向目标位置输入文本"),
                 ("StartTreeNode", "启动树", "启动其他已加载的行为树"),
                 ("StopTreeNode", "停止树", "停止当前或其他行为树"),
+                ("HTTPRequestNode", "HTTP请求", "发起HTTP请求"),
             ]
         },
+        "接口节点": {
+            "icon": "●",
+            "color": theme_colors.get('interface', '#8B5CF6'),
+            "nodes": [
+                ("MessagePublishNode", "消息发布", "向消息总线发布消息"),
+                ("MessageSubscribeNode", "消息订阅", "订阅消息总线主题"),
+                ("WebSocketNode", "WebSocket连接", "建立WebSocket连接"),
+            ]
+        },
+    }
+
+
+def build_plugin_category(plugin_loader, theme_colors: dict = None) -> dict:
+    """根据已启动插件构建「插件节点」分类
+
+    Args:
+        plugin_loader: PluginLoader 实例，查询其 get_registered_display_info()
+        theme_colors: 主题色字典，未提供时使用默认色
+
+    Returns:
+        {"插件节点": {"icon": "★", "color": {"bg","hover","text"}, "nodes": [(node_type, name, desc), ...]}}
+        若无插件节点，返回空 dict
+    """
+    if plugin_loader is None:
+        return {}
+    display_info = plugin_loader.get_registered_display_info()
+    if not display_info:
+        return {}
+    nodes = []
+    for node_type, info in display_info.items():
+        name = info.get("display_name", node_type)
+        desc = info.get("description", "")
+        nodes.append((node_type, name, desc))
+    color_config = {'bg': '#6B7280', 'hover': '#4B5563', 'text': '#FFFFFF'}
+    if theme_colors and 'plugin' in theme_colors:
+        color_config = theme_colors['plugin']
+    return {
+        "插件节点": {
+            "icon": "★",
+            "color": color_config,
+            "nodes": nodes,
+        }
     }

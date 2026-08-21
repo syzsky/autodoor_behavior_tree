@@ -13,3 +13,7 @@ PyYAML>=6.0
 pyperclip>=1.8.2
 imagehash>=4.3.0
 requests>=2.31.0
+websockets>=12.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+sse-starlette>=1.8.0

@@ -1,0 +1,10 @@
+{
+    "name": "excel_automation",
+    "display_name": "Excel自动化",
+    "version": "1.0.0",
+    "author": "AutoDoor Team",
+    "description": "Excel 读写和格式化操作，依赖 openpyxl",
+    "category": "office",
+    "entry": "main.py",
+    "class": "ExcelAutomationPlugin"
+}

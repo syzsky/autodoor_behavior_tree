@@ -1,14 +1,17 @@
 import customtkinter as ctk
 import os
 import sys
-from tkinter import messagebox
+from tkinter import messagebox, StringVar
 
 from .theme import Theme, init_theme
 from .bt_editor import BehaviorTreeEditor
 from .script_tab import ScriptTab
 from .settings_tab import SettingsTab
+from .plugin_panel import PluginStatusBarIndicator
 from config.settings_manager import SettingsManager
 from bt_utils.log_manager import LogManager
+from bt_plugins.base import PluginContext
+from bt_plugins.loader import PluginLoader
 
 
 def _get_app_title() -> str:
@@ -44,9 +47,15 @@ class BehaviorTreeApp(ctk.CTk):
         
         self._create_ui()
         self._setup_shortcuts()
-        
+
         self._restore_last_file()
-        
+
+        self._message_bus = None
+        self._rest_server = None
+        self._ws_server = None
+        self._ws_loop = None
+        self._init_message_bus_and_servers()
+
         self.protocol("WM_DELETE_WINDOW", self._on_close)
     
     def _restore_last_file(self):
@@ -162,11 +171,14 @@ class BehaviorTreeApp(ctk.CTk):
                     self.behavior_tree.tab_manager.remove_tab(default_tab_id)
 
     def _update_window_title(self):
-        """更新窗口标题，显示项目名称"""
+        """更新窗口标题，显示项目名称和图标"""
         project_name = None
+        project_icon = None
         if hasattr(self.behavior_tree, 'project_root') and self.behavior_tree.project_root:
             from bt_utils.project_manager import ProjectManager
             project_name = ProjectManager.resolve_project_name(self.behavior_tree.project_root)
+            project_info = ProjectManager.read_project_info(self.behavior_tree.project_root)
+            project_icon = project_info.get("icon")
         
         if project_name:
             try:
@@ -176,6 +188,24 @@ class BehaviorTreeApp(ctk.CTk):
                 self.title(f"autodoor - 行为树 - {project_name}")
         else:
             self.title(_get_app_title())
+        
+        if hasattr(self, '_app_icon_label'):
+            if project_icon:
+                try:
+                    from PIL import Image, ImageTk
+                    import os
+                    icon_path = os.path.join(self.behavior_tree.project_root, project_icon)
+                    if os.path.exists(icon_path):
+                        image = Image.open(icon_path).resize((24, 24), Image.LANCZOS)
+                        tk_image = ctk.CTkImage(image, size=(24, 24))
+                        self._app_icon_label.configure(image=tk_image, text="")
+                        self._app_icon_label.image = tk_image
+                    else:
+                        self._app_icon_label.configure(text=project_icon, image="")
+                except Exception:
+                    self._app_icon_label.configure(text=project_icon, image="")
+            else:
+                self._app_icon_label.configure(text='◉', image="")
     
     def _set_icon(self):
         """设置应用图标"""
@@ -198,9 +228,28 @@ class BehaviorTreeApp(ctk.CTk):
             fg_color=self._dark_colors['bg_primary']
         )
         self.main_container.pack(fill='both', expand=True)
-        
+
         self._create_top_bar()
+        self._create_bottom_status_bar()
         self._create_content_area()
+
+    def _create_bottom_status_bar(self):
+        """创建底部状态栏（含插件状态指示器）"""
+        self.bottom_status = ctk.CTkFrame(
+            self.main_container,
+            height=24,
+            fg_color=self._dark_colors['bg_secondary'],
+            corner_radius=0
+        )
+        self.bottom_status.pack(side='bottom', fill='x')
+        self.bottom_status.pack_propagate(False)
+
+        # 插件状态指示器（延迟到 _init_plugin_system 中创建）
+        self._plugin_indicator = None
+
+    def _show_plugin_panel(self):
+        """切换到设置标签页的插件管理面板"""
+        self._switch_tab('settings')
     
     def _create_top_bar(self):
         """创建顶部栏（包含标题、Tab按钮、操作按钮）"""
@@ -220,12 +269,13 @@ class BehaviorTreeApp(ctk.CTk):
         left_section = ctk.CTkFrame(top_bar_content, fg_color='transparent')
         left_section.pack(side='left')
         
-        ctk.CTkLabel(
+        self._app_icon_label = ctk.CTkLabel(
             left_section,
             text='◉',
             font=Theme.get_font('xl'),
             text_color=self._dark_colors['primary']
-        ).pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_xs']))
+        )
+        self._app_icon_label.pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_xs']))
         
         ctk.CTkLabel(
             left_section,
@@ -248,6 +298,32 @@ class BehaviorTreeApp(ctk.CTk):
             ).pack(side='left', padx=Theme.DIMENSIONS['spacing_sm'])
         except ImportError:
             pass
+
+        # ============================================================
+        # 登录 UI 暂不对外开放（注释保留，后端登录接口仍可用）
+        # 如需恢复，取消下方注释即可
+        # ============================================================
+        # self._auth_btn = ctk.CTkButton(
+        #     left_section,
+        #     text="登录",
+        #     width=60,
+        #     height=28,
+        #     font=Theme.get_font('xs'),
+        #     fg_color=self._dark_colors['primary'],
+        #     hover_color=self._dark_colors['primary_hover'],
+        #     corner_radius=4,
+        #     command=self._on_auth_click
+        # )
+        # self._auth_btn.pack(side='left', padx=Theme.DIMENSIONS['spacing_sm'])
+        #
+        # self._auth_status_var = StringVar(value="未登录")
+        # self._auth_status_label = ctk.CTkLabel(
+        #     left_section,
+        #     textvariable=self._auth_status_var,
+        #     font=Theme.get_font('xs'),
+        #     text_color=self._dark_colors['text_muted']
+        # )
+        # self._auth_status_label.pack(side='left', padx=(0, Theme.DIMENSIONS['spacing_sm']))
         
         center_section = ctk.CTkFrame(top_bar_content, fg_color='transparent')
         center_section.pack(side='left', expand=True)
@@ -263,7 +339,8 @@ class BehaviorTreeApp(ctk.CTk):
         tab_config = [
             ('bt', '🌲 行为树编辑器'),
             ('script', '📝 脚本录制'),
-            ('settings', '⚙ 设置')
+            ('settings', '⚙ 设置'),
+            ('plugins', '🔌 插件管理')
         ]
         
         for i, (tab_id, tab_text) in enumerate(tab_config):
@@ -360,10 +437,12 @@ class BehaviorTreeApp(ctk.CTk):
         bt_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
         script_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
         settings_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
-        
+        plugins_frame = ctk.CTkFrame(self.content_frame, fg_color='transparent')
+
         self.tab_frames['bt'] = bt_frame
         self.tab_frames['script'] = script_frame
         self.tab_frames['settings'] = settings_frame
+        self.tab_frames['plugins'] = plugins_frame
         
         self.behavior_tree = BehaviorTreeEditor(bt_frame, self)
         self.behavior_tree.pack(fill='both', expand=True)
@@ -377,9 +456,85 @@ class BehaviorTreeApp(ctk.CTk):
         saved_settings = self._settings.get_all_settings()
         if saved_settings:
             self.settings.load_settings(saved_settings)
-        
+
+        # 初始化插件系统：扫描内置插件目录并加载（不自动启动）
+        self._plugin_loader = None
+        self._init_plugin_system()
+
         bt_frame.pack(fill='both', expand=True)
-    
+
+    def _init_plugin_system(self):
+        """初始化插件系统：创建上下文与加载器，扫描并加载内置插件和用户插件（不自动启动）"""
+        import traceback
+        try:
+            import bt_plugins
+            builtin_dir = os.path.join(os.path.dirname(bt_plugins.__file__), 'builtin')
+            # 用户插件目录（项目根目录下的 plugins/）
+            user_plugin_dir = os.path.join(os.getcwd(), 'plugins')
+
+            plugin_context = PluginContext(settings=self._settings)
+            self._plugin_loader = PluginLoader(plugin_context)
+
+            # 扫描内置插件目录并逐个加载
+            loaded_count = 0
+            for info in self._plugin_loader.scan(builtin_dir):
+                plugin_dir = os.path.join(builtin_dir, info.name)
+                if self._plugin_loader.load_plugin(plugin_dir):
+                    loaded_count += 1
+
+            # 扫描用户插件目录并逐个加载
+            if os.path.isdir(user_plugin_dir):
+                for info in self._plugin_loader.scan(user_plugin_dir):
+                    plugin_dir = os.path.join(user_plugin_dir, info.name)
+                    if self._plugin_loader.load_plugin(plugin_dir):
+                        loaded_count += 1
+
+            LogManager.debug_print(f"[Plugin] 插件系统初始化完成，已加载 {loaded_count} 个插件")
+
+            # 将插件 loader 注入节点面板，使插件节点能动态显示
+            if hasattr(self.behavior_tree, 'palette'):
+                self.behavior_tree.palette.set_plugin_loader(self._plugin_loader)
+
+            # 在独立的插件管理 Tab 页中创建 PluginPanel
+            from .plugin_panel import PluginPanel
+            self._plugin_panel = PluginPanel(
+                self.tab_frames['plugins'], self._plugin_loader,
+                on_plugins_changed=self._on_plugins_changed
+            )
+            self._plugin_panel.pack(fill="both", expand=True,
+                                    padx=Theme.DIMENSIONS['spacing_md'],
+                                    pady=Theme.DIMENSIONS['spacing_md'])
+
+            # 创建插件状态指示器（底部状态栏）
+            if hasattr(self, 'bottom_status') and self._plugin_loader:
+                self._plugin_indicator = PluginStatusBarIndicator(
+                    self.bottom_status,
+                    self._plugin_loader,
+                    on_click=self._show_plugin_panel
+                )
+                self._plugin_indicator.pack(side='left', padx=Theme.DIMENSIONS['spacing_md'])
+        except Exception as e:
+            error_msg = f"[ERROR] 插件系统初始化失败: {e}\n{traceback.format_exc()}"
+            LogManager.debug_print(error_msg)
+            # 同时写入启动错误日志文件，确保问题可追溯
+            try:
+                from main import write_log
+                write_log(error_msg)
+            except Exception:
+                pass
+            self._plugin_loader = None
+
+    def _on_plugins_changed(self):
+        """插件启停后触发：刷新节点面板中的插件节点分类"""
+        try:
+            if hasattr(self.behavior_tree, 'palette'):
+                self.behavior_tree.palette.refresh_plugin_nodes()
+            # 刷新底部状态栏插件指示器
+            if hasattr(self, '_plugin_indicator') and self._plugin_indicator:
+                self._plugin_indicator.refresh()
+        except Exception as e:
+            LogManager.debug_print(f"[WARN] 刷新节点面板插件节点失败: {e}")
+
     def _check_for_updates(self):
         """检查更新"""
         if hasattr(self, '_version_checker'):
@@ -387,6 +542,25 @@ class BehaviorTreeApp(ctk.CTk):
         else:
             from tkinter import messagebox
             messagebox.showinfo("检查更新", "版本检查器未初始化")
+    
+    def _on_auth_click(self):
+        if hasattr(self, 'behavior_tree') and self.behavior_tree:
+            login_manager = getattr(self.behavior_tree, '_login_manager', None)
+            if login_manager and login_manager.is_authenticated():
+                self.behavior_tree._on_logout_click()
+            else:
+                self.behavior_tree._on_login_click()
+    
+    def set_auth_status(self, authenticated: bool, username: str = ""):
+        if hasattr(self, '_auth_btn') and hasattr(self, '_auth_status_var') and hasattr(self, '_auth_status_label'):
+            if authenticated:
+                self._auth_btn.configure(text="登出", fg_color=self._dark_colors['error'], hover_color='#DC2626')
+                self._auth_status_var.set(username)
+                self._auth_status_label.configure(text_color=Theme.COLORS['success'])
+            else:
+                self._auth_btn.configure(text="登录", fg_color=self._dark_colors['primary'], hover_color=self._dark_colors['primary_hover'])
+                self._auth_status_var.set("未登录")
+                self._auth_status_label.configure(text_color=self._dark_colors['text_muted'])
     
     def _get_current_tab(self) -> str:
         """获取当前Tab ID"""
@@ -573,8 +747,113 @@ class BehaviorTreeApp(ctk.CTk):
                 "无法以管理员身份重启应用，输入方式已恢复为 PyAutoGUI。"
             )
             return False
-    
+
+    def _init_message_bus_and_servers(self):
+        """根据配置启动消息总线和服务端"""
+        bus_config = self._settings.get("message_bus", {})
+        if not bus_config.get("enabled", False):
+            return
+
+        from bt_bus.message_bus import MessageBus
+        from bt_bus.thread_pool import SharedThreadPool
+
+        SharedThreadPool.reset_instance()
+        MessageBus.reset_instance()
+        bus = MessageBus()
+        bus.start()
+        self._message_bus = bus
+
+        # 启动 REST 服务端
+        rest_config = self._settings.get("rest_server", {})
+        if rest_config.get("enabled", False):
+            import threading
+            import uvicorn
+            from bt_servers.rest_server import RESTServer
+            from bt_servers.config import ServerConfig
+
+            server_config = ServerConfig(
+                host=rest_config.get("host", "127.0.0.1"),
+                port=rest_config.get("port", 8080),
+            )
+            rest = RESTServer(message_bus=bus, config=server_config)
+            self._rest_server = rest
+
+            def _run_rest():
+                try:
+                    rest.start()
+                    uvicorn.run(rest.app, host=server_config.host,
+                                port=server_config.port, log_level="warning")
+                except Exception as e:
+                    LogManager.debug_print(f"[ERROR] REST 服务端启动失败: {e}")
+
+            thread = threading.Thread(target=_run_rest, daemon=True)
+            thread.start()
+
+        # 启动 WebSocket 服务端
+        ws_config = self._settings.get("websocket_server", {})
+        if ws_config.get("enabled", False):
+            import threading
+            import asyncio
+            from bt_servers.websocket_server import WebSocketServer
+
+            ws = WebSocketServer(
+                host=ws_config.get("host", "127.0.0.1"),
+                port=ws_config.get("port", 8765),
+            )
+            ws.attach_bus(bus)
+            self._ws_server = ws
+            self._ws_loop = None
+
+            def _run_ws():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    self._ws_loop = loop
+                    loop.run_until_complete(ws.start())
+                    loop.run_forever()
+                except Exception as e:
+                    LogManager.debug_print(f"[ERROR] WebSocket 服务端启动失败: {e}")
+
+            thread = threading.Thread(target=_run_ws, daemon=True)
+            thread.start()
+
     def _on_close(self):
+        # 停止所有已启动的插件
+        if hasattr(self, '_plugin_loader') and self._plugin_loader:
+            try:
+                self._plugin_loader.stop_all()
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止插件失败: {e}")
+
+        # 清理消息总线和服务端
+        if self._ws_server is not None:
+            import asyncio
+            try:
+                if self._ws_loop is not None and self._ws_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self._ws_server.stop(), self._ws_loop
+                    ).result(timeout=5)
+                else:
+                    asyncio.run(self._ws_server.stop())
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止 WebSocket 服务端失败: {e}")
+        if self._rest_server is not None:
+            try:
+                self._rest_server.stop()
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止 REST 服务端失败: {e}")
+        # 清理 WebSocket 客户端节点连接池
+        try:
+            from bt_nodes.network.websocket_node import WebSocketNode
+            WebSocketNode.close_all_connections()
+        except Exception as e:
+            LogManager.debug_print(f"[WARN] 清理 WebSocket 连接池失败: {e}")
+        if self._message_bus is not None:
+            try:
+                self._message_bus.stop()
+            except Exception as e:
+                LogManager.debug_print(f"[WARN] 停止消息总线失败: {e}")
+
         self._save_state()
         
         if hasattr(self, 'behavior_tree') and self.behavior_tree:

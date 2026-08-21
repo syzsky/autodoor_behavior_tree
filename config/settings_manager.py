@@ -106,7 +106,7 @@ class SettingsManager:
             ]
         },
         "behavior_tree": {
-            "tick_interval": 50,
+            "tick_interval": 33,
             "auto_save_interval": 30,
             "default_format": "json",
             "default_check_interval_ms": 300,
@@ -147,7 +147,71 @@ class SettingsManager:
             "last_check_time": "",
             "check_interval": 86400,
             "force_update_cache": {}
-        }
+        },
+        "message_bus": {
+            "enabled": False,
+            "shared_thread_pool_size": 8,
+            "dead_letter_queue_size": 1000,
+        },
+        "rest_server": {
+            "enabled": False,
+            "host": "127.0.0.1",
+            "port": 8080,
+            "auth_enabled": False,
+        },
+        "websocket_server": {
+            "enabled": False,
+            "host": "127.0.0.1",
+            "port": 8765,
+            "heartbeat_interval": 30,
+        },
+        "sse_server": {
+            "enabled": True,
+            "max_clients": 10,
+        },
+        "adapters": {
+            "http": {"enabled": False, "timeout_ms": 5000, "retry_count": 3},
+            "websocket": {"enabled": False, "reconnect_interval_ms": 5000},
+        },
+        "auth": {
+            "enabled": False,
+            "method": "noop",
+            "api_key": {"keys": []},
+            "token_expiry_seconds": 3600,
+            "platform": {
+                "base_url": "",
+                "api_namespace": "/wp-json/bt/v1/executor",
+                "connect_timeout": 10,
+                "read_timeout": 30,
+            }
+        },
+        # 插件系统配置
+        "plugins": {},
+        # 定时调度配置
+        "schedules": {},
+        # AI 编排配置
+        "ai": {
+            "enabled": False,
+            "llm": {
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "",
+                "model": "gpt-4o",
+                "timeout_ms": 300000,
+                "max_tokens": 4096,
+            },
+            "vlm": {
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "",
+                "model": "gpt-4o",
+                "timeout_ms": 300000,
+                "max_tokens": 4096,
+                "image_detail": "high",
+            },
+            "iteration": {
+                "max_rounds": 3,
+                "test_timeout_ms": 30000,
+            },
+        },
     }
     
     def __init__(self, config_dir: str = None):
@@ -244,6 +308,12 @@ class SettingsManager:
                 input_settings["keyboard_method"] = old_method
             if "mouse_method" not in input_settings:
                 input_settings["mouse_method"] = old_method
+
+        # 迁移 AI LLM/VLM 超时：旧版本默认 30000ms 过短，升级为 300000ms（5 分钟）
+        for ai_key in ("llm", "vlm"):
+            section = self.settings.get("ai", {}).get(ai_key)
+            if isinstance(section, dict) and section.get("timeout_ms") == 30000:
+                section["timeout_ms"] = 300000
 
         if config_version != self.VERSION:
             self.settings["version"] = self.VERSION
@@ -470,6 +540,10 @@ class SettingsManager:
     def get_all_settings(self) -> Dict[str, Any]:
         """获取所有设置"""
         return copy.deepcopy(self.settings)
+
+    def get_default_config(self) -> dict:
+        """返回默认配置的副本"""
+        return copy.deepcopy(self.DEFAULT_SETTINGS)
     
     def load_all_settings(self, settings: Dict[str, Any]) -> None:
         """加载所有设置"""

@@ -1,0 +1,10 @@
+{
+    "name": "file_processor",
+    "display_name": "文件处理",
+    "version": "1.0.0",
+    "author": "AutoDoor Team",
+    "description": "文件读写和移动操作，提供 FileReadNode、FileWriteNode、FileMoveNode",
+    "category": "office",
+    "entry": "main.py",
+    "class": "FileProcessorPlugin"
+}

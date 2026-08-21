@@ -93,3 +93,15 @@ def register_all_nodes():
     NodeRegistry.register("NumberConditionNode", NumberConditionNode)
     NodeRegistry.register("VariableConditionNode", VariableConditionNode)
     NodeRegistry.register("TextExtractNode", TextExtractNode)
+
+    from bt_nodes.network.http_request_node import HTTPRequestNode
+    from bt_nodes.network.api_condition_node import APIConditionNode
+    from bt_nodes.network.websocket_node import WebSocketNode
+    from bt_nodes.message.publish_node import MessagePublishNode
+    from bt_nodes.message.subscribe_node import MessageSubscribeNode
+
+    NodeRegistry.register("HTTPRequestNode", HTTPRequestNode)
+    NodeRegistry.register("APIConditionNode", APIConditionNode)
+    NodeRegistry.register("WebSocketNode", WebSocketNode)
+    NodeRegistry.register("MessagePublishNode", MessagePublishNode)
+    NodeRegistry.register("MessageSubscribeNode", MessageSubscribeNode)

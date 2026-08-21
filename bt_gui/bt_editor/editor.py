@@ -30,6 +30,7 @@ from bt_core.blackboard import Blackboard
 from bt_utils.auto_save import AutoSaveManager
 from bt_utils.crash_recovery import CrashRecoveryHandler
 from bt_utils.global_hotkey import GlobalHotkeyManager
+from bt_utils.auth.login_manager import LoginManager
 
 
 def _get_user_data_dir() -> Path:
@@ -82,10 +83,14 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         self._hotkey_manager = GlobalHotkeyManager.get_instance()
         
+        self._login_manager = LoginManager()
+        
         self._create_ui()
         self._bind_events()
         
         self._check_crash_recovery()
+        
+        self._init_auto_login()
     
     def _create_ui(self):
         self.main_container = ctk.CTkFrame(self, fg_color="transparent")
@@ -178,11 +183,20 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         LogManager.instance().set_stopped(False, tab_name=instance.name)
         
         engine = BehaviorTreeEngine(root_node)
+        # 应用全局 tick 间隔（设置中为毫秒，引擎为秒）控制整体运行频率
+        try:
+            from config.settings_manager import SettingsManager
+            tick_ms = int(SettingsManager.get_instance().get("behavior_tree.tick_interval", 33))
+            if tick_ms > 0:
+                engine._tick_interval = tick_ms / 1000.0
+        except (ValueError, TypeError):
+            pass
         engine._on_status_change = lambda status, node_status=None: self._on_tab_engine_status_change(tab_id, status, node_status)
         
         context = ExecutionContext(project_root=instance.project_root)
         context._on_node_status = lambda node_id, status, tid=tab_id: self._on_node_status(node_id, status, tid)
         context.set_tab_manager(self.tab_manager, tab_id)
+        context.set_message_bus(getattr(self.app, '_message_bus', None))
         
         instance.engine = engine
         instance.context = context
@@ -409,6 +423,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     def _create_new_tab(self, name: str, project_root: str = None, 
                         file_path: str = None) -> str:
         context = ExecutionContext(project_root=project_root)
+        context.set_message_bus(getattr(self.app, '_message_bus', None))
         engine = BehaviorTreeEngine(None)
         command_manager = CommandManager()
         
@@ -440,7 +455,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             name=name,
             engine=engine,
             context=context,
-            blackboard=Blackboard(),
+            blackboard=context.blackboard,
             tab_id=tab_id,
             canvas=new_canvas,
             file_path=file_path,
@@ -475,8 +490,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_reset_view=self.reset_view,
             on_start=self._start_running,
             on_stop=self._stop_running,
-            on_open_folder=self._open_project_folder
-        )
+            on_open_folder=self._open_project_folder,
+            on_toggle_ai=self.toggle_ai_assistant,
+            )
         self.toolbar.pack(fill="x")
     
     def _create_main_area(self):
@@ -486,6 +502,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._create_palette()
         self._create_canvas()
         self._create_property_panel()
+        self._create_ai_assistant_panel()
         
         self._create_log_panel()
     
@@ -535,6 +552,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         tab_id = f"tab_{BehaviorTreeEditor._tab_counter}"
 
         context = ExecutionContext(project_root=self._fallback_project_root)
+        context.set_message_bus(getattr(self.app, '_message_bus', None))
         engine = BehaviorTreeEngine(None)
         command_manager = CommandManager()
 
@@ -542,7 +560,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             name=self._get_project_name(),
             engine=engine,
             context=context,
-            blackboard=Blackboard(),
+            blackboard=context.blackboard,
             tab_id=tab_id,
             canvas=self._fallback_canvas,
             file_path=self._fallback_file_path,
@@ -585,6 +603,107 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     
     def _create_property_panel(self):
         pass
+
+    def _create_ai_assistant_panel(self):
+        """创建 AI 助手面板（默认隐藏）"""
+        from bt_gui.ai_assistant.assistant_panel import AssistantPanel
+        from bt_gui.ai_assistant.canvas_overlay import CanvasOverlay
+
+        self.ai_assistant_panel = AssistantPanel(
+            self.main_area,
+            editor=self,
+        )
+        # 默认隐藏
+        self.ai_assistant_panel.hide()
+
+        # 注册回调
+        self.ai_assistant_panel.register_callback(
+            "on_tree_generated", self._on_ai_tree_generated
+        )
+        self.ai_assistant_panel.register_callback(
+            "on_tree_updated", self._on_ai_tree_updated
+        )
+        self.ai_assistant_panel.register_callback(
+            "on_vlm_suggestions", self._on_ai_vlm_suggestions
+        )
+
+        # 创建画布标注覆盖层
+        active_tab = self.tab_manager.get_active_tab()
+        if active_tab and active_tab.canvas:
+            self._canvas_overlay = CanvasOverlay(active_tab.canvas)
+        else:
+            self._canvas_overlay = CanvasOverlay(self._fallback_canvas)
+
+    def toggle_ai_assistant(self):
+        """切换 AI 助手面板可见性"""
+        if hasattr(self, 'ai_assistant_panel'):
+            self.ai_assistant_panel.toggle()
+
+    def _on_ai_tree_generated(self, tree_data):
+        """AI 生成行为树后加载到画布"""
+        import json, tempfile, os
+        tree_path = os.path.join(tempfile.gettempdir(), "ai_generated_tree.json")
+        with open(tree_path, "w", encoding="utf-8") as f:
+            json.dump(tree_data, f, ensure_ascii=False)
+        self.load_tree(tree_path)
+
+    def _on_ai_tree_updated(self, tree_data):
+        """AI 修正后更新画布"""
+        active_tab = self.tab_manager.get_active_tab()
+        if active_tab and active_tab.canvas:
+            # 更新画布节点数据
+            for node_id, node_data in tree_data.get("nodes", {}).items():
+                if hasattr(active_tab.canvas, 'nodes') and node_id in active_tab.canvas.nodes:
+                    node_item = active_tab.canvas.nodes[node_id]
+                    # 更新配置
+                    if hasattr(node_item, 'config'):
+                        node_item.config = node_data.get("config", {})
+                    if hasattr(active_tab.canvas, '_update_node_display'):
+                        active_tab.canvas._update_node_display(node_id)
+
+    def _on_ai_vlm_suggestions(self, suggestions):
+        """VLM 分析完成后在画布上绘制标注"""
+        if not hasattr(self, '_canvas_overlay'):
+            return
+
+        # 健壮性：suggestions 可能为 None 或非列表（脏数据），
+        # 直接迭代会抛 TypeError，导致画布标注中断。
+        if not suggestions or not isinstance(suggestions, (list, tuple)):
+            return
+
+        self._canvas_overlay.clear()
+        for sug in suggestions:
+            # 健壮性：单条建议数据异常时跳过该条，绝不中断整批标注。
+            if not isinstance(sug, dict):
+                continue
+            try:
+                value = sug.get("suggested_value", [])
+                param = sug.get("param", "")
+                node_id = sug.get("node_id", "")
+                confidence = sug.get("confidence", 0)
+
+                # 根据参数类型确定标注类型
+                if param in ("region",):
+                    ann_type = "region"
+                elif param in ("position",):
+                    ann_type = "position"
+                elif param in ("template_path",):
+                    ann_type = "template"
+                else:
+                    continue
+
+                self._canvas_overlay.add_annotation(
+                    node_id=node_id,
+                    param=param,
+                    value=value,
+                    confidence=confidence,
+                    annotation_type=ann_type,
+                )
+            except Exception:
+                # 单条建议标注失败：跳过该条，避免因单条脏数据中断整批标注
+                continue
+
+        self._canvas_overlay.show()
     
     def _bind_events(self):
         self._init_ui_dispatcher()
@@ -617,11 +736,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         self._tab_shortcut_keys = []  # 单树快捷键注册列表
         
         def start_callback():
-            LogManager.debug_print(f"[DEBUG] F10 pressed, _is_running={self._is_running}")
             self._start_running()
         
         def stop_callback():
-            LogManager.debug_print(f"[DEBUG] F12 pressed, _is_running={self._is_running}")
             self._stop_running()
         
         self._hotkey_manager.register(start_key, start_callback)
@@ -792,7 +909,8 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 "type": node_type,
                 "name": node.name,
                 "config": node_config,
-                "enabled": node.enabled
+                "enabled": node.enabled,
+                "skip": getattr(node, 'skip', bool((node_config or {}).get('skip', False)))
             }
             self.property_panel.load_node(node_id, node_type, node_data)
     
@@ -844,9 +962,13 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         node.config[key] = value
         
-        if key in ["name", "enabled"]:
+        if key in ["name", "enabled", "skip"]:
             setattr(node, key, value)
             if key == "name":
+                self.canvas.redraw_node(node_id)
+            elif key == "skip":
+                node.config[key] = bool(value)
+                node.skip = bool(value)
                 self.canvas.redraw_node(node_id)
         
         self._set_modified(True)
@@ -960,9 +1082,11 @@ class BehaviorTreeEditor(ctk.CTkFrame):
     
     def _copy_selected(self):
         if self.canvas.selected_nodes:
-            self._clipboard_data = self.canvas._copy_selected_nodes_to_clipboard()
+            result = self.canvas._copy_selected_nodes_to_clipboard()
+            self._clipboard_data = result
         elif self.canvas.selected_node:
-            self._clipboard_data = self.canvas._copy_selected_nodes_to_clipboard()
+            result = self.canvas._copy_selected_nodes_to_clipboard()
+            self._clipboard_data = result
     
     def _paste_selected(self, paste_x: float = None, paste_y: float = None):
         if not self._clipboard_data:
@@ -1451,7 +1575,9 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             return
         
         if not self.project_root or save_as:
-            self._on_new_project_dialog()
+            # 无项目上下文（如 AI 生成的临时树）：把当前画布上的树
+            # 保存进新建的项目，而不是清空画布新建空白项目
+            self._convert_to_project()
             return
         
         if not file_path:
@@ -1710,12 +1836,21 @@ class BehaviorTreeEditor(ctk.CTkFrame):
                 self.project_manager.create_project(name, description)
                 
                 tree_data = self.canvas.get_tree_data()
+                # 与正常保存路径一致：把树引用的子树/模板等资源一并清理并复制进新项目，
+                # 避免 AI 临时树转项目后资源引用失效
+                from bt_utils.resource_service import ResourceService
+                tree_data = ResourceService.save_with_cleanup(tree_data, self.project_root)
+                self.canvas.load_tree(tree_data)
                 self.project_manager.save_project(tree_data)
                 
                 self.file_path = os.path.join(self.project_root, "tree.json")
                 self._update_title(name)
                 self._set_modified(False)
-                
+
+                active_tab = self.tab_manager.get_active_tab()
+                if active_tab and hasattr(active_tab, '_autosave_manager') and active_tab._autosave_manager:
+                    active_tab._autosave_manager.clear_autosaves()
+
                 self.toolbar.set_project_path(self.project_root)
                 
                 messagebox.showinfo("成功", f"项目 '{name}' 创建成功，当前行为树已保存到项目中")
@@ -2359,6 +2494,51 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             self.winfo_toplevel().title(f"autodoor - 行为树 {VERSION} - {project_name}")
         except ImportError:
             self.winfo_toplevel().title(f"autodoor - 行为树 - {project_name}")
+    
+    def _init_auto_login(self):
+        try:
+            if self._login_manager.auto_login():
+                username = self._login_manager.get_current_user() or ""
+                if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                    self.app.set_auth_status(True, username)
+                LogManager.debug_print(f"[Auth] 自动登录成功: {username}")
+            else:
+                if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                    self.app.set_auth_status(False)
+        except Exception as e:
+            LogManager.debug_print(f"[Auth] 自动登录失败: {e}")
+            if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                self.app.set_auth_status(False)
+    
+    def _on_login_click(self):
+        from bt_gui.auth.login_dialog import LoginDialog
+        
+        def on_login_success(username):
+            display_name = self._login_manager.get_current_user() or username
+            if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                self.app.set_auth_status(True, display_name)
+            LogManager.debug_print(f"[Auth] 登录成功: {username} -> {display_name}")
+        
+        def on_login_failure():
+            if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+                self.app.set_auth_status(False)
+        
+        dialog = LoginDialog(
+            self.app,
+            login_manager=self._login_manager,
+            on_success=on_login_success,
+            on_failure=on_login_failure
+        )
+        self.app.wait_window(dialog)
+    
+    def _on_logout_click(self):
+        self._login_manager.logout()
+        if hasattr(self, 'app') and hasattr(self.app, 'set_auth_status'):
+            self.app.set_auth_status(False)
+        LogManager.debug_print("[Auth] 已登出")
+    
+    def get_login_manager(self):
+        return self._login_manager
     
     def destroy(self):
         if hasattr(self, 'tab_manager'):
