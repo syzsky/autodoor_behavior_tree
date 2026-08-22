@@ -6,6 +6,7 @@ from typing import Dict, Any
 
 from bt_cli.ai.llm_client import LLMClient
 from bt_cli.ai.node_spec_exporter import NodeSpecExporter
+from bt_cli.ai.resource_path import get_resource_path
 from bt_core.registry import NodeRegistry
 
 
@@ -20,7 +21,7 @@ class NodeSelector:
     根据任务计划 + 动态导出的节点规格，选择节点并设计连接结构。
     """
 
-    PROMPT_FILE = os.path.join(os.path.dirname(__file__), "prompts", "node_selection.md")
+    PROMPT_FILE = get_resource_path(__file__, "prompts", "node_selection.md")
 
     def __init__(self, llm_client: LLMClient = None):
         self._llm = llm_client

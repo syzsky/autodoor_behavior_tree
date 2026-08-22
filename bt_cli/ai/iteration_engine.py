@@ -13,10 +13,11 @@ import sys
 from typing import Dict, Any, List, Optional
 
 from bt_cli.ai.llm_client import LLMClient
+from bt_cli.ai.resource_path import get_resource_path, get_cli_path
 
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_CLI_PATH = os.path.join(_PROJECT_ROOT, "cli.py")
+_CLI_PATH = get_cli_path()
 
 
 class IterationError(Exception):
@@ -35,7 +36,7 @@ class IterationEngine:
     5. 重新试运行（可多轮）
     """
 
-    PROMPT_FILE = os.path.join(os.path.dirname(__file__), "prompts", "failure_analysis.md")
+    PROMPT_FILE = get_resource_path(__file__, "prompts", "failure_analysis.md")
 
     def __init__(self, llm_client: LLMClient = None):
         self._llm = llm_client
@@ -50,7 +51,12 @@ class IterationEngine:
         Returns:
             试运行报告 {"success", "node_statuses", "logs", "blackboard"}
         """
-        # 通过 subprocess 调用 CLI run --headless
+        # PyInstaller 打包环境下，sys.executable 是主程序 exe 而非 Python 解释器，
+        # 且 cli.py 路径也与开发环境不同。此时改用进程内 HeadlessRunner 执行。
+        if hasattr(sys, "_MEIPASS"):
+            return self._run_test_in_process(tree_path, timeout_ms)
+
+        # 开发环境：通过 subprocess 调用 CLI run --headless
         cmd = [
             sys.executable, _CLI_PATH,
             "run", tree_path, "--headless",
@@ -76,6 +82,57 @@ class IterationEngine:
         return {
             "success": success,
             "node_statuses": {},  # 后续可通过日志解析
+            "logs": logs,
+            "blackboard": {},
+        }
+
+    def _run_test_in_process(self, tree_path: str, timeout_ms: int = 30000) -> Dict[str, Any]:
+        """进程内执行行为树（PyInstaller 环境兜底方案）
+
+        直接调用 HeadlessRunner 运行行为树，避免 subprocess + cli.py 的路径问题。
+        使用线程 + 超时控制，模拟 subprocess 的超时行为。
+        """
+        import io
+        import threading
+        import contextlib
+
+        logs: list = []
+        success = False
+        exception: Optional[Exception] = None
+
+        def _runner():
+            nonlocal success, exception
+            try:
+                from bt_core.headless import HeadlessRunner
+
+                # 捕获 stdout 作为日志
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    runner = HeadlessRunner()
+                    runner.run(tree_path, project=None)
+                output = buf.getvalue()
+                if output:
+                    logs.extend(output.split("\n"))
+                success = True
+            except Exception as e:
+                exception = e
+                logs.append(f"运行错误: {e}")
+
+        thread = threading.Thread(target=_runner, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout_ms / 1000)
+
+        if thread.is_alive():
+            # 超时：HeadlessRunner 没有直接的 stop 从外部调用机制，
+            # 这里标记超时并返回（线程会随进程退出而终止）
+            success = False
+            logs.insert(0, f"试运行超时 ({timeout_ms}ms)")
+        elif exception:
+            success = False
+
+        return {
+            "success": success,
+            "node_statuses": {},
             "logs": logs,
             "blackboard": {},
         }

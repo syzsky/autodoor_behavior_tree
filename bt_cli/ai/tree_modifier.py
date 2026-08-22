@@ -12,6 +12,7 @@ from typing import Dict, Any, List
 
 from bt_cli.ai.llm_client import LLMClient
 from bt_cli.ai.node_spec_exporter import NodeSpecExporter
+from bt_cli.ai.resource_path import get_resource_path
 from bt_cli.ai.tree_validator import TreeValidator
 
 
@@ -23,7 +24,7 @@ class TreeModifyError(Exception):
 class TreeModifier:
     """行为树修改器：读已有树 + 用户意图 → 返回整棵新树"""
 
-    PROMPT_FILE = os.path.join(os.path.dirname(__file__), "prompts", "tree_modify.md")
+    PROMPT_FILE = get_resource_path(__file__, "prompts", "tree_modify.md")
 
     def __init__(self, llm_client: LLMClient = None):
         self._llm = llm_client

@@ -56,9 +56,20 @@ data_files = [
     (os.path.join(project_root, 'bt_utils/build_info.json'), 'bt_utils'),
     (os.path.join(project_root, 'drivers/DD64.dll'), 'drivers'),
     (os.path.join(project_root, 'drivers/IbInputSimulator.dll'), 'drivers'),
+    (os.path.join(project_root, 'cli.py'), '.'),
 ] + collect_data_files('rapidocr')
 
-for pkg in ['bt_core', 'bt_gui', 'bt_nodes', 'bt_utils', 'config']:
+# AI 助手 prompt 文件（必须随 bt_cli/ai/prompts/ 一起打包）
+_prompts_dir = os.path.join(project_root, 'bt_cli', 'ai', 'prompts')
+if os.path.isdir(_prompts_dir):
+    for _pf in os.listdir(_prompts_dir):
+        if _pf.endswith('.md'):
+            data_files.append((
+                os.path.join(_prompts_dir, _pf),
+                'bt_cli/ai/prompts'
+            ))
+
+for pkg in ['bt_core', 'bt_gui', 'bt_nodes', 'bt_utils', 'bt_cli', 'config']:
     data_files.extend(collect_local_modules(pkg))
 
 try:

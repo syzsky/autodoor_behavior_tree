@@ -7,6 +7,7 @@ import base64
 from typing import Dict, Any, List
 
 from bt_cli.ai.llm_client import LLMClient
+from bt_cli.ai.resource_path import get_resource_path
 
 
 class VLMAnalysisError(Exception):
@@ -21,7 +22,7 @@ class VLMAnalyzer:
     生成建议值。
     """
 
-    PROMPT_FILE = os.path.join(os.path.dirname(__file__), "prompts", "vlm_analysis.md")
+    PROMPT_FILE = get_resource_path(__file__, "prompts", "vlm_analysis.md")
 
     def __init__(self, vlm_client: LLMClient = None):
         self._vlm = vlm_client

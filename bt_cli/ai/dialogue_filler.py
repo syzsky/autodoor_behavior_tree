@@ -5,6 +5,7 @@ import os
 from typing import Dict, Any, List
 
 from bt_cli.ai.llm_client import LLMClient
+from bt_cli.ai.resource_path import get_resource_path
 from bt_cli.ai.vlm_analyzer import VLMAnalyzer
 
 
@@ -16,7 +17,7 @@ class DialogueFillError(Exception):
 class DialogueFiller:
     """语言补全器：VLM 不可用/跳过的回退方案"""
 
-    PROMPT_FILE = os.path.join(os.path.dirname(__file__), "prompts", "dialogue_fill.md")
+    PROMPT_FILE = get_resource_path(__file__, "prompts", "dialogue_fill.md")
 
     def __init__(self, llm_client: LLMClient = None):
         self._llm = llm_client

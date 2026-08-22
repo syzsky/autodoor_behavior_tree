@@ -5,6 +5,7 @@ import os
 from typing import Dict, Any
 
 from bt_cli.ai.llm_client import LLMClient
+from bt_cli.ai.resource_path import get_resource_path
 
 
 class IntentAnalysisError(Exception):
@@ -18,7 +19,7 @@ class IntentAnalyzer:
     将用户自然语言描述解析为结构化任务计划（plan.json）。
     """
 
-    PROMPT_FILE = os.path.join(os.path.dirname(__file__), "prompts", "intent_analysis.md")
+    PROMPT_FILE = get_resource_path(__file__, "prompts", "intent_analysis.md")
 
     def __init__(self, llm_client: LLMClient = None):
         self._llm = llm_client
