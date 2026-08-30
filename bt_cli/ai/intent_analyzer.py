@@ -61,6 +61,12 @@ class IntentAnalyzer:
                 f"LLM 返回的 JSON 无效: {e}\n原始内容: {result['content'][:500]}"
             ) from e
 
+        if not isinstance(plan, dict):
+            raise IntentAnalysisError(
+                f"LLM 返回的 JSON 应为对象，实际为 {type(plan).__name__}: "
+                f"{result['content'][:500]}"
+            )
+
         if not self._validate_plan(plan):
             raise IntentAnalysisError(f"任务计划结构不完整: {plan}")
 

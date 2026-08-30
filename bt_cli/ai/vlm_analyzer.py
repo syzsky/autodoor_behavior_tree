@@ -78,12 +78,20 @@ class VLMAnalyzer:
         self._debug(f"[VLM] 请求成功，原始返回内容: {result['content'][:300]}")
         try:
             data = json.loads(result["content"])
-            suggestions = data.get("suggestions", [])
         except json.JSONDecodeError as e:
             self._debug(f"[VLM] JSON 解析失败: {e}")
             raise VLMAnalysisError(
                 f"VLM 返回的 JSON 无效: {e}\n原始内容: {result['content'][:500]}"
             ) from e
+
+        if not isinstance(data, dict):
+            self._debug(f"[VLM] JSON 顶层非对象: {type(data).__name__}")
+            raise VLMAnalysisError(
+                f"VLM 返回的 JSON 应为对象，实际为 {type(data).__name__}: "
+                f"{result['content'][:500]}"
+            )
+
+        suggestions = data.get("suggestions", [])
 
         self._debug(f"[VLM] 解析到建议值 {len(suggestions)} 条")
         return suggestions
