@@ -1,20 +1,132 @@
 {
+  "version": "1.0.0",
   "tesseract_path": "",
   "alarm_sound_path": "",
   "alarm_volume": 70,
+  "default_project_path": "",
   "shortcuts": {
     "start": "F10",
     "stop": "F12",
-    "record": "F11"
+    "record": "F11",
+    "tab_shortcuts": [
+      {"hotkey": "F1"},
+      {"hotkey": "F2"},
+      {"hotkey": "F3"}
+    ]
   },
   "behavior_tree": {
-    "tick_interval": 50,
+    "tick_interval": 33,
     "auto_save_interval": 30,
-    "default_format": "json"
+    "default_format": "json",
+    "default_check_interval_ms": 300,
+    "default_timeout_ms": 0,
+    "default_retry_count": 0,
+    "default_repeat_count": 0,
+    "default_child_interval": 0,
+    "max_undo_history": 50
   },
   "ui": {
     "theme": "dark",
     "language": "zh_CN",
     "font_size": 10
-  }
+  },
+  "session": {
+    "last_file_path": "",
+    "recent_files": [],
+    "window_geometry": "1280x800",
+    "last_export_path": "",
+    "open_tabs": [],
+    "active_tab_id": ""
+  },
+  "blackboard": {
+    "default_position_key": "last_detection_position",
+    "default_value_key": "last_number_value",
+    "default_ocr_text_key": "last_ocr_text",
+    "default_color_key": "last_color_value",
+    "default_image_match_key": "last_image_match"
+  },
+  "input": {
+    "keyboard_method": "pyautogui",
+    "mouse_method": "pyautogui",
+    "ib_send_mode": "any_driver",
+    "ib_target_pid": 0
+  },
+  "update": {
+    "ignored_version": "",
+    "last_check_time": "",
+    "check_interval": 86400,
+    "force_update_cache": {}
+  },
+  "message_bus": {
+    "enabled": false,
+    "shared_thread_pool_size": 8,
+    "dead_letter_queue_size": 1000
+  },
+  "rest_server": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8080,
+    "auth_enabled": false
+  },
+  "websocket_server": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8765,
+    "heartbeat_interval": 30
+  },
+  "sse_server": {
+    "enabled": true,
+    "max_clients": 10
+  },
+  "adapters": {
+    "http": {
+      "enabled": false,
+      "timeout_ms": 5000,
+      "retry_count": 3
+    },
+    "websocket": {
+      "enabled": false,
+      "reconnect_interval_ms": 5000
+    }
+  },
+  "auth": {
+    "enabled": false,
+    "method": "noop",
+    "api_key": {
+      "keys": []
+    },
+    "token_expiry_seconds": 3600,
+    "platform": {
+      "base_url": "",
+      "api_namespace": "/wp-json/bt/v1/executor",
+      "connect_timeout": 10,
+      "read_timeout": 30
+    }
+  },
+  "plugins": {},
+  "schedules": {},
+  "ai": {
+    "enabled": true,
+    "llm": {
+      "base_url": "https://apihub.agnes-ai.com/v1",
+      "api_key": "sk-0GNMHbHn3pxsNSxN18CSxpkRagYMeojoRViTNCvcw2IgtbQ4",
+      "model": "agnes-2.5-flash",
+      "timeout_ms": 300000,
+      "max_tokens": 8192,
+      "json_mode": "auto"
+    },
+    "vlm": {
+      "base_url": "https://apihub.agnes-ai.com/v1",
+      "api_key": "sk-0GNMHbHn3pxsNSxN18CSxpkRagYMeojoRViTNCvcw2IgtbQ4",
+      "model": "agnes-2.5-flash",
+      "timeout_ms": 300000,
+      "max_tokens": 8192,
+      "image_detail": "high"
+    },
+    "iteration": {
+      "max_rounds": 3,
+      "test_timeout_ms": 30000
+    }
+  },
+  "last_save_time": "2026-09-01T02:45:00.000000"
 }
