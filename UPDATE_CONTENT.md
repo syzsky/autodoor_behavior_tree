@@ -1,3 +1,12 @@
+**0.03**
+
+**新增功能**
+
+- 新增 `autodoor-bt ai run` 一键非交互命令：一条命令串联完成 意图分析 → 节点选型 → VLM屏幕感知 → 生成JSON →（可选）试运行，供 Hermes 等外部 Agent 调用
+- 支持 `--json` 机器可读输出、`--workdir`/`--output` 自定义路径、`--no-screen` 跳过屏幕感知、默认不试运行（需 `--test` 显式开启）
+- 新增 Hermes/OpenClaw 外部 Agent 对接 skill 草稿（`skills/autodoor-ai-run/`）
+
+
 **V1.7.2**
 
 **修复内容**

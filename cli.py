@@ -127,6 +127,19 @@ def main():
     ai_create = ai_sub.add_parser("create", help="完整创建流程")
     ai_create.add_argument("description", help="任务描述")
 
+    ai_run = ai_sub.add_parser("run", help="一键非交互生成行为树（供外部 Agent 调用）")
+    ai_run.add_argument("description", help="自然语言任务描述")
+    ai_run.add_argument("--workdir", default=None, help="中间产物目录（默认 ./.ai）")
+    ai_run.add_argument("--output", default=None, help="最终行为树输出路径（默认 {workdir}/tree.json）")
+    ai_run.add_argument("--screenshot", default=None, help="使用指定截图做 VLM 屏幕感知")
+    ai_run.add_argument("--no-screen", action="store_true", help="跳过 VLM 屏幕感知阶段")
+    ai_run.add_argument("--test", action="store_true", help="生成后试运行（默认关闭，外部 Agent 慎用）")
+    ai_run.add_argument("--no-refine", action="store_true", help="试运行失败后不自动迭代修正")
+    ai_run.add_argument("--timeout", type=int, default=None, help="试运行超时（毫秒）")
+    ai_run.add_argument("--max-rounds", type=int, default=None, help="试运行失败后最大迭代轮数")
+    ai_run.add_argument("--canvas", default=None, help="行为树画布/树名")
+    ai_run.add_argument("--json", action="store_true", help="stdout 输出 JSON 结果（供 Agent 解析）")
+
     args = parser.parse_args()
 
     if args.command is None:

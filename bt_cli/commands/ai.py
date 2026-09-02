@@ -12,7 +12,7 @@ def cmd_ai(args):
     action = args.ai_action
 
     if action is None:
-        print("请指定操作: plan/select/nodes/scan/generate/validate/test/refine/create")
+        print("请指定操作: plan/select/nodes/scan/generate/validate/test/refine/create/run")
         sys.exit(1)
 
     if action == "nodes":
@@ -33,6 +33,8 @@ def cmd_ai(args):
         _cmd_refine(args)
     elif action == "create":
         _cmd_create(args)
+    elif action == "run":
+        _cmd_run(args)
     else:
         print(f"未知操作: {action}")
         sys.exit(1)
@@ -572,3 +574,193 @@ def _confirm(message: str) -> bool:
         return answer.lower() in ("y", "yes", "")
     except EOFError:
         return False
+
+
+def _cmd_run(args):
+    """一键非交互生成行为树（供外部 Agent / Hermes 调用）"""
+    _check_api_key()
+
+    from config.settings_manager import get_settings_manager
+    sm = get_settings_manager()
+
+    # 中间产物目录（默认 cwd/.ai，可用 --workdir 覆盖）
+    workdir = os.path.abspath(args.workdir) if getattr(args, "workdir", None) else os.path.join(os.getcwd(), ".ai")
+    os.makedirs(workdir, exist_ok=True)
+
+    # 最终行为树输出路径
+    tree_path = os.path.abspath(getattr(args, "output", None) or os.path.join(workdir, "tree.json"))
+    os.makedirs(os.path.dirname(tree_path), exist_ok=True)
+
+    plan_summary = ""
+    stages_done = []
+    screen_filled = 0
+    skipped_screen = False
+
+    def _die(phase: str, reason: str):
+        if getattr(args, "json", False):
+            print(json.dumps({
+                "success": False,
+                "stages": stages_done,
+                "tree_file": None,
+                "nodes": 0,
+                "connections": 0,
+                "screen_filled": 0,
+                "skipped_screen": skipped_screen,
+                "test": {"ran": False},
+                "error": f"{phase}: {reason}",
+            }, ensure_ascii=False))
+        else:
+            print(f"[{phase}] 失败: {reason}", file=sys.stderr)
+        sys.exit(1)
+
+    # 阶段① 意图分析
+    from bt_cli.ai.intent_analyzer import IntentAnalyzer, IntentAnalysisError
+    try:
+        plan = IntentAnalyzer().analyze(args.description)
+    except IntentAnalysisError as e:
+        _die("plan", str(e))
+    stages_done.append("plan")
+    plan_summary = plan.get("task_summary", "")
+
+    plan_path = os.path.join(workdir, "plan.json")
+    with open(plan_path, "w", encoding="utf-8") as f:
+        json.dump(plan, f, ensure_ascii=False, indent=2)
+
+    # 阶段② 节点选型
+    from bt_core.registry import register_all_nodes
+    from bt_cli.ai.node_selector import NodeSelector, NodeSelectionError
+    register_all_nodes()
+    try:
+        structure = NodeSelector().select(plan)
+    except NodeSelectionError as e:
+        _die("select", str(e))
+    stages_done.append("select")
+
+    structure_path = os.path.join(workdir, "structure.json")
+    with open(structure_path, "w", encoding="utf-8") as f:
+        json.dump(structure, f, ensure_ascii=False, indent=2)
+
+    # 判断是否需要屏幕感知（存在空参数才需要）
+    def _has_empty_params(st):
+        return any(node.get("empty_params") for node in st.get("nodes", []))
+
+    filled = structure
+    need_screen = not getattr(args, "no_screen", False) and _has_empty_params(structure)
+
+    # 阶段③ VLM 屏幕感知（可跳过、可容错）
+    if need_screen:
+        shot = None
+        if getattr(args, "screenshot", None):
+            shot = args.screenshot
+            if not os.path.exists(shot):
+                _die("screen", f"指定截图不存在: {shot}")
+        else:
+            vlm_key = sm.get("ai.vlm.api_key", "")
+            if vlm_key:
+                shot = os.path.join(workdir, "screenshot.png")
+                # 截图失败不阻断，静默跳过屏幕感知
+                try:
+                    from bt_utils.screenshot import ScreenshotManager
+                    sm_shot = ScreenshotManager()
+                    img = sm_shot.get_full_screenshot()
+                    img.save(shot)
+                except Exception as e:
+                    print(f"[screen] 截图失败，跳过屏幕感知: {e}", file=sys.stderr)
+                    shot = None
+        if shot is not None:
+            from bt_cli.ai.vlm_analyzer import VLMAnalyzer, VLMAnalysisError
+            try:
+                vlm = VLMAnalyzer()
+                suggestions = vlm.analyze(shot, structure, plan_summary)
+                filled = vlm.fill_structure(structure, suggestions)
+                screen_filled = len(suggestions)
+                stages_done.append("screen")
+            except VLMAnalysisError as e:
+                print(f"[screen] VLM 分析失败，保留原结构: {e}", file=sys.stderr)
+                skipped_screen = True
+        else:
+            skipped_screen = True
+    else:
+        skipped_screen = True
+
+    filled_path = os.path.join(workdir, "structure_filled.json")
+    with open(filled_path, "w", encoding="utf-8") as f:
+        json.dump(filled, f, ensure_ascii=False, indent=2)
+
+    # 阶段④ 生成 JSON
+    from bt_cli.ai.tree_generator import TreeGenerator
+    canvas_name = getattr(args, "canvas", None) or plan_summary or "AI生成流程"
+    gen = TreeGenerator()
+    tree_data, errors = gen.generate_and_validate(filled, canvas_name=canvas_name)
+    if errors:
+        _die("generate", "; ".join(errors))
+    stages_done.append("generate")
+
+    with open(tree_path, "w", encoding="utf-8") as f:
+        json.dump(tree_data, f, ensure_ascii=False, indent=2)
+
+    nodes = len(tree_data.get("nodes", {}))
+    connections = len(tree_data.get("connections", []))
+
+    # 阶段⑤ 试运行（默认关闭）
+    test = {"ran": False}
+    if getattr(args, "test", False):
+        timeout_ms = getattr(args, "timeout", None) or sm.get("ai.iteration.test_timeout_ms", 30000)
+        from bt_cli.ai.iteration_engine import IterationEngine
+        engine = IterationEngine()
+        try:
+            report = engine.run_test(tree_path, timeout_ms=timeout_ms)
+        except Exception as e:
+            _die("test", f"试运行异常: {e}")
+        test = {"ran": True, "success": report.get("success", False)}
+        if not report.get("success", False) and not getattr(args, "no_refine", False):
+            max_rounds = getattr(args, "max_rounds", None) or sm.get("ai.iteration.max_rounds", 3)
+            try:
+                result = engine.iterate(tree_path, max_rounds=max_rounds, task_context=plan_summary)
+                test["refine_rounds"] = result.get("rounds", 0)
+                test["success"] = result.get("success", False)
+            except Exception as e:
+                test["refine_error"] = str(e)
+        report_path = os.path.join(workdir, "test_report.json")
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        test["report"] = report_path
+        if not test.get("success", False):
+            # 试运行失败仍返回 tree_file（已生成），但标记 success=false 供上层决策
+            if getattr(args, "json", False):
+                print(json.dumps({
+                    "success": False,
+                    "stages": stages_done,
+                    "tree_file": tree_path,
+                    "nodes": nodes,
+                    "connections": connections,
+                    "screen_filled": screen_filled,
+                    "skipped_screen": skipped_screen,
+                    "test": test,
+                    "error": "test: 试运行未通过（可手动检查后重试或 --no-refine 关闭）",
+                }, ensure_ascii=False))
+            else:
+                print(f"[test] 试运行未通过，树文件仍已生成: {tree_path}")
+            sys.exit(1)
+
+    # 输出结果
+    result = {
+        "success": True,
+        "stages": stages_done,
+        "tree_file": tree_path,
+        "nodes": nodes,
+        "connections": connections,
+        "screen_filled": screen_filled,
+        "skipped_screen": skipped_screen,
+        "test": test,
+        "error": None,
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(f"行为树已生成: {tree_path}")
+        print(f"  节点数: {nodes}")
+        print(f"  连接数: {connections}")
+        if stages_done[-1:] == ["screen"] or "screen" in stages_done:
+            print(f"  屏幕感知: 填充 {screen_filled} 项" if screen_filled else "  屏幕感知: 已跳过")
+        print(f"\n可运行: autodoor-bt run {tree_path} --headless")
