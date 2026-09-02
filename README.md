@@ -34,25 +34,6 @@ AutoDoor 行为树系统是一个功能完整的可视化行为树编辑与执�
 
 ***
 
-## 💰 赞赏
-
-如果这款工具对你有所帮助，欢迎赞助以助力老王对它的长期维护。如果需要定制或者其他帮助，也可以联系作者。
-
-<div align="center">
-
-![赞赏二维码](assets/appreciation.png)
-
-</div>
-
-***
-
-## **联系作者**
-
-QQ群：298117299 进群密码：autodoor
-B站主页：<https://space.bilibili.com/263150759>
-
-***
-
 ## 🛠️ 技术栈
 
 ```
@@ -514,11 +495,3 @@ NodeRegistry.register("CustomAction", CustomActionNode)
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
-
-***
-
-<div align="center">
-
-**Made with ❤️ by Flown王砖家**
-
-</div>
