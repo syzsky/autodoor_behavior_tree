@@ -1,21 +1,18 @@
 {
-    "version": "1.7.2",
+    "version": "0.1",
     "expire_date": "2029-08-30",
     "force_update": false,
     "build_type": "release",
-    
     "github": {
-        "owner": "wdhq4261761",
+        "owner": "syzsky",
         "repo": "autodoor_behavior_tree"
     },
-    
     "update_links": {
         "tool_intro": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
         "download": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
         "changelog": "https://my.feishu.cn/wiki/Z2AAwPevRiavmwkFf3jcL0Emnye?from=from_copylink",
         "video_tutorial": "https://www.bilibili.com/video/BV1LodDBkEzS"
     },
-    
     "app_info": {
         "name": "AutoDoor Behavior Tree",
         "name_cn": "AutoDoor 行为树系统"
