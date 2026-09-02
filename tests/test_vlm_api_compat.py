@@ -161,3 +161,28 @@ def test_vlm_analyzer_parse_json_with_surrounding_text():
         '好的，以下是分析结果：{"suggestions": [{"node_id": "n1"}]} 请查收。'
     )
     assert data["suggestions"][0]["node_id"] == "n1"
+
+
+def test_vlm_analyzer_empty_content_raises_clear_error():
+    """VLM 返回空内容（模型不支持图片/被网关过滤）时给出明确诊断而非 JSON 报错"""
+    from bt_cli.ai.llm_client import LLMClient
+    from bt_cli.ai.vlm_analyzer import VLMAnalyzer, VLMAnalysisError
+
+    vlm_client = MagicMock(spec=LLMClient)
+    vlm_client.base_url = "https://api.example.com/v1"
+    vlm_client.model = "agnes-2.5-flash"
+    vlm_client.chat_with_image.return_value = {"content": ""}
+
+    analyzer = VLMAnalyzer(vlm_client=vlm_client)
+    analyzer._debug = lambda *a, **k: None
+    analyzer._extract_empty_params = lambda structure: [{"node_id": "n1"}]
+    analyzer._encode_image = lambda path: ("image/png", "QUJD")
+    analyzer._load_prompt = lambda: "system"
+    analyzer._build_user_prompt = lambda fill, ctx: "看图给建议"
+
+    with pytest.raises(VLMAnalysisError) as exc:
+        analyzer.analyze("shot.png", {"nodes": []}, "上下文")
+
+    assert "返回内容为空" in str(exc.value)
+    assert "视觉" in str(exc.value)
+    vlm_client.chat_with_image.assert_called_once()

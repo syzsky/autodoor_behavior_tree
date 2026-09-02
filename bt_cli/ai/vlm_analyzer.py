@@ -78,20 +78,30 @@ class VLMAnalyzer:
             self._debug(f"[VLM] 请求失败: {e}")
             raise VLMAnalysisError(f"VLM 请求失败: {e}") from e
 
-        self._debug(f"[VLM] 请求成功，原始返回内容: {result['content'][:300]}")
+        self._debug(f"[VLM] 请求成功，原始返回内容: {(result.get('content') or '')[:300]}")
+
+        raw_content = (result.get("content") or "").strip()
+        if not raw_content:
+            self._debug("[VLM] 返回内容为空")
+            raise VLMAnalysisError(
+                "VLM 返回内容为空：当前模型可能不支持图片输入，"
+                "或回复被服务端过滤。请确认 VLM 配置的模型具备视觉能力，"
+                "并检查 API Key 权限与 base_url 是否正确。"
+            )
+
         try:
-            data = self._parse_json_object(result["content"])
+            data = self._parse_json_object(raw_content)
         except json.JSONDecodeError as e:
             self._debug(f"[VLM] JSON 解析失败: {e}")
             raise VLMAnalysisError(
-                f"VLM 返回的 JSON 无效: {e}\n原始内容: {result['content'][:500]}"
+                f"VLM 返回的 JSON 无效: {e}\n原始内容: {raw_content[:500]}"
             ) from e
 
         if not isinstance(data, dict):
             self._debug(f"[VLM] JSON 顶层非对象: {type(data).__name__}")
             raise VLMAnalysisError(
                 f"VLM 返回的 JSON 应为对象，实际为 {type(data).__name__}: "
-                f"{result['content'][:500]}"
+                f"{raw_content[:500]}"
             )
 
         suggestions = data.get("suggestions", [])
