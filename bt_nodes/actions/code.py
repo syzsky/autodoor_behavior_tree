@@ -171,7 +171,7 @@ class CodeNode(ActionNode):
             return "python"
         return sys.executable
 
-    def _get_startupinfo(self) -> Optional[subprocess.STARTUPINFO]:
+    def _get_startupinfo(self) -> Optional["subprocess.STARTUPINFO"]:
         if sys.platform == 'win32':
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW

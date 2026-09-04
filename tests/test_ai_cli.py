@@ -61,6 +61,7 @@ def cli_env(tmp_path):
         str(tmp_path) + os.pathsep + env.get("PYTHONPATH", "")
     )
     env["APPDATA"] = str(tmp_path / "appdata")
+    env["XDG_CONFIG_HOME"] = str(tmp_path / "appdata")
     return env
 
 

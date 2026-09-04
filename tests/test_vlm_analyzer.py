@@ -79,7 +79,7 @@ def test_analyze_returns_fill_suggestions():
 
     with patch("bt_cli.ai.vlm_analyzer.LLMClient") as mock_client_cls, \
          patch.object(VLMAnalyzer, "_encode_image",
-                      return_value="mock_base64_data") as mock_encode:
+                      return_value=("image/png", "mock_base64_data")) as mock_encode:
         mock_client = MagicMock()
         mock_client.chat_with_image.return_value = mock_vlm_response
         mock_client_cls.from_config.return_value = mock_client
@@ -193,7 +193,7 @@ def test_analyze_handles_llm_error():
 
     with patch("bt_cli.ai.vlm_analyzer.LLMClient") as mock_client_cls, \
          patch.object(VLMAnalyzer, "_encode_image",
-                      return_value="mock_base64_data"):
+                      return_value=("image/png", "mock_base64_data")):
         mock_client = MagicMock()
         mock_client.chat_with_image.side_effect = RuntimeError("connection refused")
         mock_client_cls.from_config.return_value = mock_client
@@ -228,7 +228,7 @@ def test_analyze_handles_invalid_json():
 
     with patch("bt_cli.ai.vlm_analyzer.LLMClient") as mock_client_cls, \
          patch.object(VLMAnalyzer, "_encode_image",
-                      return_value="mock_base64_data"):
+                      return_value=("image/png", "mock_base64_data")):
         mock_client = MagicMock()
         mock_client.chat_with_image.return_value = mock_vlm_response
         mock_client_cls.from_config.return_value = mock_client
