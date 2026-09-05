@@ -171,12 +171,11 @@ class VLMAnalyzer:
         """
         try:
             with open(image_path, "rb") as f:
-                head = f.read(16)
                 data = f.read()
         except (FileNotFoundError, IOError) as e:
             raise VLMAnalysisError(f"无法读取截图文件: {image_path}: {e}") from e
 
-        mime = self._detect_mime(head)
+        mime = self._detect_mime(data[:16])
         return mime, base64.b64encode(data).decode("utf-8")
 
     @staticmethod
