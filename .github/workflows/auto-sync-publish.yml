@@ -1,0 +1,78 @@
+# 自动同步上游 (wdhq4261761/autodoor_behavior_tree) 并触发自动构建发布
+# 策略：保留本地 fork 提交，将上游 master 新提交以 merge 方式合入；
+#      合并成功后 push 到 master，由既有 build.yml 自动构建 Windows 版并发布 Release。
+# 触发：每 3 天 UTC 02:00（与 webhtv 仓库方案一致），也支持手动触发。
+# 冲突时：不强推 master，自动创建待处理 PR，由用户手动解决冲突。
+name: Auto Sync Upstream and Publish
+
+on:
+  schedule:
+    - cron: '0 2 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Add upstream and fetch
+        run: |
+          git remote add upstream https://github.com/wdhq4261761/autodoor_behavior_tree.git
+          git fetch upstream master
+
+      - name: Check whether upstream has new commits
+        id: check
+        run: |
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "SYNC_NEEDED=false"
+            echo "SYNC_NEEDED=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "SYNC_NEEDED=true"
+            echo "SYNC_NEEDED=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream master (keep local changes)
+        id: merge
+        if: steps.check.outputs.SYNC_NEEDED == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git merge --no-edit --no-ff upstream/master; then
+            echo "MERGE_OK=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "MERGE_OK=false" >> "$GITHUB_OUTPUT"
+            git merge --abort
+            exit 0
+          fi
+
+      - name: Push merged result to master (triggers auto build & release)
+        if: steps.merge.outputs.MERGE_OK == 'true'
+        run: |
+          git push origin HEAD:master
+          echo "已同步上游并推送 master，现有 build.yml 将自动构建并发布 Release"
+
+      - name: Create conflict PR for manual resolution
+        if: steps.merge.outputs.MERGE_OK == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          BRANCH="auto-sync-conflict-$(date +%Y%m%d%H%M%S)"
+          git switch -c "$BRANCH"
+          git merge --no-edit upstream/master || true
+          git push origin "$BRANCH"
+          gh pr create \
+            --base master \
+            --head "$BRANCH" \
+            --title "Auto-sync: merge upstream updates (conflicts need resolution)" \
+            --body "自动同步检测到上游 wdhq4261761/autodoor_behavior_tree 的更新与本地提交产生冲突，已自动生成此 PR。请手动解决冲突后合并，合并后将自动构建并发布 Release。"
+          echo "冲突 PR 已创建：$(gh pr view --json url -q .url)"
