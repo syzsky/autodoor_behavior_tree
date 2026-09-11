@@ -1,0 +1,472 @@
+{
+  "version": "2.1",
+  "format_type": "behavior_tree",
+  "metadata": {
+    "created_at": "2026-09-11T09:41:36.117728",
+    "modified_at": "2026-09-11T09:41:36.117728",
+    "app_version": "1.0.0"
+  },
+  "canvas": {
+    "name": "挂机巡逻AI生成版",
+    "description": "AI 自然语言生成：NPC进图(黑板跟随) + 怪物等待 + 走位换区",
+    "viewport": {
+      "zoom": 1.0,
+      "offset_x": 0,
+      "offset_y": 0
+    }
+  },
+  "root_node": "node_start",
+  "nodes": {
+    "node_start": {
+      "id": "node_start",
+      "type": "StartNode",
+      "name": "开始",
+      "enabled": true,
+      "config": {
+        "bind_window": false,
+        "window_title": ""
+      },
+      "position": {
+        "x": 400,
+        "y": 50
+      },
+      "children": [
+        "node_loop"
+      ]
+    },
+    "node_loop": {
+      "id": "node_loop",
+      "type": "SequenceNode",
+      "name": "顺序执行",
+      "enabled": true,
+      "config": {},
+      "position": {
+        "x": 400,
+        "y": 150
+      },
+      "children": [
+        "node_selector_npc_monster"
+      ]
+    },
+    "node_selector_npc_monster": {
+      "id": "node_selector_npc_monster",
+      "type": "SelectorNode",
+      "name": "选择执行",
+      "enabled": true,
+      "config": {},
+      "position": {
+        "x": 400,
+        "y": 250
+      },
+      "children": [
+        "node_npc_path",
+        "node_monster_walk_path"
+      ]
+    },
+    "node_npc_path": {
+      "id": "node_npc_path",
+      "type": "SequenceNode",
+      "name": "顺序执行",
+      "enabled": true,
+      "config": {},
+      "position": {
+        "x": 300,
+        "y": 350
+      },
+      "children": [
+        "node_detect_npc",
+        "node_click_npc",
+        "node_delay_800",
+        "node_detect_enter"
+      ]
+    },
+    "node_detect_npc": {
+      "id": "node_detect_npc",
+      "type": "OCRConditionNode",
+      "name": "OCR识别",
+      "enabled": true,
+      "config": {
+        "keywords": "传送",
+        "language": "简体中文",
+        "preprocess_mode": "默认",
+        "search_direction": "左上",
+        "check_interval_ms": 300,
+        "save_position": true
+      },
+      "position": {
+        "x": -100,
+        "y": 450
+      },
+      "children": [
+        "node_click_npc"
+      ]
+    },
+    "node_click_npc": {
+      "id": "node_click_npc",
+      "type": "MouseClickNode",
+      "name": "鼠标点击",
+      "enabled": true,
+      "config": {
+        "button": "left",
+        "action": "press",
+        "duration": 100,
+        "use_blackboard": true,
+        "position_key": "last_detection_position",
+        "click_count": 1
+      },
+      "position": {
+        "x": 100,
+        "y": 450
+      },
+      "children": []
+    },
+    "node_delay_800": {
+      "id": "node_delay_800",
+      "type": "DelayNode",
+      "name": "延时",
+      "enabled": true,
+      "config": {
+        "duration_ms": 800
+      },
+      "position": {
+        "x": 300,
+        "y": 450
+      },
+      "children": []
+    },
+    "node_detect_enter": {
+      "id": "node_detect_enter",
+      "type": "OCRConditionNode",
+      "name": "OCR识别",
+      "enabled": true,
+      "config": {
+        "keywords": "进入",
+        "language": "简体中文",
+        "preprocess_mode": "默认",
+        "search_direction": "左上",
+        "check_interval_ms": 300,
+        "save_position": true
+      },
+      "position": {
+        "x": 500,
+        "y": 450
+      },
+      "children": [
+        "node_click_enter"
+      ]
+    },
+    "node_click_enter": {
+      "id": "node_click_enter",
+      "type": "MouseClickNode",
+      "name": "鼠标点击",
+      "enabled": true,
+      "config": {
+        "button": "left",
+        "action": "press",
+        "duration": 100,
+        "use_blackboard": true,
+        "position_key": "last_detection_position",
+        "click_count": 1
+      },
+      "position": {
+        "x": -200,
+        "y": 550
+      },
+      "children": [
+        "node_delay_2500"
+      ]
+    },
+    "node_delay_2500": {
+      "id": "node_delay_2500",
+      "type": "DelayNode",
+      "name": "延时",
+      "enabled": true,
+      "config": {
+        "duration_ms": 2500
+      },
+      "position": {
+        "x": 200,
+        "y": 650
+      },
+      "children": []
+    },
+    "node_monster_walk_path": {
+      "id": "node_monster_walk_path",
+      "type": "SequenceNode",
+      "name": "顺序执行",
+      "enabled": true,
+      "config": {},
+      "position": {
+        "x": 500,
+        "y": 350
+      },
+      "children": [
+        "node_detect_monster",
+        "node_delay_no_monster_walk"
+      ]
+    },
+    "node_detect_monster": {
+      "id": "node_detect_monster",
+      "type": "OCRConditionNode",
+      "name": "OCR识别",
+      "enabled": true,
+      "config": {
+        "keywords": "沃玛,祖玛,骷髅,僵尸",
+        "language": "简体中文",
+        "preprocess_mode": "默认",
+        "search_direction": "左上",
+        "check_interval_ms": 300,
+        "save_position": true
+      },
+      "position": {
+        "x": 700,
+        "y": 450
+      },
+      "children": [
+        "node_monster_found"
+      ]
+    },
+    "node_monster_found": {
+      "id": "node_monster_found",
+      "type": "SequenceNode",
+      "name": "顺序执行",
+      "enabled": true,
+      "config": {},
+      "position": {
+        "x": 0,
+        "y": 550
+      },
+      "children": [
+        "node_delay_monster_wait",
+        "node_go_to_npc_path"
+      ]
+    },
+    "node_delay_monster_wait": {
+      "id": "node_delay_monster_wait",
+      "type": "DelayNode",
+      "name": "延时",
+      "enabled": true,
+      "config": {
+        "duration_ms": 2000
+      },
+      "position": {
+        "x": 400,
+        "y": 650
+      },
+      "children": []
+    },
+    "node_go_to_npc_path": {
+      "id": "node_go_to_npc_path",
+      "type": "DelayNode",
+      "name": "巡逻间隔",
+      "enabled": true,
+      "config": {
+        "duration_ms": 1500,
+        "duration_ms_random": 500
+      },
+      "position": {
+        "x": 600,
+        "y": 650
+      },
+      "children": []
+    },
+    "node_delay_no_monster_walk": {
+      "id": "node_delay_no_monster_walk",
+      "type": "SequenceNode",
+      "name": "顺序执行",
+      "enabled": true,
+      "config": {},
+      "position": {
+        "x": 900,
+        "y": 450
+      },
+      "children": [
+        "node_click_center",
+        "node_delay_800_walk",
+        "node_delay_3000",
+        "node_click_far",
+        "node_delay_after_far"
+      ]
+    },
+    "node_click_center": {
+      "id": "node_click_center",
+      "type": "MouseClickNode",
+      "name": "鼠标点击",
+      "enabled": true,
+      "config": {
+        "button": "left",
+        "action": "press",
+        "duration": 100,
+        "click_count": 1,
+        "x_float": 100,
+        "y_float": 100,
+        "position": [
+          960,
+          600
+        ]
+      },
+      "position": {
+        "x": 200,
+        "y": 550
+      },
+      "children": []
+    },
+    "node_delay_800_walk": {
+      "id": "node_delay_800_walk",
+      "type": "DelayNode",
+      "name": "延时",
+      "enabled": true,
+      "config": {
+        "duration_ms": 800
+      },
+      "position": {
+        "x": 400,
+        "y": 550
+      },
+      "children": []
+    },
+    "node_delay_3000": {
+      "id": "node_delay_3000",
+      "type": "DelayNode",
+      "name": "延时",
+      "enabled": true,
+      "config": {
+        "duration_ms": 3000
+      },
+      "position": {
+        "x": 600,
+        "y": 550
+      },
+      "children": []
+    },
+    "node_click_far": {
+      "id": "node_click_far",
+      "type": "MouseClickNode",
+      "name": "鼠标点击",
+      "enabled": true,
+      "config": {
+        "button": "left",
+        "action": "press",
+        "duration": 100,
+        "click_count": 1,
+        "x_float": 150,
+        "y_float": 150,
+        "position": [
+          1200,
+          650
+        ]
+      },
+      "position": {
+        "x": 800,
+        "y": 550
+      },
+      "children": []
+    },
+    "node_delay_after_far": {
+      "id": "node_delay_after_far",
+      "type": "DelayNode",
+      "name": "延时",
+      "enabled": true,
+      "config": {
+        "duration_ms": 1000
+      },
+      "position": {
+        "x": 1000,
+        "y": 550
+      },
+      "children": [
+        "node_loop"
+      ]
+    }
+  },
+  "connections": [
+    {
+      "parent_id": "node_start",
+      "child_id": "node_loop"
+    },
+    {
+      "parent_id": "node_loop",
+      "child_id": "node_selector_npc_monster"
+    },
+    {
+      "parent_id": "node_selector_npc_monster",
+      "child_id": "node_npc_path"
+    },
+    {
+      "parent_id": "node_selector_npc_monster",
+      "child_id": "node_monster_walk_path"
+    },
+    {
+      "parent_id": "node_npc_path",
+      "child_id": "node_detect_npc"
+    },
+    {
+      "parent_id": "node_npc_path",
+      "child_id": "node_click_npc"
+    },
+    {
+      "parent_id": "node_npc_path",
+      "child_id": "node_delay_800"
+    },
+    {
+      "parent_id": "node_npc_path",
+      "child_id": "node_detect_enter"
+    },
+    {
+      "parent_id": "node_detect_npc",
+      "child_id": "node_click_npc"
+    },
+    {
+      "parent_id": "node_detect_enter",
+      "child_id": "node_click_enter"
+    },
+    {
+      "parent_id": "node_click_enter",
+      "child_id": "node_delay_2500"
+    },
+    {
+      "parent_id": "node_monster_walk_path",
+      "child_id": "node_detect_monster"
+    },
+    {
+      "parent_id": "node_monster_walk_path",
+      "child_id": "node_delay_no_monster_walk"
+    },
+    {
+      "parent_id": "node_detect_monster",
+      "child_id": "node_monster_found"
+    },
+    {
+      "parent_id": "node_monster_found",
+      "child_id": "node_delay_monster_wait"
+    },
+    {
+      "parent_id": "node_monster_found",
+      "child_id": "node_go_to_npc_path"
+    },
+    {
+      "parent_id": "node_delay_no_monster_walk",
+      "child_id": "node_click_center"
+    },
+    {
+      "parent_id": "node_delay_no_monster_walk",
+      "child_id": "node_delay_800_walk"
+    },
+    {
+      "parent_id": "node_delay_no_monster_walk",
+      "child_id": "node_delay_3000"
+    },
+    {
+      "parent_id": "node_delay_no_monster_walk",
+      "child_id": "node_click_far"
+    },
+    {
+      "parent_id": "node_delay_no_monster_walk",
+      "child_id": "node_delay_after_far"
+    },
+    {
+      "parent_id": "node_delay_after_far",
+      "child_id": "node_loop"
+    }
+  ]
+}
