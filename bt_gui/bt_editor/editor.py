@@ -490,6 +490,7 @@ class BehaviorTreeEditor(ctk.CTkFrame):
             on_reset_view=self.reset_view,
             on_start=self._start_running,
             on_stop=self._stop_running,
+            on_test=self._test_running,
             on_open_folder=self._open_project_folder,
             on_toggle_ai=self.toggle_ai_assistant,
             )
@@ -1938,6 +1939,109 @@ class BehaviorTreeEditor(ctk.CTkFrame):
         
         self._is_running = False
         self.toolbar.set_running(False)
+
+    def _test_running(self):
+        """试运行：执行行为树一次，显示结果报告"""
+        if self._is_running:
+            return
+
+        # 收集所有 tab 的测试结果
+        test_results = []
+        for tab_id in list(self.tab_manager._trees.keys()):
+            instance = self.tab_manager.get_tab(tab_id)
+            if not instance:
+                continue
+
+            tree_data = instance.canvas.get_tree_data() if instance.canvas else {}
+            from bt_core.serializer import Serializer
+            result = Serializer.deserialize(tree_data)
+            if isinstance(result, tuple):
+                root_node = result[0]
+            else:
+                root_node = result
+
+            if not root_node:
+                test_results.append({
+                    'tab': instance.name or tab_id,
+                    'status': 'skip',
+                    'message': '行为树为空'
+                })
+                continue
+
+            # 执行一次 tick
+            from bt_core.engine import BehaviorTreeEngine
+            from bt_core.context import ExecutionContext
+
+            engine = BehaviorTreeEngine(root_node)
+            context = ExecutionContext(project_root=instance.project_root)
+            context.set_tab_manager(self.tab_manager, tab_id)
+            context.set_message_bus(getattr(self.app, '_message_bus', None))
+
+            # 收集节点执行结果
+            node_results = []
+            context._on_node_status = lambda node_id, status, tid=tab_id: node_results.append({
+                'node_id': node_id,
+                'status': status
+            })
+
+            # 执行一次
+            engine._tick_interval = 0.033
+            engine.start(context)
+
+            # 等待执行完成（最多5秒）
+            import time
+            start_time = time.time()
+            while engine._running and time.time() - start_time < 5.0:
+                time.sleep(0.05)
+
+            # 停止引擎
+            engine.stop()
+
+            # 统计结果
+            success_count = sum(1 for r in node_results if r['status'] == 'success')
+            failure_count = sum(1 for r in node_results if r['status'] == 'failure')
+            running_count = sum(1 for r in node_results if r['status'] == 'running')
+
+            if failure_count > 0:
+                status = 'fail'
+                message = f'成功: {success_count}, 失败: {failure_count}, 运行中: {running_count}'
+            elif success_count > 0:
+                status = 'pass'
+                message = f'成功: {success_count}, 失败: {failure_count}, 运行中: {running_count}'
+            else:
+                status = 'skip'
+                message = f'无节点执行 (运行中: {running_count})'
+
+            test_results.append({
+                'tab': instance.name or tab_id,
+                'status': status,
+                'message': message,
+                'node_results': node_results
+            })
+
+        # 显示测试报告
+        self._show_test_report(test_results)
+
+    def _show_test_report(self, results):
+        """显示测试报告弹窗"""
+        from tkinter import messagebox
+
+        if not results:
+            messagebox.showinfo("测试报告", "没有可测试的行为树")
+            return
+
+        # 汇总
+        pass_count = sum(1 for r in results if r['status'] == 'pass')
+        fail_count = sum(1 for r in results if r['status'] == 'fail')
+        skip_count = sum(1 for r in results if r['status'] == 'skip')
+
+        lines = [f"测试完成: {pass_count} 通过, {fail_count} 失败, {skip_count} 跳过\n"]
+
+        for r in results:
+            icon = {'pass': '✅', 'fail': '❌', 'skip': '⏭'}.get(r['status'], '?')
+            lines.append(f"{icon} {r['tab']}: {r['message']}")
+
+        messagebox.showinfo("测试报告", "\n".join(lines))
     
     def _play_start_sound(self):
         try:
