@@ -21,6 +21,7 @@ class EditorToolbar(ctk.CTkFrame):
         on_reset_view: Optional[Callable] = None,
         on_start: Optional[Callable] = None,
         on_stop: Optional[Callable] = None,
+        on_test: Optional[Callable] = None,
         on_open_folder: Optional[Callable] = None,
         on_toggle_ai: Optional[Callable] = None,
         **kwargs
@@ -38,9 +39,11 @@ class EditorToolbar(ctk.CTkFrame):
         self.on_reset_view = on_reset_view
         self.on_start = on_start
         self.on_stop = on_stop
+        self.on_test = on_test
         self.on_open_folder = on_open_folder
         self.on_toggle_ai = on_toggle_ai
         self.is_running = False
+        self.is_testing = False
         
         self._dark_colors = Theme.get_dark_colors()
         self.configure(fg_color=self._dark_colors['header_bg'], corner_radius=0)
@@ -211,6 +214,19 @@ class EditorToolbar(ctk.CTkFrame):
             state="disabled"
         )
         self.stop_btn.pack(side="left", padx=Theme.DIMENSIONS['spacing_xs'])
+
+        self.test_btn = ctk.CTkButton(
+            run_frame,
+            text="🧪 测试",
+            width=60,
+            font=Theme.get_font('sm'),
+            height=Theme.DIMENSIONS['button_height'],
+            corner_radius=Theme.DIMENSIONS['button_corner_radius'],
+            fg_color=Theme.COLORS.get('warning', '#F59E0B'),
+            hover_color='#D97706',
+            command=self._on_test_click
+        )
+        self.test_btn.pack(side="left", padx=Theme.DIMENSIONS['spacing_xs'])
     
     def _create_path_display(self, parent):
         path_frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -324,8 +340,19 @@ class EditorToolbar(ctk.CTkFrame):
     def _on_stop_click(self):
         if self.on_stop:
             self.on_stop()
-    
-    def update_undo_redo(self, can_undo: bool, can_redo: bool, 
+
+    def _on_test_click(self):
+        if self.on_test:
+            self.on_test()
+
+    def set_testing(self, testing: bool):
+        self.is_testing = testing
+        self.test_btn.configure(state="disabled" if testing else "normal")
+        if testing:
+            self.start_btn.configure(state="disabled")
+            self.stop_btn.configure(state="disabled")
+
+    def update_undo_redo(self, can_undo: bool, can_redo: bool,
                          undo_desc: Optional[str] = None, 
                          redo_desc: Optional[str] = None):
         self.undo_btn.configure(state="normal" if can_undo else "disabled")
