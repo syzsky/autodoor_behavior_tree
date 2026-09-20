@@ -13,6 +13,11 @@ on:
 permissions:
   contents: write
   actions: read
+  pull-requests: write
+
+concurrency:
+  group: auto-sync-upstream
+  cancel-in-progress: false
 
 jobs:
   sync-upstream:
@@ -23,21 +28,23 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          # 使用 SYNC_PAT 才能在需要时推送含 .github/workflows 的上游提交
+          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Add upstream and fetch
         run: |
-          git remote add upstream https://github.com/wdhq4261761/autodoor_behavior_tree.git
+          git remote add upstream https://github.com/wdhq4261761/autodoor_behavior_tree.git 2>/dev/null || git remote set-url upstream https://github.com/wdhq4261761/autodoor_behavior_tree.git
           git fetch upstream master
 
       - name: Check whether upstream has new commits
         id: check
         run: |
-          if git merge-base --is-ancestor upstream/master HEAD; then
-            echo "SYNC_NEEDED=false"
-            echo "SYNC_NEEDED=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "SYNC_NEEDED=true"
+          BEHIND=$(git rev-list --count HEAD..upstream/master)
+          echo "behind=$BEHIND"
+          if [ "$BEHIND" -gt 0 ]; then
             echo "SYNC_NEEDED=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "SYNC_NEEDED=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Merge upstream master (keep local changes)
@@ -60,10 +67,14 @@ jobs:
           git push origin HEAD:master
           echo "已同步上游并推送 master，现有 build.yml 将自动构建并发布 Release"
 
+      - name: No upstream update
+        if: steps.check.outputs.SYNC_NEEDED == 'false'
+        run: echo "Upstream has no new commits, skip."
+
       - name: Create conflict PR for manual resolution
         if: steps.merge.outputs.MERGE_OK == 'false'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SYNC_PAT || github.token }}
         run: |
           set -e
           BRANCH="auto-sync-conflict-$(date +%Y%m%d%H%M%S)"
