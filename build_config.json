@@ -1,5 +1,5 @@
 {
-    "version": "0.02",
+    "version": "0.03",
     "expire_date": "2029-08-30",
     "force_update": false,
     "build_type": "release",
