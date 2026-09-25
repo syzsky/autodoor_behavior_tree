@@ -23,6 +23,8 @@ jobs:
   build-windows:
     name: Build Windows (Unified)
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -33,6 +35,18 @@ jobs:
       id: get_version
       run: |
         $VERSION = (Get-Content build_config.json | ConvertFrom-Json).version
+        if ("${{ github.ref }}" -eq "refs/heads/master") {
+          # master 构建自动递增末位版本号，避免所有构建都覆盖同一个 Release
+          $parts = $VERSION -split '\.'
+          $last  = $parts[-1]
+          $parts[-1] = ([int]$last + 1).ToString().PadLeft($last.Length, '0')
+          $NEW = $parts -join '.'
+          $raw = Get-Content build_config.json -Raw
+          $raw = $raw -replace ('"version"\s*:\s*"' + [regex]::Escape($VERSION) + '"'), ('"version": "' + $NEW + '"')
+          [System.IO.File]::WriteAllText("$PWD/build_config.json", $raw)
+          Write-Host "Version bumped: $VERSION -> $NEW"
+          $VERSION = $NEW
+        }
         Write-Host "Version: $VERSION"
         echo "VERSION=$VERSION" >> $env:GITHUB_OUTPUT
 
@@ -131,7 +145,10 @@ jobs:
     - name: Get current version from build_config.json
       id: get_version
       run: |
-        VERSION=$(jq -r '.version' build_config.json)
+        VERSION="${{ needs.build-windows.outputs.version }}"
+        if [[ -z "$VERSION" ]]; then
+          VERSION=$(jq -r '.version' build_config.json)
+        fi
         
         if [[ -z "$VERSION" ]]; then
           VERSION=$(git tag -l "v*" | sort -V | tail -n 1 | sed 's/^v//' || echo "0.0.0")
@@ -191,3 +208,29 @@ jobs:
         prerelease: false
         files: |
           autodoor-behaviortree-${{ steps.get_version.outputs.VERSION }}.zip
+
+    - name: Persist bumped version to master (skip ci)
+      if: github.ref == 'refs/heads/master'
+      run: |
+        set -e
+        VERSION="${{ steps.get_version.outputs.VERSION }}"
+        CURRENT=$(jq -r '.version' build_config.json)
+        if [ "$CURRENT" = "$VERSION" ]; then
+          echo "build_config.json already at $VERSION, nothing to commit"
+          exit 0
+        fi
+        python3 - "$CURRENT" "$VERSION" <<'PY'
+        import re, sys
+        cur, new = sys.argv[1], sys.argv[2]
+        p = "build_config.json"
+        s = open(p, encoding="utf-8").read()
+        s2, n = re.subn(r'("version"\s*:\s*")' + re.escape(cur) + r'(")', r'\g<1>' + new + r'\g<2>', s, count=1)
+        assert n == 1, "version field not matched"
+        open(p, "w", encoding="utf-8").write(s2)
+        print("build_config.json:", cur, "->", new)
+        PY
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add build_config.json
+        git commit -m "chore(release): bump version to ${VERSION} [skip ci]"
+        git push origin HEAD:master
