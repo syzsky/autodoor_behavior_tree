@@ -1,6 +1,7 @@
 import sys
 import os
 import traceback
+import threading
 
 def write_log(msg):
     """写入启动日志（与运行日志共用同一套逻辑，统一保存到项目 logs/ 目录）"""
@@ -34,6 +35,41 @@ def setup_error_logging():
         sys.__excepthook__(exctype, value, tb)
     
     sys.excepthook = exception_hook
+
+    def thread_exception_hook(args):
+        # 线程级未捕获异常：覆盖引擎/子树等所有工作线程。
+        # 否则打包后 stderr 被丢弃，线程崩溃将完全无日志输出。
+        try:
+            tb_lines = "".join(traceback.format_exception(
+                args.exc_type, args.exc_value, args.exc_traceback))
+            thread_name = getattr(args.thread, "name", "?")
+            write_log(f"THREAD EXCEPTION ({thread_name}): {tb_lines}")
+            from bt_utils.log_manager import LogManager
+            LogManager.debug_print(
+                f"[THREAD-CRASH] thread='{thread_name}': {tb_lines}"
+            )
+        except Exception:
+            pass
+        # 保留 Python 默认线程异常处理（含未设 hook 时的默认输出）
+        threading._excepthook(args)
+
+    threading.excepthook = thread_exception_hook
+
+    # faulthandler：进程级 segfault / 卡死时可 dump 全线程调用栈到 logs/
+    # all_threads=True 确保能抓出引擎线程 / 子树线程卡死现场
+    try:
+        import faulthandler
+        from bt_utils.log_manager import LogManager
+        log_dir = LogManager._get_log_dir()
+        os.makedirs(log_dir, exist_ok=True)
+        fd = os.open(
+            os.path.join(log_dir, "faulthandler.log"),
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        )
+        faulthandler.enable(fd, all_threads=True)
+    except Exception:
+        pass
+
     try:
         from bt_utils.log_manager import LogManager
         return LogManager.get_log_file_path()

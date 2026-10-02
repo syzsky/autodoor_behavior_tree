@@ -290,9 +290,8 @@ class DDVirtualInput(BaseInputController):
         return self._dll_path if self._available else None
     
     def _log(self, message: str):
-        """日志输出"""
-        from .log_manager import LogManager
-        LogManager.debug_print(f"[DD] {message}")
+        """日志输出（调试日志已禁用）"""
+        pass
     
     def _get_dd_code(self, key: str) -> int:
         """

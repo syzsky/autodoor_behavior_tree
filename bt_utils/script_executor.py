@@ -13,14 +13,15 @@ class ScriptExecutor:
     _executor_pool: Optional[ThreadPoolExecutor] = None
     _futures: Dict[str, any] = {}
     
-    def __init__(self, max_workers: int = 4):
+    def __init__(self, max_workers: int = 4, context=None):
         self._state_lock = threading.Lock()
         self._is_running = False
         self._is_paused = False
         self._pause_event = threading.Event()
         self._pause_event.set()
         self.execution_thread = None
-        self._input_controller = None
+        self._context = context
+        self._keyboard_engine = None
         self._executor_pool = ThreadPoolExecutor(max_workers=max_workers)
         self._futures = {}
         
@@ -71,12 +72,40 @@ class ScriptExecutor:
             except Exception:
                 pass
         
-    @property
-    def input_controller(self):
-        if self._input_controller is None:
-            from .input_controller_factory import InputController
-            self._input_controller = InputController()
-        return self._input_controller
+    def _get_bound_window(self):
+        context = self._context
+        if context is not None and hasattr(context, 'get_bound_window'):
+            try:
+                return context.get_bound_window()
+            except Exception:
+                return None
+        return None
+
+    def _get_input_manager(self):
+        from .input_manager import InputControllerManager
+        return InputControllerManager()
+
+    def _get_keyboard_engine(self):
+        """按全局键盘输入方式获取引擎，后台(bg)模式携带绑定窗口句柄"""
+        if self._keyboard_engine is None:
+            manager = self._get_input_manager()
+            kwargs = {}
+            if manager.get_keyboard_method() == "bg":
+                hwnd = self._get_bound_window()
+                if hwnd:
+                    kwargs["hwnd"] = hwnd
+            self._keyboard_engine = manager.get_keyboard_engine(**kwargs)
+        return self._keyboard_engine
+
+    def _get_mouse_engine(self):
+        """按全局鼠标输入方式获取引擎，后台(bg)模式携带绑定窗口句柄"""
+        manager = self._get_input_manager()
+        kwargs = {}
+        if manager.get_mouse_method() == "bg":
+            hwnd = self._get_bound_window()
+            if hwnd:
+                kwargs["hwnd"] = hwnd
+        return manager.get_mouse_engine(**kwargs)
     
     def run_script(self, script_content: str, loop: bool = False) -> None:
         commands = self._parse_script(script_content)
@@ -244,29 +273,44 @@ class ScriptExecutor:
             pressed_keys: 已按下按键集合
         """
         if command["type"] == "keydown":
+            engine = self._get_keyboard_engine()
+            if engine is None:
+                return
             key = command["key"]
             for _ in range(command["count"]):
                 if key not in pressed_keys:
-                    self.input_controller.key_down(key)
+                    engine.key_down(key)
                     pressed_keys.add(key)
 
         elif command["type"] == "keyup":
+            engine = self._get_keyboard_engine()
+            if engine is None:
+                return
             key = command["key"]
             for _ in range(command["count"]):
                 if key in pressed_keys:
-                    self.input_controller.key_up(key)
+                    engine.key_up(key)
                     pressed_keys.remove(key)
 
         elif command["type"] == "mouse_down":
+            engine = self._get_mouse_engine()
+            if engine is None:
+                return
             for _ in range(command["count"]):
-                self.input_controller.mouse_down(command["button"])
+                engine.mouse_down(command["button"])
 
         elif command["type"] == "mouse_up":
+            engine = self._get_mouse_engine()
+            if engine is None:
+                return
             for _ in range(command["count"]):
-                self.input_controller.mouse_up(command["button"])
+                engine.mouse_up(command["button"])
 
         elif command["type"] == "moveto":
-            self.input_controller.move_to(command["x"], command["y"])
+            engine = self._get_mouse_engine()
+            if engine is None:
+                return
+            engine.mouse_move((command["x"], command["y"]))
 
         elif command["type"] == "delay":
             delay_time = command["time"] / 1000
@@ -282,9 +326,12 @@ class ScriptExecutor:
         Args:
             pressed_keys: 已按下按键集合
         """
+        engine = self._get_keyboard_engine()
+        if engine is None:
+            return
         for key in pressed_keys:
             try:
-                self.input_controller.key_up(key)
+                engine.key_up(key)
             except Exception:
                 pass
 

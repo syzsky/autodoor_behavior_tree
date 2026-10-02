@@ -22,11 +22,11 @@ class ScriptNode(ActionNode):
         self._script_content: Optional[str] = None
         self._lock = threading.Lock()
 
-    def _get_or_create_executor(self) -> Any:
+    def _get_or_create_executor(self, context=None) -> Any:
         from bt_utils.script_executor import ScriptExecutor
         
         if self._executor is None or not self._executor.is_running:
-            self._executor = ScriptExecutor()
+            self._executor = ScriptExecutor(context=context)
         
         return self._executor
     
@@ -191,12 +191,21 @@ class ScriptNode(ActionNode):
         if marker["has_marker"] and context:
             bound_window = context.get_bound_window()
             if bound_window:
-                self._script_content = self._convert_to_absolute_coords(self._script_content, context)
-                LogManager().log_info(
-                    node_type="脚本节点",
-                    node_name=self.name,
-                    message="已将窗口相对坐标转换为屏幕绝对坐标"
-                )
+                from bt_utils.input_manager import InputControllerManager
+                mouse_method = InputControllerManager().get_mouse_method()
+                if mouse_method == "bg":
+                    LogManager().log_info(
+                        node_type="脚本节点",
+                        node_name=self.name,
+                        message="后台消息模式，保持客户区坐标不转换"
+                    )
+                else:
+                    self._script_content = self._convert_to_absolute_coords(self._script_content, context)
+                    LogManager().log_info(
+                        node_type="脚本节点",
+                        node_name=self.name,
+                        message="已将窗口相对坐标转换为屏幕绝对坐标"
+                    )
             else:
                 LogManager().log_info(
                     node_type="脚本节点",
@@ -204,7 +213,7 @@ class ScriptNode(ActionNode):
                     message=f"脚本含窗口标记（窗口：{marker['window_title']}）但未绑定窗口，坐标可能不正确"
                 )
 
-        self._executor = self._get_or_create_executor()
+        self._executor = self._get_or_create_executor(context)
         use_loop = self.config.get_bool("loop", False) and self.config.repeat_count == 0
         self._executor.run_script(self._script_content, loop=use_loop)
         self._script_started = True

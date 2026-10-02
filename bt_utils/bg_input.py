@@ -89,7 +89,7 @@ class BackgroundInputController(BaseInputController):
         return "后台消息"
 
     def _log(self, message: str):
-        LogManager.debug_print(f"[BG] {message}")
+        pass
 
     def _get_vk_code(self, key: str) -> int:
         """获取 Windows VK 码"""

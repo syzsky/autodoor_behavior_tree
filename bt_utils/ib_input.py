@@ -315,7 +315,7 @@ class IbInputSimulatorInput(BaseInputController):
         return f"IbInputSimulator({self._send_mode})"
 
     def _log(self, message: str):
-        LogManager.debug_print(f"[IB] {message}")
+        pass
 
     def _get_vk_code(self, key: str) -> int:
         """获取 Windows VK 码"""
