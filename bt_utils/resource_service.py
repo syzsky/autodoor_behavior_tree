@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 from typing import Dict, List, Set, Any, Optional
 from datetime import datetime
 from bt_utils.log_manager import LogManager
@@ -23,6 +24,10 @@ class ResourceService:
     TYPE_DIR_MAP = ProjectConstants.RESOURCE_DIRS
 
     CACHE_DIR = ProjectConstants.RESOURCE_DIRS.get('cache', 'cache')
+
+    # 缓存移动失败日志去重限频：键=(源文件名,错误), 值=上次记录时间
+    _move_fail_logged: Dict[str, float] = {}
+    _MOVE_FAIL_SUPPRESS_SEC = 5.0
     
     RESOURCE_EXTENSIONS = {
         'image': ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff'],
@@ -350,7 +355,13 @@ class ResourceService:
             shutil.move(abs_file_path, cache_path)
             return cache_path
         except Exception as e:
-            LogManager.debug_print(f"[WARN] 移动文件到缓存失败: {e}")
+            # 同一文件同一错误去重 + 节流，避免批量失败时刷屏
+            signature = f"{os.path.basename(abs_file_path)}|{e}"
+            now = time.monotonic()
+            last = cls._move_fail_logged.get(signature)
+            if last is None or now - last > cls._MOVE_FAIL_SUPPRESS_SEC:
+                LogManager.debug_print(f"[WARN] 移动文件到缓存失败: {e}")
+                cls._move_fail_logged[signature] = now
             return None
     
     @classmethod

@@ -155,11 +155,6 @@ class Node(ABC):
         return status
 
     def _reset_for_retry(self) -> None:
-        LogManager.debug_print(
-            f"[DEBUG] _reset_for_retry: {self.NODE_TYPE} '{self.name}' (id={self.node_id}) "
-            f"BEFORE: status={self.status.name}, current_index={getattr(self, 'current_index', 'N/A')}, "
-            f"_child_index={self._child_index}, _children_running={self._children_running}"
-        )
         self.status = NodeStatus.RUNNING
         self._tick_count = 0
         self._start_time = None
@@ -170,20 +165,7 @@ class Node(ABC):
         if hasattr(self, '_last_child_finish_time'):
             self._last_child_finish_time = None
         for child in self.children:
-            LogManager.debug_print(
-                f"[DEBUG] _reset_for_retry: resetting child {child.NODE_TYPE} '{child.name}' "
-                f"(id={child.node_id}), child.status BEFORE reset={child.status.name}"
-            )
             child.reset()
-            LogManager.debug_print(
-                f"[DEBUG] _reset_for_retry: child {child.NODE_TYPE} '{child.name}' "
-                f"(id={child.node_id}), child.status AFTER reset={child.status.name}"
-            )
-        LogManager.debug_print(
-            f"[DEBUG] _reset_for_retry: {self.NODE_TYPE} '{self.name}' (id={self.node_id}) "
-            f"AFTER: status={self.status.name}, current_index={getattr(self, 'current_index', 'N/A')}, "
-            f"_child_index={self._child_index}, _children_running={self._children_running}"
-        )
 
     def _reset_for_repeat(self) -> None:
         """重复执行时重置状态（保留重复计数器）"""
@@ -1000,12 +982,6 @@ class ConditionNode(Node):
         status = NodeStatus.SUCCESS if result else NodeStatus.FAILURE
         self.status = status
 
-        LogManager.debug_print(
-            f"[DEBUG] ConditionNode._tick_internal: {self.NODE_TYPE} '{self.name}' "
-            f"(id={self.node_id}) condition_result={result}, final_status={status.name}, "
-            f"consecutive_same={self._consecutive_same_count}"
-        )
-
         if status == NodeStatus.SUCCESS and self.children:
             context.notify_node_status(self.node_id, "success")
             self._children_running = True
@@ -1191,7 +1167,6 @@ class ActionNode(Node):
             if is_bg_mode:
                 # 后台模式不需要切换窗口
                 if not self._children_running:
-                    LogManager.debug_print(f"[DEBUG] ActionNode '{self.name}' 后台模式，跳过窗口切换")
                     status = self._execute_action(context)
                     self.status = status
 
@@ -1211,48 +1186,31 @@ class ActionNode(Node):
             
             if not self._window_switched:
                 self._was_already_foreground = WindowManager.is_foreground_window(bound_window)
-                window_rect = WindowManager.get_window_rect(bound_window)
                 foreground_hwnd = WindowManager.get_foreground_window()
                 
-                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换检查开始")
-                LogManager.run_log(f"[WIN] ActionNode '{self.name}' bound_window={bound_window}, rect={window_rect}")
-                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 当前前台窗口 hwnd={foreground_hwnd}")
-                LogManager.run_log(f"[WIN] ActionNode '{self.name}' was_already_foreground={self._was_already_foreground}")
-                
                 if self._was_already_foreground:
-                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 绑定窗口已在前台，跳过切换")
                     self._window_switched = True
                 else:
                     if self._original_foreground_window is None:
                         self._original_foreground_window = foreground_hwnd
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 保存原始前台窗口 hwnd={self._original_foreground_window}")
                     
                     max_retries = 3
                     switch_success = False
                     
                     for attempt in range(max_retries):
                         retry_delay = 0.1 * (2 ** attempt)
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 准备切换到绑定窗口 (尝试 {attempt + 1}/{max_retries})")
-                        switch_start = time.time()
-                        switch_result = context.smart_switch_to_bound_window()
-                        switch_elapsed_ms = (time.time() - switch_start) * 1000
+                        context.smart_switch_to_bound_window()
                         after_switch_foreground = WindowManager.is_foreground_window(bound_window)
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换完成 result={switch_result}, 耗时={switch_elapsed_ms:.2f}ms")
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 切换后绑定窗口是否在前台={after_switch_foreground}")
                         
                         if after_switch_foreground:
-                            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换成功")
                             switch_success = True
                             break
                         else:
-                            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换失败，等待 {retry_delay}s 后重试")
                             time.sleep(retry_delay)
                     
                     if switch_success:
                         self._window_switched = True
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' window_switched 标记已设置")
                     else:
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 窗口切换失败，返回 FAILURE")
                         LogManager.instance().log_failure(
                             node_type="动作节点",
                             node_name=self.name,
@@ -1263,31 +1221,18 @@ class ActionNode(Node):
             else:
                 is_foreground_now = WindowManager.is_foreground_window(bound_window)
                 if not is_foreground_now:
-                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 检测到绑定窗口已不在前台，重新切换")
                     self._window_switched = False
                     self._was_already_foreground = False
                     return NodeStatus.RUNNING
             
-            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 执行动作...")
-            action_start = time.time()
             status = self._execute_action(context)
-            action_elapsed_ms = (time.time() - action_start) * 1000
-            LogManager.run_log(f"[WIN] ActionNode '{self.name}' 动作执行完成 status={status}, 耗时={action_elapsed_ms:.2f}ms")
             
             if status != NodeStatus.RUNNING:
-                LogManager.run_log(f"[WIN] ActionNode '{self.name}' 动作非 RUNNING，准备恢复前台窗口")
                 if not self._was_already_foreground and self._original_foreground_window is not None:
-                    restore_start = time.time()
                     from bt_utils.window_manager import WindowManager
                     if WindowManager.is_window_valid(self._original_foreground_window):
                         WindowManager.set_foreground_window(self._original_foreground_window)
                         context._previous_foreground_window = None
-                        restore_elapsed_ms = (time.time() - restore_start) * 1000
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 恢复原前台窗口 hwnd={self._original_foreground_window}，耗时={restore_elapsed_ms:.2f}ms")
-                    else:
-                        LogManager.run_log(f"[WIN] ActionNode '{self.name}' 原始前台窗口已无效，跳过恢复")
-                else:
-                    LogManager.run_log(f"[WIN] ActionNode '{self.name}' 绑定窗口原本就在前台，无需恢复")
                 self._window_switched = False
                 self._was_already_foreground = False
                 self._original_foreground_window = None
@@ -1329,10 +1274,6 @@ class ActionNode(Node):
     def _tick_async(self, context: "ExecutionContext") -> NodeStatus:
         async_executor = context.get_async_executor()
         if not async_executor:
-            LogManager.debug_print(
-                f"[DEBUG] ActionNode._tick_async: {self.NODE_TYPE} '{self.name}' "
-                f"(id={self.node_id}) 未配置异步执行器，降级为同步执行"
-            )
             return self._execute_with_decorators(context, self._tick_internal)
 
         if self.status != NodeStatus.RUNNING and not self._async_started:
@@ -1355,10 +1296,6 @@ class ActionNode(Node):
 
             async_executor.submit(self.node_id, _async_func, timeout_ms)
             self._async_started = True
-            LogManager.debug_print(
-                f"[DEBUG] ActionNode._tick_async: {self.NODE_TYPE} '{self.name}' "
-                f"(id={self.node_id}) 已提交异步任务"
-            )
             return NodeStatus.RUNNING
 
         if async_executor.is_done(self.node_id):
@@ -1507,19 +1444,6 @@ class StartNode(CompositeNode):
 
         if hwnd:
             context.bind_window(hwnd)
-            rect = WindowManager.get_window_rect(hwnd)
-            title = WindowManager.get_window_title(hwnd)
-            actual_pid = WindowManager.get_window_pid(hwnd)
-
-            if find_method == "hwnd":
-                LogManager.debug_print(f"[DEBUG] StartNode 通过句柄绑定窗口: hwnd={hwnd}, title='{title}', rect={rect}")
-            elif find_method == "pid":
-                LogManager.debug_print(f"[DEBUG] StartNode 通过PID绑定窗口: pid={window_pid}, hwnd={hwnd}, title='{title}', rect={rect}")
-            else:
-                LogManager.debug_print(f"[DEBUG] StartNode 通过标题绑定窗口: title='{window_title}', hwnd={hwnd}, actual_title='{title}', pid={actual_pid}, rect={rect}")
-                if actual_pid and actual_pid != window_pid:
-                    LogManager.debug_print(f"[DEBUG] StartNode 提示: 窗口PID已变更 ({window_pid} -> {actual_pid})，建议重新选择窗口")
-
             if window_hwnd != hwnd:
                 self.config.set("window_hwnd", hwnd)
         else:
@@ -1528,7 +1452,6 @@ class StartNode(CompositeNode):
                 node_name=self.name,
                 reason=f"未找到窗口: hwnd={window_hwnd}, pid={window_pid}, title='{window_title}'"
             )
-            LogManager.debug_print(f"[DEBUG] StartNode 未找到窗口: hwnd={window_hwnd}, pid={window_pid}, title='{window_title}'")
     
     def _reset_for_retry(self) -> None:
         """重试时重置状态（保留重试计数器）"""
@@ -1707,7 +1630,6 @@ class SubtreeNode(CompositeNode):
             if is_encrypted:
                 self._inject_aut_parameters(self._subtree_context)
 
-            LogManager.debug_print(f"[SubtreeNode] 加载子树成功: {self._loaded_path} (项目: {subtree_project_dir})")
             return True
 
         except Exception as e:
@@ -1878,7 +1800,6 @@ class SubtreeNode(CompositeNode):
             return tree_data
 
         except ImportError:
-            LogManager.debug_print(f"[SubtreeNode] file_decoder 模块不可用，跳过加密子树加载")
             return None
         except Exception as e:
             LogManager.instance().log_failure(
@@ -1915,7 +1836,6 @@ class SubtreeNode(CompositeNode):
         except ImportError:
             return None
         except Exception:
-            LogManager.debug_print(f"[SubtreeNode] 获取解密密钥失败")
             return None
 
     def _inject_aut_parameters(self, sub_context: "ExecutionContext"):

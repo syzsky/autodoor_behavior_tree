@@ -316,60 +316,31 @@ class ExecutionContext:
                            action: str = "press", duration: int = 0,
                            x_float: int = 0, y_float: int = 0) -> None:
         """执行鼠标点击（全局自动坐标转换）"""
-        import time
-        start_time = time.time()
-        
         manager = self._get_input_manager()
         mouse_method = manager.get_mouse_method()
-        original_position = position
-        
-        LogManager.run_log(f"[CTX] mouse_click: === 开始 === button={button}, action={action}, duration={duration}, x_float={x_float}, y_float={y_float}")
-        LogManager.run_log(f"[CTX] mouse_click: 原始位置 pos={position}, mouse_method={mouse_method}, bound_window={self._bound_window}")
-        
-        if self._bound_window:
-            from bt_utils.window_manager import WindowManager
-            window_rect = WindowManager.get_window_rect(self._bound_window)
-            is_foreground = WindowManager.is_foreground_window(self._bound_window)
-            LogManager.run_log(f"[CTX] mouse_click: 绑定窗口 rect={window_rect}, is_foreground={is_foreground}")
 
         if position:
             if mouse_method == "bg" and self._bound_window:
-                LogManager.run_log(f"[CTX] mouse_click: 后台模式，坐标不转换")
+                pass
             elif self._bound_window:
-                LogManager.run_log(f"[CTX] mouse_click: 执行坐标转换（客户区→屏幕）")
                 position = self.convert_to_screen_coords(position)
-                LogManager.run_log(f"[CTX] mouse_click: 坐标转换结果: {original_position} → {position}")
-                if original_position != position:
-                    offset_x = position[0] - original_position[0]
-                    offset_y = position[1] - original_position[1]
-                    LogManager.run_log(f"[CTX] mouse_click: 转换偏移量: ({offset_x}, {offset_y})")
-            else:
-                LogManager.run_log(f"[CTX] mouse_click: 无绑定窗口，坐标不转换")
 
             if x_float > 0 or y_float > 0:
                 from bt_utils.helpers import get_random_value
                 px = get_random_value(position[0], x_float, min_value=0)
                 py = get_random_value(position[1], y_float, min_value=0)
                 position = (px, py)
-                LogManager.run_log(f"[CTX] mouse_click: 添加随机浮动后 pos={position}")
 
         kwargs = {}
         if mouse_method == "bg" and self._bound_window:
             kwargs["hwnd"] = self._bound_window
 
         engine = manager.get_mouse_engine(**kwargs)
-        engine_name = type(engine).__name__ if engine else None
-        LogManager.run_log(f"[CTX] mouse_click: 获取引擎成功 engine={engine_name}, 最终位置 pos={position}")
-        
-        if engine:
-            LogManager.run_log(f"[CTX] mouse_click: 调用引擎 mouse_click...")
-            engine.mouse_click(button, position, action, duration)
-            LogManager.run_log(f"[CTX] mouse_click: 引擎调用完成")
-        else:
-            LogManager.run_log(f"[CTX] mouse_click: 警告 - 引擎为空，未执行点击")
 
-        elapsed_ms = (time.time() - start_time) * 1000
-        LogManager.run_log(f"[CTX] mouse_click: === 结束 === 耗时 {elapsed_ms:.2f}ms")
+        if engine:
+            engine.mouse_click(button, position, action, duration)
+        else:
+            LogManager.debug_print(f"[WARN] [CTX] mouse_click: 引擎为空，未执行点击")
 
         self._screenshot_cache.clear()
 
@@ -378,28 +349,24 @@ class ExecutionContext:
         """执行鼠标移动（全局自动坐标转换）"""
         manager = self._get_input_manager()
         mouse_method = manager.get_mouse_method()
-        original_position = position
 
         if position:
             if mouse_method == "bg" and self._bound_window and not relative:
-                LogManager.run_log(f"[CTX] mouse_move: 后台模式，坐标不转换 pos={position}")
+                pass
             elif self._bound_window and not relative:
                 position = self.convert_to_screen_coords(position)
-                LogManager.run_log(f"[CTX] mouse_move: 坐标转换 {original_position} → {position}")
 
             if x_float > 0 or y_float > 0:
                 from bt_utils.helpers import get_random_value
                 px = get_random_value(position[0], x_float, min_value=0)
                 py = get_random_value(position[1], y_float, min_value=0)
                 position = (px, py)
-                LogManager.run_log(f"[CTX] mouse_move: 浮动后 pos={position}")
 
         kwargs = {}
         if mouse_method == "bg" and self._bound_window:
             kwargs["hwnd"] = self._bound_window
 
         engine = manager.get_mouse_engine(**kwargs)
-        LogManager.run_log(f"[CTX] mouse_move: method={mouse_method}, engine={type(engine).__name__ if engine else None}, pos={position}, relative={relative}")
         if engine:
             engine.mouse_move(position, relative)
 

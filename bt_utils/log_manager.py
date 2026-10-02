@@ -297,14 +297,18 @@ class LogManager:
                 pass
     
     def log(self, entry: LogEntry) -> None:
-        """记录日志（仅前端显示，不输出到终端）
-        
-        Args:
-            entry: 日志条目
+        """记录日志（前端显示 + 失败类同步落盘）
+
+        失败/超时/中止类前端日志追加写入 debug 文件，
+        确保 GUI 崩溃或退出后仍有节点现场可查。
         """
         if self._should_suppress_log(entry):
             return
-        
+
+        # 失败类落盘（成功/信息类仅前端显示，避免文件被正常日志刷屏）
+        if entry.level in (LogLevel.FAILURE, LogLevel.TIMEOUT, LogLevel.ABORTED):
+            self._write_file_log(entry.format())
+
         with self._buffer_lock:
             self._buffer.append(entry)
         

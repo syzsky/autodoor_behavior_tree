@@ -161,8 +161,8 @@ class UIUpdateDispatcher:
                 pending = self._task_queue.qsize()
                 if pending > 0:
                     self._process_updates()
-        except Exception as e:
-            LogManager.debug_print(f"[DEBUG] UI轮询处理异常: {e}")
+        except Exception:
+            pass
         
         if self._polling_active:
             try:
@@ -170,8 +170,7 @@ class UIUpdateDispatcher:
                     self._widget.after(self._polling_interval_ms, self._poll)
                 else:
                     threading.Timer(self._polling_interval_ms / 1000, self._poll_daemon).start()
-            except Exception as e:
-                LogManager.debug_print(f"[DEBUG] UI轮询调度异常: {e}")
+            except Exception:
                 threading.Timer(self._polling_interval_ms / 1000, self._poll_daemon).start()
     
     def _poll_daemon(self):
