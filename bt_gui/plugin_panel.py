@@ -344,22 +344,39 @@ class PluginPanel(ctk.CTkFrame):
         self._refresh_list()
 
     def _on_start_all(self):
-        """启动所有已加载插件"""
+        """启动所有已加载插件，并持久化其自动启动状态"""
         self._loader.start_all()
+        self._persist_all_autostart(started_only=True)
         self._refresh_list()
         self._notify_plugins_changed()
 
     def _on_stop_all(self):
-        """停止所有已启动插件"""
+        """停止所有已启动插件，并清除其自动启动状态"""
         self._loader.stop_all()
+        self._persist_all_autostart(started_only=False)
         self._refresh_list()
         self._notify_plugins_changed()
+
+    def _persist_all_autostart(self, started_only):
+        """批量持久化插件的自动启动状态
+
+        started_only=True 时按实际启动结果记录（避免把启动失败的插件也标记为自动启动），
+        否则一律清除自动启动标记。
+        """
+        try:
+            for info in self._loader.list_plugins():
+                enabled = self._loader.is_started(info.name) if started_only else False
+                self._loader.set_autostart(info.name, enabled)
+        except Exception as e:
+            print(f"[PluginPanel] 保存插件自动启动状态失败: {e}")
 
     def _start_plugin(self, name):
         """启动单个插件并更新对应卡片"""
         try:
             success = self._loader.start_plugin(name)
             if success:
+                # 记住该插件已启用，下次启动应用时自动启动
+                self._loader.set_autostart(name, True)
                 card = self._find_card(name)
                 if card:
                     card.clear_error()
@@ -382,6 +399,8 @@ class PluginPanel(ctk.CTkFrame):
     def _stop_plugin(self, name):
         """停止单个插件并更新对应卡片"""
         self._loader.stop_plugin(name)
+        # 取消自动启动标记，下次启动应用时不再自动启用
+        self._loader.set_autostart(name, False)
         card = self._find_card(name)
         if card:
             card.clear_error()

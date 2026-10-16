@@ -489,7 +489,12 @@ class BehaviorTreeApp(ctk.CTk):
                     if self._plugin_loader.load_plugin(plugin_dir):
                         loaded_count += 1
 
-            LogManager.debug_print(f"[Plugin] 插件系统初始化完成，已加载 {loaded_count} 个插件")
+            # 恢复上次运行中被启动过的插件（autostart 持久化标记）
+            started_count = self._plugin_loader.autostart_all()
+            LogManager.debug_print(
+                f"[Plugin] 插件系统初始化完成，已加载 {loaded_count} 个插件，"
+                f"自动启动 {started_count} 个上次启用的插件"
+            )
 
             # 将插件 loader 注入节点面板，使插件节点能动态显示
             if hasattr(self.behavior_tree, 'palette'):
