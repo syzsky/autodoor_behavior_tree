@@ -69,7 +69,8 @@ def test_excel_automation_plugin_loads():
 def test_all_plugins_discovered_via_scan():
     """测试通过 scan 发现所有插件
 
-    scan 只读取 plugin.json，不导入 openpyxl，因此两个插件都应被发现。
+    scan 只读取 plugin.json，不导入 openpyxl，因此插件都应被发现。
+    注：上游 9e9c2dcb 已删除 excel_automation 插件，故仅在目录存在时断言。
     """
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     plugins_dir = os.path.join(project_root, "plugins")
@@ -82,7 +83,8 @@ def test_all_plugins_discovered_via_scan():
 
     names = [info.name for info in infos]
     assert "file_processor" in names
-    assert "excel_automation" in names
+    if os.path.isdir(os.path.join(plugins_dir, "excel_automation")):
+        assert "excel_automation" in names
 
 
 def test_file_processor_node_info_registered():
