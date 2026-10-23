@@ -58,6 +58,13 @@ class HeadlessRunner:
         self._tree_file = tree_file
         self._stop_requested.clear()
 
+        settings = get_settings_manager()
+
+        # 插件节点必须在反序列化之前注册：
+        # Serializer 对未注册类型静默跳过（registry.create_node 返回 None），
+        # 若先反序列化再加载插件，树里的插件节点会被无声丢弃且照常"跑成功"。
+        self._load_plugins(settings)
+
         with open(tree_file, 'r', encoding='utf-8') as f:
             tree_data = json.load(f)
 
@@ -67,7 +74,6 @@ class HeadlessRunner:
         else:
             root = result
 
-        settings = get_settings_manager()
         tree_id = os.path.splitext(os.path.basename(tree_file))[0]
 
         self._context = ExecutionContext(
@@ -150,40 +156,44 @@ class HeadlessRunner:
             )
             self._websocket_server.attach_bus(self._bus)
 
-        # 插件系统
-        if settings.get("plugins.enabled", False):
-            try:
-                from bt_plugins.base import PluginContext
-                from bt_plugins.loader import PluginLoader
+        # 插件系统已在 run() 中、反序列化之前通过 _load_plugins() 加载
+        # （插件节点必须先于 Serializer 注册，否则会被静默丢弃）
 
-                plugin_context = PluginContext(
-                    settings=settings,
-                    message_bus=self._bus,
-                    adapter_manager=self._adapter_manager,
-                    service_registry=self._service_registry,
-                )
-                self._plugin_loader = PluginLoader(plugin_context)
+    def _load_plugins(self, settings) -> None:
+        """加载并启动插件系统
 
-                # 扫描内置插件目录
-                import os
-                builtin_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bt_plugins", "builtin")
-                if os.path.isdir(builtin_dir):
-                    for info in self._plugin_loader.scan(builtin_dir):
-                        plugin_dir = os.path.join(builtin_dir, info.name)
-                        self._plugin_loader.load_plugin(plugin_dir)
+        必须在行为树反序列化之前调用，保证插件节点类型已注册进 NodeRegistry。
+        """
+        if not settings.get("plugins.enabled", False):
+            return
 
-                # 扫描用户插件目录
-                user_dir = os.path.join(os.getcwd(), "plugins")
-                if os.path.isdir(user_dir):
-                    for info in self._plugin_loader.scan(user_dir):
-                        plugin_dir = os.path.join(user_dir, info.name)
-                        self._plugin_loader.load_plugin(plugin_dir)
+        try:
+            from bt_plugins.base import PluginContext
+            from bt_plugins.loader import PluginLoader
 
-                # 启动所有插件
-                self._plugin_loader.start_all()
-                print(f"[Headless] 插件系统已启动，{len(self._plugin_loader.list_plugins())} 个插件已加载")
-            except Exception as e:
-                print(f"[Headless] 插件系统启动失败: {e}")
+            plugin_context = PluginContext(settings=settings)
+            self._plugin_loader = PluginLoader(plugin_context)
+
+            # 扫描内置插件目录
+            import os
+            builtin_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bt_plugins", "builtin")
+            if os.path.isdir(builtin_dir):
+                for info in self._plugin_loader.scan(builtin_dir):
+                    plugin_dir = os.path.join(builtin_dir, info.name)
+                    self._plugin_loader.load_plugin(plugin_dir)
+
+            # 扫描用户插件目录
+            user_dir = os.path.join(os.getcwd(), "plugins")
+            if os.path.isdir(user_dir):
+                for info in self._plugin_loader.scan(user_dir):
+                    plugin_dir = os.path.join(user_dir, info.name)
+                    self._plugin_loader.load_plugin(plugin_dir)
+
+            # 启动所有插件
+            self._plugin_loader.start_all()
+            print(f"[Headless] 插件系统已启动，{len(self._plugin_loader.list_plugins())} 个插件已加载")
+        except Exception as e:
+            print(f"[Headless] 插件系统启动失败: {e}")
 
     def _start_rest_server(self, host: str, port: int) -> None:
         """启动 REST 服务器（在独立线程中运行）"""

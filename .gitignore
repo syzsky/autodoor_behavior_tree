@@ -81,3 +81,7 @@ logs/
 # TRAE generated artifacts
 .trae-html-share-packages/
 .trae-reports/
+
+# Plugins: ignore all plugin folders except file_processor
+plugins/*
+!plugins/file_processor/

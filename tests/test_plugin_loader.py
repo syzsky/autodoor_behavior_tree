@@ -171,5 +171,66 @@ def test_registered_display_info_cleared_after_stop(tmp_path):
     assert loader.get_registered_schemas() == {}
 
 
+class _FakeSettings:
+    """极简 settings stub — 支持点号分隔的 get/set，模拟 SettingsManager 行为"""
+
+    def __init__(self):
+        self._data = {}
+
+    def get(self, key, default=None):
+        cur = self._data
+        for k in key.split("."):
+            if isinstance(cur, dict) and k in cur:
+                cur = cur[k]
+            else:
+                return default
+        return cur
+
+    def set(self, key, value, auto_save=True):
+        keys = key.split(".")
+        cur = self._data
+        for k in keys[:-1]:
+            cur = cur.setdefault(k, {})
+        cur[keys[-1]] = value
+
+
+def test_autostart_persistence(tmp_path):
+    """set_autostart 应写入 settings，is_autostart 应能读回；未标记默认 False"""
+    settings = _FakeSettings()
+    loader = PluginLoader(PluginContext(settings=settings))
+    loader.load_plugin(_create_test_plugin(str(tmp_path)))
+
+    assert loader.is_autostart("test_plugin") is False
+    loader.set_autostart("test_plugin", True)
+    assert settings.get("plugins.test_plugin.autostart") is True
+    assert loader.is_autostart("test_plugin") is True
+
+    loader.set_autostart("test_plugin", False)
+    assert loader.is_autostart("test_plugin") is False
+
+
+def test_autostart_all_starts_only_marked_plugins(tmp_path):
+    """autostart_all 只启动被标记为自动启动的插件，并返回成功数量"""
+    settings = _FakeSettings()
+    loader = PluginLoader(PluginContext(settings=settings))
+    loader.load_plugin(_create_test_plugin(str(tmp_path)))
+    loader.load_plugin(_create_test_plugin(str(tmp_path), name="second_plugin"))
+    loader.set_autostart("test_plugin", True)
+
+    assert loader.autostart_all() == 1
+    assert loader.is_started("test_plugin")
+    assert not loader.is_started("second_plugin")
+
+
+def test_autostart_no_settings_is_safe(tmp_path):
+    """未注入 settings 时 autostart 相关方法不应抛异常"""
+    loader = PluginLoader(PluginContext())  # settings=None
+    loader.load_plugin(_create_test_plugin(str(tmp_path)))
+
+    assert loader.is_autostart("test_plugin") is False
+    loader.set_autostart("test_plugin", True)  # 无 settings，静默跳过
+    assert loader.autostart_all() == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -7,5 +7,8 @@
 			"path": "dsh_integration"
 		}
 	],
-	"settings": {}
+	"settings": {},
+	"trae": {
+		"workspaceId": "603eac3a91eb51e92fc90baeb1ed7f41"
+	}
 }

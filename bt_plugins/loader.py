@@ -399,6 +399,45 @@ class PluginLoader:
             plugin = self._plugins.get(name)
             return plugin is not None and plugin._started
 
+    # ── 自动启动（持久化） ──
+
+    #: 记录插件是否在下次应用启动时自动启动的 settings 键（位于 plugins.{name} 下）
+    AUTOSTART_KEY = "autostart"
+
+    def set_autostart(self, name: str, enabled: bool) -> None:
+        """记录插件是否应在下次应用启动时自动启动
+
+        写入 settings 的 ``plugins.{name}.autostart``，由 SettingsManager 持久化到
+        config.json。settings 不可用（未注入或非 SettingsManager）时静默跳过，
+        不影响启停操作本身。
+        """
+        settings = getattr(self._context, "_settings", None)
+        if settings is None or not hasattr(settings, "set"):
+            return
+        try:
+            settings.set(f"plugins.{name}.{self.AUTOSTART_KEY}", bool(enabled))
+        except Exception as e:
+            print(f"[PluginLoader] 保存插件自动启动状态失败 {name}: {e}")
+
+    def is_autostart(self, name: str) -> bool:
+        """查询插件是否被标记为自动启动（默认 False）"""
+        settings = getattr(self._context, "_settings", None)
+        if settings is None or not hasattr(settings, "get"):
+            return False
+        return bool(settings.get(f"plugins.{name}.{self.AUTOSTART_KEY}", False))
+
+    def autostart_all(self) -> int:
+        """启动所有标记为自动启动的插件，返回成功启动的数量
+
+        用于 GUI 启动时恢复上次运行中被启动过的插件，避免每次手动点击"启动"。
+        """
+        count = 0
+        with self._lock:
+            for name in list(self._plugins.keys()):
+                if self.is_autostart(name) and self.start_plugin(name):
+                    count += 1
+        return count
+
     def get_registered_display_info(self) -> Dict[str, dict]:
         """返回所有已启动插件提供的节点显示信息
 

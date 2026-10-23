@@ -699,6 +699,153 @@ class TreeSelectField(FieldWidget):
         return self.var.get()
 
 
+class _SelectionOverlay:
+    """全屏区域选取遮罩的通用底座。
+
+    RegionField / PositionField / OffsetField / ScreenshotField /
+    RegionOffsetField 原先各自复制了同一套"最小化主窗口 → 按多显示器边界铺满
+    遮罩 → 放大镜跟随 → Esc 取消 → 清理"的逻辑；任何一处漏掉清理都会造成遮罩
+    残留或放大镜滞留在桌面。此底座集中实现该公共逻辑，并保证 close() 幂等。
+
+    典型用法::
+
+        overlay = _SelectionOverlay(app, alpha=0.3, cursor="cross")
+        try:
+            overlay.open()
+            def on_up(event):
+                try:
+                    ...
+                finally:
+                    overlay.close()
+            overlay.canvas.bind("<ButtonRelease-1>", on_up)
+        except ImportError:
+            overlay.close()
+            messagebox.showerror(...)
+
+    注意：screeninfo 缺失时 open() 抛出 ImportError，由调用方按各自文案提示；
+    放大镜库缺失时自动降级为 None（不显示放大镜）。
+    """
+
+    def __init__(self, app, *, alpha=0.3, cursor="cross", bg=None,
+                 use_canvas=True, magnifier_zoom=4, magnifier_size=150):
+        self.app = app
+        self._alpha = alpha
+        self._cursor = cursor
+        self._bg = bg
+        self._use_canvas = use_canvas
+        self._magnifier_zoom = magnifier_zoom
+        self._magnifier_size = magnifier_size
+
+        self.window = None
+        self.canvas = None
+        self.magnifier = None
+        self.min_x = 0
+        self.min_y = 0
+        self.max_x = 0
+        self.max_y = 0
+        self._magnifier_shown = False
+        self._closed = False
+
+    def open(self):
+        """创建全屏遮罩并抓取输入；screeninfo 缺失时抛出 ImportError"""
+        import time
+
+        self.app.iconify()
+        time.sleep(0.2)
+
+        import screeninfo
+
+        monitors = screeninfo.get_monitors()
+        self.min_x = min(m.x for m in monitors)
+        self.min_y = min(m.y for m in monitors)
+        self.max_x = max(m.x + m.width for m in monitors)
+        self.max_y = max(m.y + m.height for m in monitors)
+
+        self.window = tk.Toplevel(self.app)
+        self.window.geometry(
+            f"{self.max_x - self.min_x}x{self.max_y - self.min_y}+{self.min_x}+{self.min_y}"
+        )
+        self.window.overrideredirect(True)
+        self.window.attributes("-alpha", self._alpha)
+        self.window.attributes("-topmost", True)
+        window_cfg = {"cursor": self._cursor}
+        if self._bg:
+            window_cfg["bg"] = self._bg
+        self.window.configure(**window_cfg)
+
+        if self._use_canvas:
+            self.canvas = tk.Canvas(
+                self.window, bg=self._bg or "#000000", highlightthickness=0
+            )
+            self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        try:
+            from bt_utils.magnifier import MagnifierWindow
+            self.magnifier = MagnifierWindow(
+                zoom_factor=self._magnifier_zoom, size=self._magnifier_size
+            )
+        except ImportError:
+            self.magnifier = None
+
+        self.window.bind("<Escape>", lambda e: self.close())
+        self.window.focus_set()
+        self.window.grab_set()
+        return self
+
+    def track_magnifier(self, event):
+        """放大镜跟随鼠标：首次显示，其后更新位置"""
+        if self.magnifier is None:
+            return
+        if not self._magnifier_shown:
+            self.magnifier.show(event.x_root, event.y_root)
+            self._magnifier_shown = True
+        else:
+            self.magnifier.update(event.x_root, event.y_root)
+
+    def hide_magnifier(self):
+        """隐藏放大镜"""
+        if self.magnifier is not None:
+            self.magnifier.hide()
+        self._magnifier_shown = False
+
+    def close(self, deiconify=True):
+        """隐藏放大镜、销毁遮罩（可选恢复主窗口）；幂等，可重复调用
+
+        Args:
+            deiconify: 是否同时恢复主窗口。截图流程需先销毁遮罩但保持主窗口
+                最小化，以便随后的截屏不包含主窗口，此时传入 False。
+        """
+        if self._closed:
+            return
+        self._closed = True
+        self.hide_magnifier()
+        if self.window is not None:
+            try:
+                self.window.destroy()
+            except Exception:
+                pass
+            self.window = None
+            self.canvas = None
+        if deiconify:
+            self.app.deiconify()
+
+    @staticmethod
+    def is_too_small(start, end, threshold=3):
+        """判断选区是否过小（任一边小于阈值，或起点缺失）"""
+        if start is None or end is None:
+            return True
+        return abs(end[0] - start[0]) < threshold or abs(end[1] - start[1]) < threshold
+
+    @staticmethod
+    def normalize_region(start, end):
+        """将两个绝对坐标点归一化为 (x1, y1, x2, y2)"""
+        return (
+            min(start[0], end[0]), min(start[1], end[1]),
+            max(start[0], end[0]), max(start[1], end[1]),
+        )
+
+
+
 class BoolField(FieldWidget):
     def __init__(self, master, label: str, key: str, on_change: Callable, default: bool = False, **kwargs):
         if default is None or default == "" or (not isinstance(default, bool) and str(default).lower() not in ("true", "false", "1", "0")):
@@ -774,121 +921,60 @@ class RegionField(FieldWidget):
         self.btn.bind("<ButtonRelease-1>", lambda e: self._start_selection())
     
     def _start_selection(self):
-        import time
-        from bt_utils.magnifier import MagnifierWindow
-        
+        overlay = _SelectionOverlay(
+            self.app, alpha=0.3, cursor="cross", bg=self._dark_colors['primary']
+        )
         try:
-            import screeninfo
-            
-            self.app.iconify()
-            
-            time.sleep(0.2)
-            
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
-            
-            select_window = tk.Toplevel(self.app)
-            select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
-            select_window.overrideredirect(True)
-            select_window.attributes("-alpha", 0.3)
-            select_window.attributes("-topmost", True)
-            select_window.configure(cursor="cross", bg=self._dark_colors['primary'])
-            
-            canvas = tk.Canvas(select_window, bg=self._dark_colors['primary'], highlightthickness=0)
-            canvas.pack(fill=tk.BOTH, expand=True)
-            
-            start_x_abs = [0]
-            start_y_abs = [0]
-            start_x_rel = [0]
-            start_y_rel = [0]
+            overlay.open()
+
+            start_abs = [None]
             rect = [None]
-            
-            magnifier = MagnifierWindow(zoom_factor=4, size=150)
-            magnifier_shown = [False]
-            
-            def on_mouse_move(event):
-                if not magnifier_shown[0]:
-                    magnifier.show(event.x_root, event.y_root)
-                    magnifier_shown[0] = True
-                else:
-                    magnifier.update(event.x_root, event.y_root)
-            
+
+            def on_mouse_up(event):
+                end_abs = (event.x_root, event.y_root)
+                if overlay.is_too_small(start_abs[0], end_abs):
+                    # 先关闭遮罩与放大镜、恢复主窗口，再弹警告，避免警告框被遮挡而无法关闭
+                    overlay.close()
+                    messagebox.showwarning("警告", "选择的区域太小，请重新选择")
+                    return
+                try:
+                    region = overlay.normalize_region(start_abs[0], end_abs)
+                    bound_window = self._get_bound_window()
+                    if bound_window:
+                        from bt_utils.coordinate import CoordinateConverter
+                        region = CoordinateConverter.screen_region_to_window(region, bound_window)
+                    self.var.set(f"{region[0]},{region[1]},{region[2]},{region[3]}")
+                    self.on_change(self.key, list(region))
+                finally:
+                    overlay.close()
+
             def on_mouse_down(event):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                start_x_abs[0] = event.x_root
-                start_y_abs[0] = event.y_root
-                start_x_rel[0] = event.x_root - min_x
-                start_y_rel[0] = event.y_root - min_y
+                overlay.hide_magnifier()
+                start_abs[0] = (event.x_root, event.y_root)
                 rect[0] = None
-            
+
             def on_mouse_drag(event):
-                if not magnifier_shown[0]:
-                    magnifier.show(event.x_root, event.y_root)
-                    magnifier_shown[0] = True
-                else:
-                    magnifier.update(event.x_root, event.y_root)
-                current_x_rel = event.x_root - min_x
-                current_y_rel = event.y_root - min_y
+                overlay.track_magnifier(event)
+                if start_abs[0] is None:
+                    return
                 if rect[0]:
-                    canvas.delete(rect[0])
-                rect[0] = canvas.create_rectangle(
-                    start_x_rel[0], start_y_rel[0], current_x_rel, current_y_rel,
+                    overlay.canvas.delete(rect[0])
+                rect[0] = overlay.canvas.create_rectangle(
+                    start_abs[0][0] - overlay.min_x, start_abs[0][1] - overlay.min_y,
+                    event.x_root - overlay.min_x, event.y_root - overlay.min_y,
                     outline="#000000", width=2, fill=""
                 )
-            
-            def on_mouse_up(event):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                end_x_abs = event.x_root
-                end_y_abs = event.y_root
-                
-                if abs(end_x_abs - start_x_abs[0]) < 3 or abs(end_y_abs - start_y_abs[0]) < 3:
-                    messagebox.showwarning("警告", "选择的区域太小，请重新选择")
-                    select_window.destroy()
-                    self.app.deiconify()
-                    return
-                
-                region = (
-                    min(start_x_abs[0], end_x_abs),
-                    min(start_y_abs[0], end_y_abs),
-                    max(start_x_abs[0], end_x_abs),
-                    max(start_y_abs[0], end_y_abs)
-                )
 
-                bound_window = self._get_bound_window()
-                if bound_window:
-                    from bt_utils.coordinate import CoordinateConverter
-                    region = CoordinateConverter.screen_region_to_window(region, bound_window)
-
-                self.var.set(f"{region[0]},{region[1]},{region[2]},{region[3]}")
-                self.on_change(self.key, list(region))
-
-                select_window.destroy()
-                self.app.deiconify()
-
-            def on_escape(e):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                select_window.destroy()
-                self.app.deiconify()
-
-            canvas.bind("<Motion>", on_mouse_move)
+            canvas = overlay.canvas
+            canvas.bind("<Motion>", overlay.track_magnifier)
             canvas.bind("<Button-1>", on_mouse_down)
             canvas.bind("<B1-Motion>", on_mouse_drag)
             canvas.bind("<ButtonRelease-1>", on_mouse_up)
-            select_window.bind("<Escape>", on_escape)
-            select_window.focus_set()
-            select_window.grab_set()
-
         except ImportError:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", "screeninfo库未安装，无法支持区域选择。\n请运行 'pip install screeninfo' 安装该库。")
         except Exception as e:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", f"区域选择失败: {str(e)}")
 
     def _get_bound_window(self):
@@ -1412,114 +1498,59 @@ class ScreenshotField(FieldWidget):
             messagebox.showerror("错误", f"截图失败: {str(e)}")
     
     def _start_screenshot_selection(self):
-        import time
-        from bt_utils.magnifier import MagnifierWindow
-        
+        overlay = _SelectionOverlay(
+            self.app, alpha=0.3, cursor="cross", bg=self._dark_colors['primary']
+        )
         try:
-            import screeninfo
-            
-            self.app.iconify()
-            
-            time.sleep(0.2)
-            
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
-            
-            select_window = tk.Toplevel(self.app)
-            select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
-            select_window.overrideredirect(True)
-            select_window.attributes("-alpha", 0.3)
-            select_window.attributes("-topmost", True)
-            select_window.configure(cursor="cross", bg=self._dark_colors['primary'])
-            
-            canvas = tk.Canvas(select_window, bg=self._dark_colors['primary'], highlightthickness=0)
-            canvas.pack(fill=tk.BOTH, expand=True)
-            
-            start_x_abs = [0]
-            start_y_abs = [0]
-            start_x_rel = [0]
-            start_y_rel = [0]
+            overlay.open()
+
+            start_abs = [None]
             rect = [None]
-            
-            magnifier = MagnifierWindow(zoom_factor=4, size=150)
-            magnifier_shown = [False]
-            
-            def on_mouse_move(event):
-                if not magnifier_shown[0]:
-                    magnifier.show(event.x_root, event.y_root)
-                    magnifier_shown[0] = True
-                else:
-                    magnifier.update(event.x_root, event.y_root)
-            
-            def on_mouse_down(event):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                start_x_abs[0] = event.x_root
-                start_y_abs[0] = event.y_root
-                start_x_rel[0] = event.x_root - min_x
-                start_y_rel[0] = event.y_root - min_y
-                rect[0] = None
-            
-            def on_mouse_drag(event):
-                if not magnifier_shown[0]:
-                    magnifier.show(event.x_root, event.y_root)
-                    magnifier_shown[0] = True
-                else:
-                    magnifier.update(event.x_root, event.y_root)
-                current_x_rel = event.x_root - min_x
-                current_y_rel = event.y_root - min_y
-                if rect[0]:
-                    canvas.delete(rect[0])
-                rect[0] = canvas.create_rectangle(
-                    start_x_rel[0], start_y_rel[0], current_x_rel, current_y_rel,
-                    outline="#000000", width=2, fill=""
-                )
-            
+
             def on_mouse_up(event):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                end_x_abs = event.x_root
-                end_y_abs = event.y_root
-                
-                select_window.destroy()
-                
-                if abs(end_x_abs - start_x_abs[0]) < 3 or abs(end_y_abs - start_y_abs[0]) < 3:
-                    self.app.deiconify()
+                end_abs = (event.x_root, event.y_root)
+                if overlay.is_too_small(start_abs[0], end_abs):
+                    overlay.close()
                     messagebox.showwarning("警告", "选择的区域太小，请重新选择")
                     return
-                
-                region = (
-                    min(start_x_abs[0], end_x_abs),
-                    min(start_y_abs[0], end_y_abs),
-                    max(start_x_abs[0], end_x_abs),
-                    max(start_y_abs[0], end_y_abs)
+                try:
+                    # 先销毁遮罩但保持主窗口最小化，避免主窗口出现在截图中；
+                    # 截图回调在截屏完成后再自行恢复主窗口。
+                    overlay.close(deiconify=False)
+                    region = overlay.normalize_region(start_abs[0], end_abs)
+                    callback = getattr(self.app, '_screenshot_callback', None)
+                    if callable(callback):
+                        callback(region)
+                finally:
+                    self.app.deiconify()
+
+            def on_mouse_down(event):
+                overlay.hide_magnifier()
+                start_abs[0] = (event.x_root, event.y_root)
+                rect[0] = None
+
+            def on_mouse_drag(event):
+                overlay.track_magnifier(event)
+                if start_abs[0] is None:
+                    return
+                if rect[0]:
+                    overlay.canvas.delete(rect[0])
+                rect[0] = overlay.canvas.create_rectangle(
+                    start_abs[0][0] - overlay.min_x, start_abs[0][1] - overlay.min_y,
+                    event.x_root - overlay.min_x, event.y_root - overlay.min_y,
+                    outline="#000000", width=2, fill=""
                 )
-                
-                if hasattr(self.app, '_screenshot_callback') and callable(self.app._screenshot_callback):
-                    self.app._screenshot_callback(region)
-            
-            def on_escape(e):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                select_window.destroy()
-                self.app.deiconify()
-            
-            canvas.bind("<Motion>", on_mouse_move)
+
+            canvas = overlay.canvas
+            canvas.bind("<Motion>", overlay.track_magnifier)
             canvas.bind("<Button-1>", on_mouse_down)
             canvas.bind("<B1-Motion>", on_mouse_drag)
             canvas.bind("<ButtonRelease-1>", on_mouse_up)
-            select_window.bind("<Escape>", on_escape)
-            select_window.focus_set()
-            select_window.grab_set()
-            
         except ImportError:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", "screeninfo库未安装，无法支持多显示器选择。\n请运行 'pip install screeninfo' 安装该库。")
         except Exception as e:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", f"区域选择失败: {str(e)}")
     
     def _save_screenshot(self, region):
@@ -1779,82 +1810,43 @@ class PositionField(FieldWidget):
             pass
     
     def _pick_position(self):
-        import time
-        from bt_utils.magnifier import MagnifierWindow
-        
+        overlay = _SelectionOverlay(
+            self.app, alpha=0.2, cursor="crosshair",
+            bg=self._dark_colors['primary'], use_canvas=False
+        )
         try:
-            import screeninfo
-            
-            self.app.iconify()
-            
-            time.sleep(0.2)
-            
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
-            
-            select_window = tk.Toplevel(self.app)
-            select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
-            select_window.overrideredirect(True)
-            select_window.attributes("-alpha", 0.2)
-            select_window.attributes("-topmost", True)
-            select_window.configure(cursor="crosshair", bg=self._dark_colors['primary'])
-            
+            overlay.open()
+
             label = tk.Label(
-                select_window, 
-                text="点击选择位置", 
-                font=("Microsoft YaHei", 24), 
-                bg=self._dark_colors['primary'], 
+                overlay.window,
+                text="点击选择位置",
+                font=("Microsoft YaHei", 24),
+                bg=self._dark_colors['primary'],
                 fg="#FFFFFF"
             )
             label.place(relx=0.5, rely=0.5, anchor="center")
-            
-            magnifier = MagnifierWindow(zoom_factor=4, size=150)
-            magnifier_shown = [False]
-            
-            def on_mouse_move(event):
-                if not magnifier_shown[0]:
-                    magnifier.show(event.x_root, event.y_root)
-                    magnifier_shown[0] = True
-                else:
-                    magnifier.update(event.x_root, event.y_root)
-            
-            def on_click(event):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                x, y = event.x_root, event.y_root
-                
-                bound_window = self._get_bound_window()
-                if bound_window:
-                    from bt_utils.coordinate import CoordinateConverter
-                    converted = CoordinateConverter.absolute_to_client(x, y, bound_window)
-                    if converted:
-                        x, y = converted
 
-                self.var.set(f"{x}, {y}")
-                self.on_change(self.key, [x, y])
-                select_window.destroy()
-                self.app.deiconify()
-            
-            def on_escape(e):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                select_window.destroy()
-                self.app.deiconify()
-            
-            select_window.bind("<Motion>", on_mouse_move)
-            select_window.bind("<Button-1>", on_click)
-            select_window.bind("<Escape>", on_escape)
-            select_window.focus_set()
-            select_window.grab_set()
-            
+            def on_click(event):
+                try:
+                    x, y = event.x_root, event.y_root
+                    bound_window = self._get_bound_window()
+                    if bound_window:
+                        from bt_utils.coordinate import CoordinateConverter
+                        converted = CoordinateConverter.absolute_to_client(x, y, bound_window)
+                        if converted:
+                            x, y = converted
+                    self.var.set(f"{x}, {y}")
+                    self.on_change(self.key, [x, y])
+                finally:
+                    overlay.close()
+
+            overlay.window.bind("<Motion>", overlay.track_magnifier)
+            overlay.window.bind("<Button-1>", on_click)
         except ImportError:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", "screeninfo库未安装，无法支持位置选择。\n请运行 'pip install screeninfo' 安装该库。")
         except Exception as e:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", f"位置选择失败: {str(e)}")
     
     def set_value(self, value: Any):
@@ -1940,80 +1932,45 @@ class OffsetField(FieldWidget):
             pass
     
     def _measure_offset(self):
-        import time
-        from bt_utils.magnifier import MagnifierWindow
-        
+        overlay = _SelectionOverlay(
+            self.app, alpha=0.2, cursor="crosshair",
+            bg=self._dark_colors['primary'], use_canvas=False
+        )
         try:
-            import screeninfo
-            
-            self.app.iconify()
-            time.sleep(0.2)
-            
-            monitors = screeninfo.get_monitors()
-            min_x = min(monitor.x for monitor in monitors)
-            min_y = min(monitor.y for monitor in monitors)
-            max_x = max(monitor.x + monitor.width for monitor in monitors)
-            max_y = max(monitor.y + monitor.height for monitor in monitors)
-            
-            select_window = tk.Toplevel(self.app)
-            select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
-            select_window.overrideredirect(True)
-            select_window.attributes("-alpha", 0.2)
-            select_window.attributes("-topmost", True)
-            select_window.configure(cursor="crosshair", bg=self._dark_colors['primary'])
-            
+            overlay.open()
+
             label = tk.Label(
-                select_window,
+                overlay.window,
                 text="第一步：点击参考点（检测目标位置）",
                 font=("Microsoft YaHei", 24),
                 bg=self._dark_colors['primary'],
                 fg="#FFFFFF"
             )
             label.place(relx=0.5, rely=0.5, anchor="center")
-            
-            magnifier = MagnifierWindow(zoom_factor=4, size=150)
-            magnifier_shown = [False]
+
             reference_point = [None]
-            
-            def on_mouse_move(event):
-                if not magnifier_shown[0]:
-                    magnifier.show(event.x_root, event.y_root)
-                    magnifier_shown[0] = True
-                else:
-                    magnifier.update(event.x_root, event.y_root)
-            
+
             def on_click(event):
                 if reference_point[0] is None:
                     reference_point[0] = (event.x_root, event.y_root)
                     label.config(text="第二步：点击目标点（实际操作位置）")
                 else:
-                    magnifier.hide()
-                    magnifier_shown[0] = False
-                    target_point = (event.x_root, event.y_root)
-                    offset_x = target_point[0] - reference_point[0][0]
-                    offset_y = target_point[1] - reference_point[0][1]
-                    self.var.set(f"{offset_x}, {offset_y}")
-                    self.on_change(self.key, [offset_x, offset_y])
-                    select_window.destroy()
-                    self.app.deiconify()
-            
-            def on_escape(e):
-                magnifier.hide()
-                magnifier_shown[0] = False
-                select_window.destroy()
-                self.app.deiconify()
-            
-            select_window.bind("<Motion>", on_mouse_move)
-            select_window.bind("<Button-1>", on_click)
-            select_window.bind("<Escape>", on_escape)
-            select_window.focus_set()
-            select_window.grab_set()
-            
+                    try:
+                        target_point = (event.x_root, event.y_root)
+                        offset_x = target_point[0] - reference_point[0][0]
+                        offset_y = target_point[1] - reference_point[0][1]
+                        self.var.set(f"{offset_x}, {offset_y}")
+                        self.on_change(self.key, [offset_x, offset_y])
+                    finally:
+                        overlay.close()
+
+            overlay.window.bind("<Motion>", overlay.track_magnifier)
+            overlay.window.bind("<Button-1>", on_click)
         except ImportError:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", "screeninfo库未安装，无法支持偏移测量。\n请运行 'pip install screeninfo' 安装该库。")
         except Exception as e:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", f"偏移测量失败: {str(e)}")
     
     def set_value(self, value: Any):
@@ -2084,35 +2041,13 @@ class RegionOffsetField(FieldWidget):
             pass
 
     def _measure_region_offset(self):
-        import time
+        overlay = _SelectionOverlay(
+            self.app, alpha=0.3, cursor="crosshair", bg=self._dark_colors['primary']
+        )
         try:
-            from bt_utils.magnifier import MagnifierWindow
-        except ImportError:
-            MagnifierWindow = None
+            overlay.open()
 
-        try:
-            import screeninfo
-
-            self.app.iconify()
-            time.sleep(0.2)
-
-            monitors = screeninfo.get_monitors()
-            min_x = min(m.x for m in monitors)
-            min_y = min(m.y for m in monitors)
-            max_x = max(m.x + m.width for m in monitors)
-            max_y = max(m.y + m.height for m in monitors)
-
-            select_window = tk.Toplevel(self.app)
-            select_window.geometry(f"{max_x - min_x}x{max_y - min_y}+{min_x}+{min_y}")
-            select_window.overrideredirect(True)
-            select_window.attributes("-alpha", 0.3)
-            select_window.attributes("-topmost", True)
-            select_window.configure(cursor="crosshair")
-
-            canvas = tk.Canvas(select_window, bg=self._dark_colors['primary'],
-                               highlightthickness=0)
-            canvas.pack(fill=tk.BOTH, expand=True)
-
+            canvas = overlay.canvas
             label = tk.Label(
                 canvas,
                 text="第一步：点击锚点（参考位置）",
@@ -2120,101 +2055,69 @@ class RegionOffsetField(FieldWidget):
                 bg=self._dark_colors['primary'],
                 fg="#FFFFFF"
             )
-            canvas.create_window((max_x - min_x) // 2, (max_y - min_y) // 2, window=label)
+            canvas.create_window(
+                (overlay.max_x - overlay.min_x) // 2,
+                (overlay.max_y - overlay.min_y) // 2,
+                window=label
+            )
 
-            magnifier = MagnifierWindow(zoom_factor=4, size=150) if MagnifierWindow else None
-            magnifier_shown = [False]
             reference_point = [None]
             drag_start_abs = [None]
             drag_start_rel = [None]
             rect_id = [None]
 
-            def on_mouse_move(event):
-                if magnifier:
-                    if not magnifier_shown[0]:
-                        magnifier.show(event.x_root, event.y_root)
-                        magnifier_shown[0] = True
-                    else:
-                        magnifier.update(event.x_root, event.y_root)
-
             def on_click(event):
                 if reference_point[0] is None:
                     reference_point[0] = (event.x_root, event.y_root)
                     label.config(text="第二步：按住并拖拽选择区域范围")
-                    if magnifier:
-                        magnifier.hide()
-                        magnifier_shown[0] = False
+                    overlay.hide_magnifier()
                 else:
                     drag_start_abs[0] = (event.x_root, event.y_root)
-                    drag_start_rel[0] = (event.x_root - min_x, event.y_root - min_y)
+                    drag_start_rel[0] = (event.x_root - overlay.min_x, event.y_root - overlay.min_y)
                     rect_id[0] = None
 
             def on_drag(event):
-                if magnifier:
-                    if not magnifier_shown[0]:
-                        magnifier.show(event.x_root, event.y_root)
-                        magnifier_shown[0] = True
-                    else:
-                        magnifier.update(event.x_root, event.y_root)
+                overlay.track_magnifier(event)
                 if reference_point[0] and drag_start_rel[0]:
-                    current_x_rel = event.x_root - min_x
-                    current_y_rel = event.y_root - min_y
                     if rect_id[0]:
                         canvas.delete(rect_id[0])
                     rect_id[0] = canvas.create_rectangle(
                         drag_start_rel[0][0], drag_start_rel[0][1],
-                        current_x_rel, current_y_rel,
+                        event.x_root - overlay.min_x, event.y_root - overlay.min_y,
                         outline="#000000", width=2, fill=""
                     )
 
             def on_release(event):
-                if reference_point[0] and drag_start_abs[0]:
-                    if magnifier:
-                        magnifier.hide()
-                        magnifier_shown[0] = False
-
+                if not (reference_point[0] and drag_start_abs[0]):
+                    return
+                end_abs = (event.x_root, event.y_root)
+                # 与 RegionField 行为对齐：选区过小时结束选择并提示，而非静默重置
+                if overlay.is_too_small(drag_start_abs[0], end_abs):
+                    overlay.close()
+                    messagebox.showwarning("警告", "选择的区域太小，请重新选择")
+                    return
+                try:
                     rx, ry = reference_point[0]
                     sx, sy = drag_start_abs[0]
-                    ex, ey = event.x_root, event.y_root
-
-                    if abs(ex - sx) < 3 or abs(ey - sy) < 3:
-                        drag_start_abs[0] = None
-                        drag_start_rel[0] = None
-                        if rect_id[0]:
-                            canvas.delete(rect_id[0])
-                            rect_id[0] = None
-                        return
-
+                    ex, ey = end_abs
                     offset_x1 = min(sx, ex) - rx
                     offset_y1 = min(sy, ey) - ry
                     offset_x2 = max(sx, ex) - rx
                     offset_y2 = max(sy, ey) - ry
-
                     self.var.set(f"{offset_x1}, {offset_y1}, {offset_x2}, {offset_y2}")
                     self.on_change(self.key, [offset_x1, offset_y1, offset_x2, offset_y2])
-                    select_window.destroy()
-                    self.app.deiconify()
+                finally:
+                    overlay.close()
 
-            def on_escape(e):
-                if magnifier:
-                    magnifier.hide()
-                    magnifier_shown[0] = False
-                select_window.destroy()
-                self.app.deiconify()
-
-            canvas.bind("<Motion>", on_mouse_move)
+            canvas.bind("<Motion>", overlay.track_magnifier)
             canvas.bind("<Button-1>", on_click)
             canvas.bind("<B1-Motion>", on_drag)
             canvas.bind("<ButtonRelease-1>", on_release)
-            canvas.bind("<Escape>", on_escape)
-            canvas.focus_set()
-            canvas.grab_set()
-
         except ImportError:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", "screeninfo库未安装，无法支持区域偏移测量。")
         except Exception as e:
-            self.app.deiconify()
+            overlay.close()
             messagebox.showerror("错误", f"区域偏移测量失败: {str(e)}")
 
     def set_value(self, value):
