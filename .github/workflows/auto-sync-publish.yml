@@ -1,8 +1,10 @@
 # 自动同步上游 (wdhq4261761/autodoor_behavior_tree) 并触发自动构建发布
 # 策略：保留本地 fork 提交，将上游 master 新提交以 merge 方式合入；
 #      合并成功后 push 到 master，由既有 build.yml 自动构建 Windows 版并发布 Release。
+# 机器生成文件（UPDATE_CONTENT.md / build_config.json）通过 .gitattributes 配置 merge=ours，
+#      合并时始终保留本地版本，避免无意义冲突。
 # 触发：每 3 天 UTC 02:00（与 webhtv 仓库方案一致），也支持手动触发。
-# 冲突时：不强推 master，自动创建待处理 PR，由用户手动解决冲突。
+# 冲突时：不强推 master，自动创建含真实提交的 PR，由用户 review 后合并。
 name: Auto Sync Upstream and Publish
 
 on:
@@ -53,10 +55,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 启用 .gitattributes 中的 merge=ours 驱动（机器生成文件保留本地版本）
+          git config merge.ours.driver true
           if git merge --no-edit --no-ff upstream/master; then
             echo "MERGE_OK=true" >> "$GITHUB_OUTPUT"
           else
             echo "MERGE_OK=false" >> "$GITHUB_OUTPUT"
+            echo "冲突文件如下："
+            git diff --name-only --diff-filter=U || true
             git merge --abort
             exit 0
           fi
@@ -64,7 +70,12 @@ jobs:
       - name: Push merged result to master (triggers auto build & release)
         if: steps.merge.outputs.MERGE_OK == 'true'
         run: |
-          git push origin HEAD:master
+          git push origin HEAD:master || {
+            echo "首次推送失败，随 origin/master 变基后重试"
+            git fetch origin master
+            git rebase origin/master
+            git push origin HEAD:master
+          }
           echo "已同步上游并推送 master，现有 build.yml 将自动构建并发布 Release"
 
       - name: No upstream update
@@ -80,10 +91,29 @@ jobs:
           BRANCH="auto-sync-conflict-$(date +%Y%m%d%H%M%S)"
           git switch -c "$BRANCH"
           git merge --no-edit upstream/master || true
+          CONFLICTS=$(git diff --name-only --diff-filter=U || true)
+          if [ -n "$CONFLICTS" ]; then
+            echo "冲突文件："
+            echo "$CONFLICTS"
+            for f in $CONFLICTS; do
+              case "$f" in
+                UPDATE_CONTENT.md|build_config.json)
+                  git checkout --ours -- "$f" ;;
+                *)
+                  git checkout --theirs -- "$f" ;;
+              esac
+              git add -- "$f"
+            done
+            git commit -m "chore(auto-sync): 解决上游合并冲突（机器生成文件保留本地，其余取上游）"
+          fi
+          if [ -z "$(git log master..HEAD --oneline)" ]; then
+            echo "::warning::合并后与 master 无差异，无需创建 PR"
+            exit 0
+          fi
           git push origin "$BRANCH"
           gh pr create \
             --base master \
             --head "$BRANCH" \
             --title "Auto-sync: merge upstream updates (conflicts need resolution)" \
-            --body "自动同步检测到上游 wdhq4261761/autodoor_behavior_tree 的更新与本地提交产生冲突，已自动生成此 PR。请手动解决冲突后合并，合并后将自动构建并发布 Release。"
-          echo "冲突 PR 已创建：$(gh pr view --json url -q .url)"
+            --body "自动同步检测到上游 wdhq4261761/autodoor_behavior_tree 的更新与本地提交产生冲突，已自动完成初步冲突解决（UPDATE_CONTENT.md / build_config.json 保留本地版本，其余取上游）并生成此 PR。请 review 后合并，合并后将自动构建并发布 Release。"
+          echo "冲突 PR 已创建：$(gh pr view "$BRANCH" --json url -q .url)"

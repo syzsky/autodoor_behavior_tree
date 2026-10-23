@@ -1,0 +1,4 @@
+# 机器生成文件：同步上游时始终保留本地版本，避免自动同步因内容差异冲突而失败
+# 注意：merge=ours 需配合 `git config merge.ours.driver true`（workflow 中已自动配置）
+UPDATE_CONTENT.md merge=ours
+build_config.json merge=ours
